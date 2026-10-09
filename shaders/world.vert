@@ -13,6 +13,7 @@ layout(set = 0, binding = 0) uniform UBO {
     vec4 lightDir;
     vec4 fogColor;
     vec4 fogParams;   /* x: start, y: end */
+    vec4 texRect[64]; /* atlas rect per texture id: u0,v0,tileW,tileH */
 } u;
 
 layout(push_constant) uniform Push {
@@ -26,14 +27,18 @@ layout(location = 1) out vec3 vWorld;
 layout(location = 2) out vec4 vColor;
 layout(location = 3) flat out uint vFlags;
 layout(location = 4) out vec3 vLocal;
+layout(location = 5) out vec3 vScale;
+layout(location = 6) flat out float vSeed;
 
 void main() {
     vec4 w = p.model * vec4(inPos, 1.0);
     vWorld = w.xyz;
     vNrm = mat3(p.model) * inNrm;
-    vColor = (p.flags & 512u) != 0u ? vec4(inCol, p.color.a) : p.color;
+    vColor = (p.flags & 16384u) != 0u ? vec4(inCol, p.color.a) : p.color;
     vFlags = p.flags;
     vLocal = w.xyz - p.model[3].xyz;
+    vScale = vec3(length(p.model[0].xyz), length(p.model[1].xyz), length(p.model[2].xyz));
+    vSeed = 0.0;
     mat4 vp = (p.flags & 16u) != 0u ? u.iconVP : u.viewProj;
     gl_Position = vp * w;
 }

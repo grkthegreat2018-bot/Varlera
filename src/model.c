@@ -171,7 +171,7 @@ static const char *def_path(void) { return "models.bw"; }
 int models_save(const char *path) {
     FILE *f = fopen(path ? path : def_path(), "wb");
     if (!f) return 0;
-    uint32_t hdr[3] = {0x44574D42u /* 'BWMD' */, 2, (uint32_t)g_nmodels};
+    uint32_t hdr[3] = {0x44574D42u /* 'BWMD' */, 3, (uint32_t)g_nmodels};
     fwrite(hdr, 4, 3, f);
     for (int i = 0; i < g_nmodels; i++) {
         Model *m = &g_models[i];
@@ -184,15 +184,16 @@ int models_save(const char *path) {
     return 1;
 }
 
-#define MODELS_V1_BLKSZ 40      /* Block v1 had no trig/act */
+#define MODELS_V1_BLKSZ 40      /* v1: no trig/act */
+#define MODELS_V2_BLKSZ 44      /* v2: +trig/act; no texm/alpha/id/name */
 
 int models_load(const char *path) {
     FILE *f = fopen(path ? path : def_path(), "rb");
     if (!f) return 0;
     uint32_t hdr[3];
     if (fread(hdr, 4, 3, f) != 3 || hdr[0] != 0x44574D42u ||
-        (hdr[1] != 1 && hdr[1] != 2)) { fclose(f); return 0; }
-    int v1 = hdr[1] == 1;
+        (hdr[1] != 1 && hdr[1] != 2 && hdr[1] != 3)) { fclose(f); return 0; }
+    int ver = (int)hdr[1];
     int n = (int)hdr[2];
     if (n > RK_MAX_MODELS) n = RK_MAX_MODELS;
     for (int i = 0; i < n; i++) {
@@ -202,12 +203,13 @@ int models_load(const char *path) {
         if (fread(&m->nch, 4, 1, f) != 1) break;
         if (fread(m->size.e, 4, 3, f) != 3) break;
         if (m->nch < 1 || m->nch > MODEL_MAX_CHILDREN) break;
-        if (v1) {
-            uint8_t rec[MODELS_V1_BLKSZ]; int ok = 1;
+        if (ver < 3) {
+            int rec = ver == 1 ? MODELS_V1_BLKSZ : MODELS_V2_BLKSZ;
+            uint8_t buf[MODELS_V2_BLKSZ]; int ok = 1;
             for (int c = 0; c < m->nch; c++) {
-                if (fread(rec, MODELS_V1_BLKSZ, 1, f) != 1) { ok = 0; break; }
-                memcpy(&m->ch[c], rec, MODELS_V1_BLKSZ);
-                m->ch[c].trig = 0; m->ch[c].act = 0;
+                if (fread(buf, rec, 1, f) != 1) { ok = 0; break; }
+                world_block_migrate(&m->ch[c], buf, ver);
+                m->ch[c].id = 0;            /* children don't need ids */
             }
             if (!ok) break;
         } else if (fread(m->ch, sizeof(Block), m->nch, f) != (size_t)m->nch) break;

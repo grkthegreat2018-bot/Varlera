@@ -4,6 +4,7 @@
 #include "camera.h"
 #include "panel.h"
 #include "model.h"
+#include "tex.h"
 #include "rk.h"
 #include "math3d.h"
 #include <string.h>
@@ -81,7 +82,13 @@ void unfuse_block(int i) {
         for (int k = 0; k < (fb.rot & 3); k++) p = v3_make(p.z, p.y, -p.x); /* matches shader rotY */
         int ni = world_add(v3_add(fb.pos, p), ch.size, ch.shape,
                            (ch.rot + fb.rot) & 3, ch.col);
-        if (ni >= 0) { g_blocks[ni].tex = ch.tex; g_blocks[ni].flags = ch.flags; }
+        if (ni >= 0) {
+            g_blocks[ni].tex = ch.tex; g_blocks[ni].texm = ch.texm;
+            g_blocks[ni].alpha = ch.alpha; g_blocks[ni].flags = ch.flags;
+            g_blocks[ni].trig = ch.trig; g_blocks[ni].act = ch.act;
+            g_blocks[ni].actParam = ch.actParam; g_blocks[ni].tgt = ch.tgt;
+            memcpy(g_blocks[ni].name, ch.name, sizeof ch.name);
+        }
     }
     for (int j = first; j < g_nb; j++) { A.sel[j] = 1; A.nsel++; }
 }
@@ -187,7 +194,12 @@ static void place_commit(void) {
     if (!a) return;
     world_push_undo();
     int ni = world_add(A.ghostPos, a->size, a->mesh, A.placeRot, A.paintCol);
-    if (ni >= 0) g_blocks[ni].tex = (uint8_t)A.paintTex;
+    if (ni >= 0) {
+        g_blocks[ni].tex = (uint8_t)A.paintTex;
+        g_blocks[ni].texm = (uint8_t)A.paintTexM;
+        g_blocks[ni].alpha = A.paintAlpha;
+        if (A.paintAlpha < 1.0f) g_blocks[ni].flags |= BF_GLASS;
+    }
 }
 
 static void begin_move(v3 hitPoint) {
@@ -263,9 +275,10 @@ static void clone_selection(void) { /* duplicate selected blocks in place, selec
     sel_clear();
     for (int i = 0; i < n; i++) {
         Block b = g_blocks[src[i]];
-        int ni = world_add(b.pos, b.size, b.shape, b.rot, b.col);
+        int ni = world_addb(&b);
         if (ni >= 0) {
-            g_blocks[ni].tex = b.tex; g_blocks[ni].flags = b.flags & ~BF_LOCKED;
+            g_blocks[ni].id = g_nextid++;       /* clones are new instances */
+            g_blocks[ni].flags &= ~BF_LOCKED;
             A.sel[ni] = 1; A.nsel++;
         }
     }
@@ -294,9 +307,10 @@ static void paste_clip(v3 at) {
         b.pos.x = snapf(b.pos.x, GRID_SNAP); b.pos.z = snapf(b.pos.z, GRID_SNAP);
         float half = block_eff_size(&b).y*0.5f;
         if (b.pos.y < half) b.pos.y = half;
-        int ni = world_add(b.pos, b.size, b.shape, b.rot, b.col);
+        int ni = world_addb(&b);
         if (ni >= 0) {
-            g_blocks[ni].tex = b.tex; g_blocks[ni].flags = b.flags & ~BF_LOCKED;
+            g_blocks[ni].id = g_nextid++;
+            g_blocks[ni].flags &= ~BF_LOCKED;
             A.sel[ni] = 1; A.nsel++;
         }
     }
@@ -455,7 +469,7 @@ void edit_key(int key, int mods) {
         break;
     case GLFW_KEY_Z: if (ctrl && world_undo()) { sel_clear(); } break;
     case GLFW_KEY_Y: if (ctrl && world_redo()) { sel_clear(); } break;
-    case GLFW_KEY_S: if (ctrl) { world_save("world.bw"); puts("saved world.bw"); } break;
+    case GLFW_KEY_S: if (ctrl) { world_save("world.bw"); tex_save("textures.bw"); puts("saved"); } break;
     case GLFW_KEY_LEFT: case GLFW_KEY_RIGHT:
     case GLFW_KEY_UP:   case GLFW_KEY_DOWN:
         /* nudge selection 0.5 in view-relative horizontal direction */
@@ -470,7 +484,7 @@ void edit_key(int key, int mods) {
                 g_blocks[i].pos = v3_add(g_blocks[i].pos, v3_scale(d, SIZE_SNAP));
         }
         break;
-    case GLFW_KEY_F5: world_save("world.bw"); puts("saved world.bw"); break;
+    case GLFW_KEY_F5: world_save("world.bw"); tex_save("textures.bw"); puts("saved"); break;
     case GLFW_KEY_F9:
         if (world_load("world.bw")) puts("loaded world.bw"); else puts("no world.bw");
         sel_clear();
@@ -499,7 +513,9 @@ void edit_update(void) {
 /* ---------------- draw ---------------- */
 
 static uint32_t block_flag(const Block *b) {
-    uint32_t f = ((uint32_t)b->rot << 1) | RKIF_TEX(b->tex);
+    uint32_t f = ((uint32_t)b->rot << 1) | RKIF_TEX(b->tex) |
+                 RKIF_TEXM(b->texm & 3u);
+    if (b->texm & TEXM_OVR) f |= RKIF_TEXOVR;
     if (b->shape >= RK_MESH_BASE_MODEL) f |= RKIF_VCOL;
     if (A.app == APP_PLAY) {
         int on = (A.trigHeld >> b->trig) & 1;
@@ -510,12 +526,18 @@ static uint32_t block_flag(const Block *b) {
 }
 
 void edit_draw_world(void) {
-    /* instanced draw: one call per mesh type (built-ins + baked models) */
+    /* instanced draw: one call per mesh type (built-ins + baked models).
+     * translucent blocks (alpha<1 or BF_GLASS) go through rk_ghost last,
+     * sorted far->near for roughly correct blending. */
     static RkInst insts[RK_MESH_BASE_MODEL + RK_MAX_MODELS][MAX_BLOCKS];
     static uint32_t cnt[RK_MESH_BASE_MODEL + RK_MAX_MODELS];
     memset(cnt, 0, sizeof cnt);
+    static int gi[MAX_BLOCKS];
+    int gn = 0;
     for (int i = 0; i < g_nb; i++) {
         Block *b = &g_blocks[i];
+        float al = (b->flags & BF_GLASS) ? fminf(b->alpha, 0.6f) : b->alpha;
+        if (al < 0.999f) { gi[gn++] = i; continue; }
         v3 es = block_eff_size(b);
         RkInst in;
         memcpy(in.pos, b->pos.e, 12);
@@ -526,6 +548,34 @@ void edit_draw_world(void) {
     }
     for (int m = 0; m < RK_MESH_BASE_MODEL + RK_MAX_MODELS; m++)
         if (cnt[m]) rk_world(m, insts[m], cnt[m]);
+
+    /* translucent: sort by view depth, emit runs of same mesh */
+    for (int i = 1; i < gn; i++) {            /* insertion sort, far first */
+        int k = gi[i], j = i - 1;
+        float dk = v3_dot(v3_sub(g_blocks[k].pos, A.camPos), cam_basis().f);
+        while (j >= 0 && v3_dot(v3_sub(g_blocks[gi[j]].pos, A.camPos), cam_basis().f) < dk) {
+            gi[j+1] = gi[j]; j--;
+        }
+        gi[j+1] = k;
+    }
+    int gi0 = 0;
+    while (gi0 < gn) {
+        int sh = g_blocks[gi[gi0]].shape, gi1 = gi0;
+        static RkInst tinst[MAX_BLOCKS];
+        uint32_t tn = 0;
+        while (gi1 < gn && g_blocks[gi[gi1]].shape == sh) {
+            Block *b = &g_blocks[gi[gi1]];
+            float al = (b->flags & BF_GLASS) ? fminf(b->alpha, 0.6f) : b->alpha;
+            v3 es = block_eff_size(b);
+            memcpy(tinst[tn].pos, b->pos.e, 12);
+            memcpy(tinst[tn].scale, es.e, 12);
+            tinst[tn].color = rk_rgba(b->col[0], b->col[1], b->col[2], al);
+            tinst[tn].flags = block_flag(b);
+            tn++; gi1++;
+        }
+        rk_ghost(sh, tinst, tn);
+        gi0 = gi1;
+    }
 
     /* selection boxes + hover */
     static RkInst lines[MAX_BLOCKS + 8];
@@ -574,7 +624,9 @@ void edit_draw_world(void) {
         memcpy(g.pos, A.ghostPos.e, 12);
         memcpy(g.scale, A.ghostSize.e, 12);
         g.color = rk_rgba(A.paintCol[0],A.paintCol[1],A.paintCol[2], 0.55f);
-        g.flags = (uint32_t)(A.placeRot << 1) | RKIF_TEX(A.paintTex);
+        g.flags = (uint32_t)(A.placeRot << 1) | RKIF_TEX(A.paintTex) |
+                  RKIF_TEXM(A.paintTexM & 3u);
+        if (A.paintTexM & TEXM_OVR) g.flags |= RKIF_TEXOVR;
         if (A.ghostShapeMesh >= RK_MESH_BASE_MODEL) g.flags |= RKIF_VCOL;
         rk_ghost(A.ghostShapeMesh, &g, 1);
         RkInst l = g;

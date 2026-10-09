@@ -7,7 +7,7 @@ layout(location = 6) in vec3 inCol;     /* baked vertex color (VCOL models) */
 layout(location = 2) in vec3 iPos;
 layout(location = 3) in vec3 iScale;
 layout(location = 4) in vec4 iCol;      /* RGBA8 UNORM */
-layout(location = 5) in uint iFlags;    /* bit0 unlit, bits1-2 rot90, 5-8 tex, 9 vcol, 10 spin */
+layout(location = 5) in uint iFlags;    /* 0 unlit, 1-2 rot, 5-10 tex, 11-12 texm, 13 texovr, 14 vcol, 15 spin */
 
 layout(set = 0, binding = 0) uniform UBO {
     mat4 viewProj;
@@ -24,6 +24,8 @@ layout(location = 1) out vec3 vWorld;
 layout(location = 2) out vec4 vColor;
 layout(location = 3) flat out uint vFlags;
 layout(location = 4) out vec3 vLocal;   /* world-space offset from block center */
+layout(location = 5) out vec3 vScale;   /* block size (texture stretch normalizer) */
+layout(location = 6) flat out float vSeed;  /* per-instance hash seed (proc tex) */
 
 vec2 rotY(vec2 p, uint k) {
     if (k == 1u) return vec2(p.y, -p.x);
@@ -43,7 +45,7 @@ void main() {
     uint k = (iFlags >> 1) & 3u;
     lp.xz = rotY(lp.xz, k);
     n.xz  = rotY(n.xz, k);
-    if ((iFlags & 1024u) != 0u) {        /* RKIF_SPIN: play-mode spin about Y */
+    if ((iFlags & 32768u) != 0u) {        /* RKIF_SPIN: play-mode spin about Y */
         float a = u.camPos.w * 2.6;
         lp.xz = spinY(lp.xz, a);
         n.xz  = spinY(n.xz, a);
@@ -52,7 +54,9 @@ void main() {
     vec4 w = vec4(iPos + lp, 1.0);
     vWorld = w.xyz;
     vNrm = n;
-    vColor = (iFlags & 512u) != 0u ? vec4(inCol, iCol.a) : iCol;
+    vScale = iScale;
+    vSeed = fract(sin(dot(iPos, vec3(12.9898, 78.233, 37.719))) * 43758.5453);
+    vColor = (iFlags & 16384u) != 0u ? vec4(inCol, iCol.a) : iCol;
     vFlags = iFlags;
     gl_Position = u.viewProj * w;
 }

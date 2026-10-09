@@ -3,6 +3,7 @@
 #include "app.h"
 #include "edit.h"
 #include "model.h"
+#include "tex.h"
 #include "font.h"
 #include "math3d.h"
 #include <string.h>
@@ -84,6 +85,7 @@ void panel_init(void) {
     A.hsv[0] = 0.58f; A.hsv[1] = 0.7f; A.hsv[2] = 0.9f;
     A.nCustoms = 0;
     A.armedAsset = -1;
+    A.paintTex = 0; A.paintTexM = TEXM_LOOP; A.paintAlpha = 1.0f;
 }
 
 /* ---- helpers ---- */
@@ -213,10 +215,25 @@ static int custom_at(float x, float y) {
     return -1;
 }
 
-/* ---- texture swatch row (procedural patterns) ---- */
-static const char *TEXN[] = {"NONE","STUDS","CHECK","STRIP","DOTS","GRID"};
-#define N_TEX 6
+/* ---- texture swatch grid (atlas textures + mode/type/alpha) ---- */
+static const char *TEXMODE_NAME[] = {"STRETCH", "LOOP", "PROC"};
 static float tex_row_y(void) { return CUS_Y + ((A.nCustoms + 3) / 4) * 34.0f + 26.0f; }
+#define TEXCOLS 3
+#define TEXROWS 4
+static float texScroll;                 /* scroll offset in tex grid rows */
+
+/* apply current paint tex settings to selection */
+static void apply_tex_sel(void) {
+    if (!A.nsel) return;
+    world_push_undo();
+    for (int j = 0; j < g_nb; j++) if (A.sel[j]) {
+        g_blocks[j].tex = (uint8_t)A.paintTex;
+        g_blocks[j].texm = (uint8_t)A.paintTexM;
+        g_blocks[j].alpha = A.paintAlpha;
+        if (A.paintAlpha < 1.0f) g_blocks[j].flags |= BF_GLASS;
+        else g_blocks[j].flags &= ~BF_GLASS;
+    }
+}
 
 /* ---- input ---- */
 
@@ -291,17 +308,37 @@ int panel_press(double x, double y) {
         }
         int cu = custom_at(fx, fy);
         if (cu >= 0) { set_paint(A.customs[cu], 100 + cu); return 1; }
-        /* texture swatches */
+        /* texture header buttons: MODE / TYPE */
         float ty = tex_row_y();
-        for (int i = 0; i < N_TEX; i++) {
-            float tx0 = px + 10 + (i%3)*66.0f, ty0 = ty + (i/3)*28.0f;
+        if (in_rect(fx, fy, px + 62, ty - 18, 66, 16)) {   /* MODE cycle */
+            A.paintTexM = (A.paintTexM & ~3) | ((A.paintTexM + 1) % 3);
+            apply_tex_sel(); return 1;
+        }
+        if (in_rect(fx, fy, px + 132, ty - 18, 72, 16)) {  /* TYPE toggle */
+            A.paintTexM ^= TEXM_OVR;
+            apply_tex_sel(); return 1;
+        }
+        /* texture cells (scrolled list of atlas textures incl. id 0 NONE) */
+        float tgy = ty + 6;
+        int first = (int)texScroll * TEXCOLS;
+        for (int r = 0; r < TEXROWS; r++) for (int c = 0; c < TEXCOLS; c++) {
+            int i = first + r * TEXCOLS + c;
+            if (i >= g_ntex) break;
+            float tx0 = px + 10 + c * 66.0f, ty0 = tgy + r * 28.0f;
             if (in_rect(fx, fy, tx0, ty0, 62, 22)) {
                 A.paintTex = i;
-                if (A.nsel) {
-                    world_push_undo();
-                    for (int j = 0; j < g_nb; j++) if (A.sel[j])
-                        g_blocks[j].tex = (uint8_t)i;
-                }
+                apply_tex_sel();
+                return 1;
+            }
+        }
+        /* alpha row */
+        float ay = tgy + TEXROWS * 28.0f + 4.0f;
+        static const float AL[] = {1.0f, 0.75f, 0.5f, 0.25f};
+        for (int i = 0; i < 4; i++) {
+            float ax = px + 10 + i * 50.0f;
+            if (in_rect(fx, fy, ax, ay, 46, 20)) {
+                A.paintAlpha = AL[i];
+                apply_tex_sel();
                 return 1;
             }
         }
@@ -318,7 +355,7 @@ int panel_press(double x, double y) {
         float bx = btns[i].x, byy = by + (i/3)*30;
         if (in_rect(fx, fy, bx, byy, 62, 24)) {
             switch (i) {
-            case 0: world_save("world.bw"); break;
+            case 0: world_save("world.bw"); tex_save("textures.bw"); break;
             case 1: if (world_load("world.bw")) sel_clear(); break;
             case 2: if (world_undo()) sel_clear(); break;
             case 3: if (world_redo()) sel_clear(); break;
@@ -344,9 +381,18 @@ void panel_drag_update(void) {
 }
 
 void panel_scroll(double dy) {
-    if (!A.panelOpen || A.panelTab != 0) return;
-    A.panelScroll = clampf(A.panelScroll - (float)dy * 42.0f,
-                           0, fmaxf(0.0f, shapes_h() - (A.fbh - SHAPES_TOP)));
+    if (!A.panelOpen) return;
+    if (A.panelTab == 0) {
+        A.panelScroll = clampf(A.panelScroll - (float)dy * 42.0f,
+                               0, fmaxf(0.0f, shapes_h() - (A.fbh - SHAPES_TOP)));
+    } else if (A.panelTab == 1) {
+        /* scroll the texture grid when hovering its area */
+        float ty = tex_row_y() + 6;
+        if (A.my >= ty && A.my <= ty + TEXROWS * 28.0f) {
+            int rows = (g_ntex + TEXCOLS - 1) / TEXCOLS;
+            texScroll = clampf(texScroll - (float)dy, 0.0f, fmaxf(0.0f, (float)(rows - TEXROWS)));
+        }
+    }
 }
 
 static void draw_script_menu(void);          /* defined below */
@@ -508,17 +554,40 @@ static void draw_paint(float px) {
         rk_ui_rect(cx2, cy2, 40, 28, A.customs[i][0],A.customs[i][1],A.customs[i][2], 1);
     }
 
-    /* texture row */
+    /* texture section: label + MODE/TYPE buttons + scrollable tex grid + alpha */
     float ty = tex_row_y();
-    ui_text(px+12, ty - 14, "TEXTURE", 1, 0.7f,0.72f,0.8f, 1);
-    for (int i = 0; i < N_TEX; i++) {
-        float tx0 = px + 10 + (i%3)*66.0f, ty0 = ty + (i/3)*28.0f;
+    ui_text(px+12, ty - 14, "TEX", 1, 0.7f,0.72f,0.8f, 1);
+    rk_ui_rect(px + 62, ty - 18, 66, 16, 0.20f,0.24f,0.32f, 1);
+    ui_text(px + 66, ty - 14, TEXMODE_NAME[A.paintTexM & 3], 1, 0.9f,0.9f,0.95f, 1);
+    int ovr = (A.paintTexM & TEXM_OVR) != 0;
+    rk_ui_rect(px + 132, ty - 18, 72, 16,
+               ovr ? 0.45f : 0.20f, ovr ? 0.30f : 0.24f, ovr ? 0.22f : 0.32f, 1);
+    ui_text(px + 136, ty - 14, ovr ? "OVR" : "OVL", 1, 0.95f,0.95f,1.0f, 1);
+
+    float tgy = ty + 6;
+    int first = (int)texScroll * TEXCOLS;
+    for (int r = 0; r < TEXROWS; r++) for (int c = 0; c < TEXCOLS; c++) {
+        int i = first + r * TEXCOLS + c;
+        if (i >= g_ntex) break;
+        float tx0 = px + 10 + c * 66.0f, ty0 = tgy + r * 28.0f;
         int sel = (A.paintTex == i);
         int hov = in_rect((float)A.mx,(float)A.my, tx0, ty0, 62, 22);
         rk_ui_rect(tx0, ty0, 62, 22,
                    sel?0.30f:0.19f+hov*0.07f, sel?0.36f:0.20f+hov*0.07f, sel?0.48f:0.26f+hov*0.07f, 1);
-        ui_text(tx0 + (62 - ui_text_w(TEXN[i],1))/2, ty0 + 7, TEXN[i], 1,
+        ui_text(tx0 + (62 - ui_text_w(g_tex[i].name,1))/2, ty0 + 7, g_tex[i].name, 1,
                 sel?1.0f:0.8f, sel?1.0f:0.8f, sel?1.0f:0.9f, 1);
+    }
+    /* alpha presets */
+    float ay = tgy + TEXROWS * 28.0f + 4.0f;
+    static const float AL[] = {1.0f, 0.75f, 0.5f, 0.25f};
+    static const char *ALN[] = {"100%", "75%", "50%", "25%"};
+    ui_text(px + 12, ay + 24, "ALPHA", 1, 0.7f,0.72f,0.8f, 1);
+    for (int i = 0; i < 4; i++) {
+        float ax = px + 10 + i * 50.0f;
+        int sel = fabsf(A.paintAlpha - AL[i]) < 0.01f;
+        rk_ui_rect(ax, ay, 46, 20,
+                   sel ? 0.30f : 0.19f, sel ? 0.36f : 0.20f, sel ? 0.48f : 0.26f, AL[i]);
+        ui_text(ax + (46 - ui_text_w(ALN[i],1))/2, ay + 6, ALN[i], 1, 1,1,1, 1);
     }
     rk_ui_flush();
 }

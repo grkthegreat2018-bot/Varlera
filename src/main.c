@@ -9,6 +9,7 @@
 #include "edit.h"
 #include "panel.h"
 #include "model.h"
+#include "tex.h"
 #include "rk.h"
 #include "world.h"
 #include "math3d.h"
@@ -154,6 +155,7 @@ int main(void) {
 
     cam_init();
     panel_init();
+    tex_init();                  /* atlas: built-ins + textures.bw */
     models_init();               /* reload saved custom models */
     world_load("world.bw");      /* auto-load last world if present */
     A.app = APP_EDIT;
@@ -207,6 +209,7 @@ int main(void) {
         rk_end_frame();
     }
 
+    tex_save("textures.bw");
     rk_shutdown();
     glfwDestroyWindow(A.win);
     glfwTerminate();

@@ -32,6 +32,7 @@ typedef struct { m4 model; float color[4]; uint32_t flags; uint32_t pad[3]; } Pu
 typedef struct {
     m4 viewProj, iconVP, shadowVP;
     float camPos[4], lightDir[4], fogColor[4], fogParams[4];
+    float texRect[RK_TEX_MAX][4];   /* u0,v0,tileW,tileH per texture id */
 } UBO;
 
 typedef struct { float x, y, w, h, r, g, b, a; } UIRect;
@@ -72,6 +73,12 @@ static struct {
     VkImageView shadowView;
     VkDeviceMemory shadowMem;
     VkSampler shadowSamp;
+
+    /* texture atlas (fixed 1024x1024 RGBA, lives forever) */
+    VkImage texImg;
+    VkImageView texView;
+    VkDeviceMemory texMem;
+    VkSampler texSamp;
 
     VkDescriptorSetLayout setLayout0, setLayout1;
     VkDescriptorPool pool;
@@ -439,6 +446,60 @@ static void upload_vertices(void) {
     vkUnmapMemory(G.dev, stagM);
     vkDestroyBuffer(G.dev, stag, NULL);
     vkFreeMemory(G.dev, stagM, NULL);
+}
+
+/* ---------------- texture atlas ---------------- */
+
+void rk_tex_rect(int id, float u0, float v0, float tw, float th) {
+    if (id < 0 || id >= RK_TEX_MAX) return;
+    G.ubo.texRect[id][0] = u0; G.ubo.texRect[id][1] = v0;
+    G.ubo.texRect[id][2] = tw; G.ubo.texRect[id][3] = th;
+}
+
+static int s_texInit;
+
+void rk_tex_upload(const uint8_t *rgba) {
+    vkDeviceWaitIdle(G.dev);              /* texture edits are rare */
+    VkDeviceSize bytes = (VkDeviceSize)RK_TEX_ATLAS * RK_TEX_ATLAS * 4;
+    void *map; VkDeviceMemory stagM;
+    VkBuffer stag = buf_create(bytes, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, HOST_MEM, &stagM, &map);
+    memcpy(map, rgba, bytes);
+    VkCommandBufferAllocateInfo cai = {VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO};
+    cai.commandPool = G.cmdPool; cai.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY; cai.commandBufferCount = 1;
+    VkCommandBuffer c; VKC(vkAllocateCommandBuffers(G.dev, &cai, &c));
+    VkCommandBufferBeginInfo bbi = {VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
+    bbi.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+    VKC(vkBeginCommandBuffer(c, &bbi));
+    VkImageMemoryBarrier b = {VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER};
+    b.oldLayout = s_texInit ? VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL : VK_IMAGE_LAYOUT_UNDEFINED;
+    b.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+    b.srcQueueFamilyIndex = b.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    b.image = G.texImg;
+    b.subresourceRange = (VkImageSubresourceRange){VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+    b.srcAccessMask = s_texInit ? VK_ACCESS_SHADER_READ_BIT : 0;
+    b.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+    vkCmdPipelineBarrier(c, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+        VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, NULL, 0, NULL, 1, &b);
+    VkBufferImageCopy cp = {0};
+    cp.imageSubresource = (VkImageSubresourceLayers){VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
+    cp.imageExtent = (VkExtent3D){RK_TEX_ATLAS, RK_TEX_ATLAS, 1};
+    vkCmdCopyBufferToImage(c, stag, G.texImg, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &cp);
+    b.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+    b.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    b.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+    b.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+    vkCmdPipelineBarrier(c, VK_PIPELINE_STAGE_TRANSFER_BIT,
+        VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0, NULL, 0, NULL, 1, &b);
+    VKC(vkEndCommandBuffer(c));
+    VkSubmitInfo si = {VK_STRUCTURE_TYPE_SUBMIT_INFO};
+    si.commandBufferCount = 1; si.pCommandBuffers = &c;
+    VKC(vkQueueSubmit(G.queue, 1, &si, VK_NULL_HANDLE));
+    VKC(vkQueueWaitIdle(G.queue));
+    vkFreeCommandBuffers(G.dev, G.cmdPool, 1, &c);
+    vkUnmapMemory(G.dev, stagM);
+    vkDestroyBuffer(G.dev, stag, NULL);
+    vkFreeMemory(G.dev, stagM, NULL);
+    s_texInit = 1;
 }
 
 /* ---------------- baked model meshes ---------------- */
@@ -901,20 +962,35 @@ int rk_init(GLFWwindow *win) {
     sci.compareOp = VK_COMPARE_OP_LESS_OR_EQUAL;
     VKC(vkCreateSampler(G.dev, &sci, NULL, &G.shadowSamp));
 
-    /* descriptors: set0 = ubo/frame, set1 = shadow sampler */
+    /* texture atlas image + pixel-art sampler (nearest, clamp) */
+    make_image(RK_TEX_ATLAS, RK_TEX_ATLAS, VK_FORMAT_R8G8B8A8_UNORM,
+               VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT,
+               VK_IMAGE_ASPECT_COLOR_BIT, VK_SAMPLE_COUNT_1_BIT,
+               &G.texImg, &G.texMem, &G.texView);
+    VkSamplerCreateInfo tsi = {VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO};
+    tsi.magFilter = tsi.minFilter = VK_FILTER_NEAREST;
+    tsi.addressModeU = tsi.addressModeV = tsi.addressModeW =
+        VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+    VKC(vkCreateSampler(G.dev, &tsi, NULL, &G.texSamp));
+
+    /* descriptors: set0 = ubo/frame, set1 = shadow sampler + tex atlas */
     VkDescriptorSetLayoutBinding b0 = {0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1,
         VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, NULL};
     VkDescriptorSetLayoutCreateInfo li = {VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO};
     li.bindingCount = 1; li.pBindings = &b0;
     VKC(vkCreateDescriptorSetLayout(G.dev, &li, NULL, &G.setLayout0));
-    VkDescriptorSetLayoutBinding b1 = {0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1,
-        VK_SHADER_STAGE_FRAGMENT_BIT, NULL};
-    li.pBindings = &b1;
+    VkDescriptorSetLayoutBinding b1[2] = {
+        {0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1,
+            VK_SHADER_STAGE_FRAGMENT_BIT, NULL},
+        {1, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1,
+            VK_SHADER_STAGE_FRAGMENT_BIT, NULL},
+    };
+    li.bindingCount = 2; li.pBindings = b1;
     VKC(vkCreateDescriptorSetLayout(G.dev, &li, NULL, &G.setLayout1));
 
     VkDescriptorPoolSize psz[2] = {
         {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, MAX_FRAMES},
-        {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1}
+        {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 2}
     };
     VkDescriptorPoolCreateInfo pci = {VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO};
     pci.maxSets = MAX_FRAMES + 1; pci.poolSizeCount = 2; pci.pPoolSizes = psz;
@@ -924,11 +1000,19 @@ int rk_init(GLFWwindow *win) {
         VkDescriptorSetAllocateInfo dai = {VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO};
         dai.descriptorPool = G.pool; dai.descriptorSetCount = 1; dai.pSetLayouts = &G.setLayout1;
         VKC(vkAllocateDescriptorSets(G.dev, &dai, &G.set1));
-        VkDescriptorImageInfo dii = {G.shadowSamp, G.shadowView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
-        VkWriteDescriptorSet w = {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
-        w.dstSet = G.set1; w.dstBinding = 0; w.descriptorCount = 1;
-        w.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER; w.pImageInfo = &dii;
-        vkUpdateDescriptorSets(G.dev, 1, &w, 0, NULL);
+        VkDescriptorImageInfo dii[2] = {
+            {G.shadowSamp, G.shadowView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL},
+            {G.texSamp, G.texView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL},
+        };
+        VkWriteDescriptorSet w[2];
+        memset(w, 0, sizeof w);
+        for (int i = 0; i < 2; i++) {
+            w[i].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+            w[i].dstSet = G.set1; w[i].dstBinding = i; w[i].descriptorCount = 1;
+            w[i].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+            w[i].pImageInfo = &dii[i];
+        }
+        vkUpdateDescriptorSets(G.dev, 2, w, 0, NULL);
     }
 
     VkPushConstantRange pcr = {VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(Push)};
@@ -1012,6 +1096,10 @@ void rk_shutdown(void) {
     vkDestroyImage(G.dev, G.shadowImg, NULL);
     vkFreeMemory(G.dev, G.shadowMem, NULL);
     vkDestroySampler(G.dev, G.shadowSamp, NULL);
+    vkDestroyImageView(G.dev, G.texView, NULL);
+    vkDestroyImage(G.dev, G.texImg, NULL);
+    vkFreeMemory(G.dev, G.texMem, NULL);
+    vkDestroySampler(G.dev, G.texSamp, NULL);
     vkDestroyPipeline(G.dev, G.pGrid, NULL);
     vkDestroyPipeline(G.dev, G.pWorld, NULL);
     vkDestroyPipeline(G.dev, G.pWorldInst, NULL);

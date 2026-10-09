@@ -29,7 +29,8 @@ typedef enum {
 
 /* flags layout (both instanced + push-const paths):
  * bit0=unlit, bits1-2=rot90*k, bit3=no fog, bit4=iconVP (push path),
- * bits5-8=texture pattern id, bit9=use vertex color, bit10=spin in play */
+ * bits5-10=texture id (0=none), bits11-12=tex mode, bit13=tex override,
+ * bit14=use vertex color, bit15=spin in play */
 #define RKIF_UNLIT  1u
 #define RKIF_ROT0   0u
 #define RKIF_ROT90  2u
@@ -37,9 +38,17 @@ typedef enum {
 #define RKIF_ROT270 6u
 #define RKIF_NOFOG  8u
 #define RKF_ICON    16u
-#define RKIF_TEX(id)  ((uint32_t)((id) & 15) << 5)
-#define RKIF_VCOL   (1u << 9)
-#define RKIF_SPIN   (1u << 10)
+#define RKIF_TEX(id)  ((uint32_t)((id) & 63u) << 5)
+#define RKIF_TEXM(m)  ((uint32_t)((m) & 3u) << 11)
+#define RKIF_TEXOVR   (1u << 13)
+#define RKIF_VCOL   (1u << 14)
+#define RKIF_SPIN   (1u << 15)
+
+/* Block.texm packing: bits0-1 mode, bit2 override type */
+#define TEXM_STRETCH 0
+#define TEXM_LOOP    1
+#define TEXM_PROC    2
+#define TEXM_OVR     4
 
 typedef struct {
     float pos[3];
@@ -79,6 +88,13 @@ int  rk_gen_shape(int shape, Vert *dst, int maxverts);
 int  rk_model_mesh_add(const Vert *v, int n);
 void rk_models_commit(void);
 void rk_models_reset(void);     /* drop all baked verts (for rebuild) */
+
+/* --- texture atlas (tex.c owns contents) --- */
+#define RK_TEX_ATLAS 1024          /* atlas is 1024x1024 RGBA */
+#define RK_TEX_TILE  128           /* tile edge in px */
+#define RK_TEX_MAX   64            /* texture records (UBO table size) */
+void rk_tex_upload(const uint8_t *rgba);           /* push whole atlas */
+void rk_tex_rect(int id, float u0, float v0, float tw, float th); /* tiles */
 
 void rk_ui_rect(float px, float py, float pw, float ph, float r, float g, float b, float a);
 void rk_ui_flush(void);

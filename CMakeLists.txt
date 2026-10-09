@@ -38,6 +38,7 @@ add_executable(varlera
   src/edit.c
   src/panel.c
   src/model.c
+  src/tex.c
 )
 add_dependencies(varlera shaders)
 target_include_directories(varlera PRIVATE src ${VULKAN_INCLUDE_DIR})

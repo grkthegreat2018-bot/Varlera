@@ -67,7 +67,9 @@ typedef struct {
     float panelScroll;
     uint8_t catOpen[8];
     int curColor;                /* preset/custom index, -1 = picker */
-    int paintTex;                /* active texture pattern 0-15 */
+    int paintTex;                /* active atlas texture id (0 = none) */
+    int paintTexM;               /* TEXM_* mode|type bits for new/painted blocks */
+    float paintAlpha;            /* block opacity (1 = opaque) */
     float paintCol[3];           /* active paint color */
     float hsv[3];                /* picker state */
     float customs[8][3];

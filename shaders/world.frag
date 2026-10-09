@@ -5,6 +5,8 @@ layout(location = 1) in vec3 vWorld;
 layout(location = 2) in vec4 vColor;
 layout(location = 3) flat in uint vFlags;
 layout(location = 4) in vec3 vLocal;
+layout(location = 5) in vec3 vScale;
+layout(location = 6) flat in float vSeed;
 layout(location = 0) out vec4 outColor;
 
 layout(set = 0, binding = 0) uniform UBO {
@@ -15,9 +17,13 @@ layout(set = 0, binding = 0) uniform UBO {
     vec4 lightDir;
     vec4 fogColor;
     vec4 fogParams;
+    vec4 texRect[64];
 } u;
 
 layout(set = 1, binding = 0) uniform sampler2DShadow shadowMap;
+layout(set = 1, binding = 1) uniform sampler2D texAtlas;
+
+const float TUV = 128.0 / 1024.0;   /* one atlas tile in uv units */
 
 float shadowFactor(vec3 wp) {
     vec4 lp = u.shadowVP * vec4(wp, 1.0);
@@ -37,37 +43,54 @@ float shadowFactor(vec3 wp) {
     return s * 0.25;
 }
 
-/* procedural block textures (id in vFlags bits 5-8):
-   1 studs (Blocksworld lego bumps), 2 checker, 3 stripes, 4 dots, 5 fine grid */
-void applyTex(inout vec3 base, inout vec3 n, uint tex) {
-    if (tex == 0u) return;
-    vec2 pp = abs(n.y) > 0.6 ? vLocal.xz : (abs(n.x) > 0.6 ? vLocal.zy : vLocal.xy);
-    if (tex == 1u) {
-        if (n.y > 0.5f) {           /* studs only on top faces */
-            vec2 q = fract(vLocal.xz / 0.4) - 0.5;
-            float r = length(q);
-            float bump = smoothstep(0.20, 0.10, r);
-            n = normalize(n + vec3(q.x, 0.0, q.y) * bump * 1.6);
-            base *= 1.0 - 0.18 * smoothstep(0.24, 0.20, r) * (1.0 - bump);
-        }
-    } else if (tex == 2u) {
-        int c = int(floor(vLocal.x * 2.0) + floor(vLocal.y * 2.0) + floor(vLocal.z * 2.0));
-        if ((c & 1) != 0) base *= 0.78;
-    } else if (tex == 3u) {
-        if (fract(pp.x * 1.6) > 0.5) base *= 0.80;
-    } else if (tex == 4u) {
-        if (length(fract(pp * 2.5) - 0.5) < 0.16) base *= 0.72;
-    } else if (tex == 5u) {
-        vec2 g = abs(fract(pp * 4.0) - 0.5);
-        if (max(g.x, g.y) > 0.44) base *= 0.82;
+/* atlas textures: box-projected face UVs.
+   mode 0 stretch (whole face), 1 loop (per unit), 2 proc (random sub-tile per unit).
+   type: bit13 set = override (replace color, alpha cutout), clear = overlay (multiply). */
+uint texhash(uvec3 c, float seed) {
+    uint h = c.x * 1973u + c.y * 9277u + c.z * 26699u + uint(seed * 7919.0);
+    h ^= h >> 13u; h *= 2654435761u; h ^= h >> 16u;
+    return h;
+}
+
+vec4 sampleTex(vec3 n, uint tid, uint mode, out float cov) {
+    cov = 0.0;
+    vec4 tr = u.texRect[tid];
+    vec3 an = abs(n);
+    vec2 pp; vec2 fs;
+    if (an.y >= an.x && an.y >= an.z)      { pp = vLocal.xz; fs = vScale.xz; }
+    else if (an.x >= an.z)                 { pp = vLocal.zy; fs = vScale.zy; }
+    else                                   { pp = vLocal.xy; fs = vScale.xy; }
+    vec2 tuv;                             /* inside texture rect, tile units */
+    if (mode == 0u) {
+        tuv = (pp / fs + 0.5) * tr.zw;    /* stretch whole sheet across face */
+    } else if (mode == 1u) {
+        tuv = mod(pp + 0.5, tr.zw);       /* loop whole sheet every tileW/H units */
+    } else {
+        vec2 cell = floor(pp + 0.5);
+        uint h = texhash(uvec3(uvec2(cell + 1024.0), uint(tid)), vSeed);
+        int sw = int(tr.z), sh = int(tr.w);
+        vec2 st = vec2(h % uint(sw), (h / uint(sw)) % uint(sh));
+        tuv = st + fract(pp + 0.5);       /* random sub-tile per unit cell */
     }
+    cov = 1.0;
+    return texture(texAtlas, tr.xy + tuv * TUV);
 }
 
 void main() {
     if ((vFlags & 1u) != 0u) { outColor = vColor; return; }
     vec3 n = normalize(vNrm);
     vec3 base = vColor.rgb;
-    applyTex(base, n, (vFlags >> 5) & 15u);
+    uint tid = (vFlags >> 5) & 63u;
+    if (tid != 0u) {
+        float cov;
+        vec4 t = sampleTex(n, tid, (vFlags >> 11) & 3u, cov);
+        if ((vFlags & 8192u) != 0u) {      /* override: exact texture */
+            if (t.a < 0.5) discard;
+            base = t.rgb;
+        } else {                           /* overlay: tint keeps block color */
+            base *= mix(vec3(1.0), t.rgb * 2.0, t.a);
+        }
+    }
     vec3 L = normalize(u.lightDir.xyz);
     float diff = max(dot(n, L), 0.0);
     float hemi = 0.32 + 0.22 * (n.y * 0.5 + 0.5);  /* sky-ish ambient */
