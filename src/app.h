@@ -85,6 +85,12 @@ typedef struct {
     char search[33];            /* SHAPES filter (non-empty = filtered view) */
     char cmdBuf[96]; int cmdLen;
 
+    /* modal editors: 0 none, 1 pixel-art tool, 2 sculpt mode */
+    int modal;
+    int artTex;                  /* texture id being edited */
+    int artTool;                 /* 0 pen, 1 erase, 2 fill, 3 pick */
+    int artLMB;
+
     /* borderless fullscreen (F11): saved windowed rect for restore */
     int winX, winY, winW, winH, fullscreen;
 } App;

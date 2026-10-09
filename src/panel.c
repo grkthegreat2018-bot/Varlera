@@ -4,6 +4,7 @@
 #include "edit.h"
 #include "model.h"
 #include "tex.h"
+#include "art.h"
 #include "font.h"
 #include "math3d.h"
 #include <string.h>
@@ -342,6 +343,24 @@ int panel_press(double x, double y) {
                 return 1;
             }
         }
+        /* art tool: EDIT selected / NEW tex / NEW SHEET */
+        float ny = ay + 30.0f;
+        if (in_rect(fx, fy, px + 10, ny, 62, 22)) {
+            if (A.paintTex > 0 && A.paintTex < g_ntex) art_open(A.paintTex);
+            return 1;
+        }
+        if (in_rect(fx, fy, px + 76, ny, 62, 22)) {
+            int id = tex_new("TEX", 1, 1);
+            if (id > 0) { tex_commit(id); tex_save("textures.bw");
+                          A.paintTex = id; art_open(id); }
+            return 1;
+        }
+        if (in_rect(fx, fy, px + 142, ny, 62, 22)) {
+            int id = tex_new("SHEET", 3, 3);
+            if (id > 0) { tex_commit(id); tex_save("textures.bw");
+                          A.paintTex = id; art_open(id); }
+            return 1;
+        }
         return 1;
     }
 
@@ -588,6 +607,15 @@ static void draw_paint(float px) {
         rk_ui_rect(ax, ay, 46, 20,
                    sel ? 0.30f : 0.19f, sel ? 0.36f : 0.20f, sel ? 0.48f : 0.26f, AL[i]);
         ui_text(ax + (46 - ui_text_w(ALN[i],1))/2, ay + 6, ALN[i], 1, 1,1,1, 1);
+    }
+    /* art tool entry: EDIT / NEW / SHEET */
+    float ny = ay + 30.0f;
+    const char *nbn[] = {"EDIT", "NEW", "SHEET"};
+    for (int i = 0; i < 3; i++) {
+        float bx = px + 10 + i * 66.0f;
+        int hov = in_rect((float)A.mx,(float)A.my, bx, ny, 62, 22);
+        rk_ui_rect(bx, ny, 62, 22, 0.22f + hov*0.08f, 0.34f + hov*0.08f, 0.50f + hov*0.08f, 1);
+        ui_text(bx + (62 - ui_text_w(nbn[i],1))/2, ny + 7, nbn[i], 1, 1,1,1, 1);
     }
     rk_ui_flush();
 }

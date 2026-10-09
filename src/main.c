@@ -9,6 +9,7 @@
 #include "edit.h"
 #include "panel.h"
 #include "model.h"
+#include "art.h"
 #include "tex.h"
 #include "rk.h"
 #include "world.h"
@@ -58,6 +59,7 @@ static void toggle_fullscreen(void) {
 static void on_cursor(GLFWwindow *w, double x, double y) {
     double dx = x - A.mx, dy = y - A.my;
     A.mx = x; A.my = y;
+    if (A.modal == 1) { art_motion(); return; }
     if (A.drag == M_LOOK) cam_look((float)dx, (float)dy);
     if (A.drag == M_PAN)  cam_pan((float)dx, (float)dy);
     if (A.drag == M_MARQUEE) { A.marqX1 = (float)x; A.marqY1 = (float)y; }
@@ -66,6 +68,13 @@ static void on_cursor(GLFWwindow *w, double x, double y) {
 
 static void on_mouse(GLFWwindow *w, int button, int action, int mods) {
     (void)w;
+    if (A.modal == 1) {
+        if (button == GLFW_MOUSE_BUTTON_LEFT) {
+            if (action == GLFW_PRESS) art_press((float)A.mx, (float)A.my);
+            else art_release();
+        }
+        return;
+    }
     if (button == GLFW_MOUSE_BUTTON_LEFT) {
         if (action == GLFW_PRESS) {
             A.overPanel = panel_over(A.mx, A.my);
@@ -95,6 +104,7 @@ static int mods_ctrl(void) {
 
 static void on_scroll(GLFWwindow *w, double xoff, double yoff) {
     (void)w; (void)xoff;
+    if (A.modal == 1) { art_scroll(yoff); return; }
     if (panel_over(A.mx, A.my)) { panel_scroll(yoff); return; }
     if (A.drag == M_MOVE || A.drag == M_CLICK) {  /* raise/lower while moving */
         A.dyMove += (float)yoff * 0.5f;
@@ -112,6 +122,7 @@ static void on_scroll(GLFWwindow *w, double xoff, double yoff) {
 static void on_key(GLFWwindow *w, int key, int sc, int action, int mods) {
     (void)w; (void)sc;
     if (action == GLFW_RELEASE) return;
+    if (A.modal == 1) { art_key(key); return; }
     /* text input swallows keys first */
     if (A.textMode) {
         if (key == GLFW_KEY_ESCAPE || key == GLFW_KEY_ENTER) A.textMode = 0;
@@ -193,7 +204,7 @@ int main(void) {
             A.trigHeld = held;
             world_physics(dt, held);
         }
-        else if (A.app == APP_EDIT) { edit_update(); panel_drag_update(); }
+        else if (A.app == APP_EDIT && !A.modal) { edit_update(); panel_drag_update(); }
 
         if (!rk_begin_frame()) continue;
 
@@ -203,7 +214,7 @@ int main(void) {
 
         rk_draw_grid();
         edit_draw_world();
-        panel_draw();          /* queues UI + icons, flushes internally */
+        if (A.modal == 1) art_draw(); else panel_draw();   /* modal overlays editor */
         rk_ui_flush();
 
         rk_end_frame();

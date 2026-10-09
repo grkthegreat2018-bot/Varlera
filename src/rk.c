@@ -18,7 +18,7 @@
 
 #define MAX_FRAMES   2
 #define MAX_IMAGES   8
-#define MAX_UI_QUADS 8192
+#define MAX_UI_QUADS 16384
 #define MAX_VERTS    24576
 #define MAX_INST     8192
 #define MAX_Q        1024
