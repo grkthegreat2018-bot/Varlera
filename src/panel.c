@@ -739,8 +739,8 @@ void panel_draw(void) {
 }
 
 /* ---- block script menu: floats above the selection ---- */
-enum { SM_GRAV, SM_COLL, SM_LOCK, SM_TRIG, SM_ACT, SM_UNFUSE, SM_FUSE };
-static const char *SM_LABEL[] = {"GRAVITY","COLLIDE","LOCKED","TRIG","ACT","UNFUSE","FUSE ALL"};
+enum { SM_GRAV, SM_COLL, SM_LOCK, SM_TRIG, SM_ACT, SM_UNFUSE, SM_FUSE, SM_EDIT };
+static const char *SM_LABEL[] = {"GRAVITY","COLLIDE","LOCKED","TRIG","ACT","UNFUSE","FUSE ALL","RESCULPT"};
 static const char *TRIG_NAME[N_TRIGS] = {"ALWAYS","SPACE","W","A","S","D","E","Q","CLICK"};
 static const char *ACT_NAME[N_ACTS] = {"NONE","SPIN","GLOW","BOOST"};
 #define SM_W 152.0f
@@ -751,7 +751,13 @@ static int script_layout(float *bx, float *by, int acts[8]) {
     if (A.nsel == 1) {
         acts[nr++] = SM_GRAV; acts[nr++] = SM_COLL; acts[nr++] = SM_LOCK;
         acts[nr++] = SM_TRIG; acts[nr++] = SM_ACT;
-        if (g_blocks[sel_first()].shape >= RK_MESH_BASE_MODEL) acts[nr++] = SM_UNFUSE;
+        int si0 = sel_first();
+        int sh = g_blocks[si0].shape;
+        if (sh >= RK_MESH_BASE_MODEL) {
+            int mid = sh - RK_MESH_BASE_MODEL;
+            if (mid < g_nmodels && g_models[mid].vox) acts[nr++] = SM_EDIT;
+            acts[nr++] = SM_UNFUSE;
+        }
     } else {
         acts[nr++] = SM_FUSE; acts[nr++] = SM_LOCK;
     }
@@ -787,7 +793,7 @@ static void draw_script_menu(void) {
         float ry = by + 26.0f + r * 22.0f;
         int hov = in_rect((float)A.mx,(float)A.my, bx+4, ry, SM_W-8, 19);
         int btn = acts[r] == SM_FUSE || acts[r] == SM_UNFUSE ||
-                  acts[r] == SM_TRIG || acts[r] == SM_ACT;
+                  acts[r] == SM_TRIG || acts[r] == SM_ACT || acts[r] == SM_EDIT;
         rk_ui_rect(bx+4, ry, SM_W-8, 19,
                    btn ? 0.25f : 0.16f+hov*0.08f,
                    btn ? 0.42f : 0.17f+hov*0.08f,
@@ -842,6 +848,12 @@ int panel_script_click(double x, double y) {
             break;
         case SM_UNFUSE: unfuse_block(i); break;
         case SM_FUSE:   fuse_selection(); break;
+        case SM_EDIT: {
+            int mid = g_blocks[i].shape - RK_MESH_BASE_MODEL;
+            if (mid >= 0 && mid < g_nmodels && g_models[mid].vox)
+                sculpt_open_model(mid);
+            break;
+        }
         }
         return 1;
     }

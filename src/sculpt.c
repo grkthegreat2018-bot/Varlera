@@ -24,6 +24,7 @@ static int s_tool   = 0;          /* 0 add, 1 sub, 2 smooth */
 static int s_brush  = 1;          /* radius in cells (1 or 2) */
 static int s_scale  = 1;          /* baked asset size in blocks (1/2/4) */
 static int s_lmb    = 0;
+static int s_editMid = -1;        /* >=0: editing g_models[s_editMid] */
 
 /* ---------- voxel helpers ---------- */
 
@@ -200,8 +201,12 @@ static void mtet(Vert *o, int *n, int max, v3 p[4], float cl[4][3], int m) {
         int o1 = ns == 1 ? emp[0] : sol[0];
         int o2 = ns == 1 ? emp[1] : sol[1];
         int o3 = ns == 1 ? emp[2] : sol[2];
+        /* vert color comes from the SOLID end of each edge */
+        const float *c1 = ns == 1 ? cl[x] : cl[o1];
+        const float *c2 = ns == 1 ? cl[x] : cl[o2];
+        const float *c3 = ns == 1 ? cl[x] : cl[o3];
         etri(o,n,max, mid(p[x],p[o1]), mid(p[x],p[o2]), mid(p[x],p[o3]),
-             cl[x], cl[x], cl[x], ec);
+             c1, c2, c3, ec);
     } else {
         int a = sol[0], b = sol[1], c = emp[0], d = emp[1];
         v3 mac = mid(p[a],p[c]), mad = mid(p[a],p[d]);
@@ -251,23 +256,48 @@ int sculpt_bake_mesh(const uint16_t *vox, int size) {
 
 static void sculpt_done(int save) {
     if (save) {
-        if (model_sculpt(s_vox, s_scale) >= 0) {
+        if (s_editMid >= 0 && s_editMid < g_nmodels &&
+            g_models[s_editMid].vox) {
+            /* write back into the existing model; mesh ids stay dense */
+            Model *m = &g_models[s_editMid];
+            memcpy(m->voxd, s_vox, sizeof s_vox);
+            float sz = (float)s_scale;
+            m->size = v3_make(sz, sz, sz);
+            models_rebake_all();
+            models_save(NULL);
+        } else if (model_sculpt(s_vox, s_scale) >= 0) {
             rk_models_commit();
             models_save(NULL);
         }
     }
     memset(s_vox, 0, sizeof s_vox);
+    s_editMid = -1;
     A.modal = 0; s_lmb = 0;
 }
 
-void sculpt_open(void) {
-    memset(s_vox, 0, sizeof s_vox);
-    s_tool = 0; s_brush = 1; s_scale = 1; s_lmb = 0;
+static void sculpt_enter(void) {
+    s_tool = 0; s_brush = 1; s_lmb = 0;
     A.modal = 2; A.drag = M_IDLE; A.armedAsset = -1;
     sel_clear();
     /* park the camera looking at the grid */
     A.camPos = v3_make(2.4f, 1.8f, 2.4f);
     A.yaw = 0.785398f; A.pitch = -0.42f;
+}
+
+void sculpt_open(void) {
+    memset(s_vox, 0, sizeof s_vox);
+    s_scale = 1; s_editMid = -1;
+    sculpt_enter();
+}
+
+/* re-open an existing sculpted model for editing */
+void sculpt_open_model(int mid) {
+    if (mid < 0 || mid >= g_nmodels || !g_models[mid].vox) return;
+    memcpy(s_vox, g_models[mid].voxd, sizeof s_vox);
+    s_scale = (int)(g_models[mid].size.x + 0.5f);
+    if (s_scale < 1) s_scale = 1;
+    s_editMid = mid;
+    sculpt_enter();
 }
 
 /* ---------- UI ---------- */
@@ -357,7 +387,8 @@ void sculpt_draw(void) {
         inst[n].pos[0] = -h + (x + 0.5f) * cs;
         inst[n].pos[1] = (y + 0.5f) * cs;
         inst[n].pos[2] = -h + (z + 0.5f) * cs;
-        inst[n].scale[0] = inst[n].scale[1] = inst[n].scale[2] = cs;
+        /* 6% shrink: adjacent voxel faces are coplanar -> z-fight otherwise */
+        inst[n].scale[0] = inst[n].scale[1] = inst[n].scale[2] = cs * 0.94f;
         inst[n].color = rk_rgba(c[0], c[1], c[2], 1.0f);
         inst[n].flags = RKIF_NOFOG;
         n++;
@@ -397,7 +428,9 @@ void sculpt_draw(void) {
 
     /* toolbar */
     rk_ui_rect(0, 0, (float)A.fbw, 72, 0.05f, 0.06f, 0.08f, 0.85f);
-    ui_text(16, 16, "SCULPT MODE - SHAPE 16^3 VOXELS", 1, 0.9f, 0.92f, 1.0f, 1);
+    ui_text(16, 16, s_editMid >= 0 ? "SCULPT MODE - EDITING ASSET"
+                                   : "SCULPT MODE - NEW ASSET",
+            1, 0.9f, 0.92f, 1.0f, 1);
     for (int i = 0; i < SB_N; i++) {
         float bx = sbtn_x(i);
         int act = (i == SB_ADD && s_tool == 0) || (i == SB_SUB && s_tool == 1) ||

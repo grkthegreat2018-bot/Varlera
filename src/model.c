@@ -194,6 +194,14 @@ void model_delete(int mid) {
     models_save(NULL);
 }
 
+/* rebuild every model mesh in-place (mesh ids stay dense: 16+i) */
+void models_rebake_all(void) {
+    rk_models_reset();
+    for (int i = 0; i < g_nmodels; i++)
+        g_models[i].mesh = model_rebake(&g_models[i]);
+    rk_models_commit();
+}
+
 static const char *def_path(void) { return "models.bw"; }
 
 int models_save(const char *path) {

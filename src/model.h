@@ -27,5 +27,6 @@ int  model_sculpt(const uint16_t *vox, int size);   /* voxel model -> idx or -1 
 void model_delete(int mid);   /* unfuse all world instances, then remove */
 int  models_save(const char *path);
 int  models_load(const char *path);
+void models_rebake_all(void);       /* rebuild all GPU meshes (after vox edit) */
 
 #endif
