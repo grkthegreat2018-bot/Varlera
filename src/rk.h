@@ -19,6 +19,7 @@ typedef enum {
     RK_MESH_TORUS,
     RK_MESH_DOME,       /* hemisphere on a base disc */
     RK_MESH_PYRAMID,    /* 4-sided cone, apex up */
+    RK_MESH_CORNERW,    /* corner wedge: slopes down from one high corner */
     RK_MESH_COUNT
 } RkMesh;
 

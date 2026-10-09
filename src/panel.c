@@ -8,6 +8,7 @@
 #include <string.h>
 #include <stdio.h>
 #include <math.h>
+#include <ctype.h>
 
 #define PW      216.0f    /* panel width */
 #define STRIPW  26.0f     /* collapsed strip width */
@@ -15,6 +16,9 @@
 #define CELL    64.0f     /* item cell size */
 #define COLS    3
 #define TOPH    56.0f     /* header + tab bar */
+#define SRCHY   56.0f     /* search box y (SHAPES tab) */
+#define SRCHH   22.0f
+#define SHAPES_TOP (SRCHY + SRCHH + 6.0f)   /* 84: below the search box */
 
 /* ---- preset palette ---- */
 static const float PALETTE[][3] = {
@@ -25,40 +29,30 @@ static const float PALETTE[][3] = {
 };
 #define N_COLORS ((int)(sizeof PALETTE / sizeof PALETTE[0]))
 
-/* ---- assets: geometry only; color is separate ---- */
+/* ---- assets: only shapes you can't make by resizing others ---- */
 static const Asset ASSETS[] = {
-    /* SIMPLE */
+    /* PRIMITIVES */
     {"Block",      "Basic cube.",                           RK_MESH_CUBE,     {1,1,1}},
-    {"Half Block", "Half-height slab.",                     RK_MESH_CUBE,     {1,0.5f,1}},
-    {"Plate",      "Thin 2x2 floor plate.",                 RK_MESH_CUBE,     {2,0.25f,2}},
-    {"Small Block","Half-size cube.",                       RK_MESH_CUBE,     {0.5f,0.5f,0.5f}},
-    {"Big Block",  "2x scaled cube.",                       RK_MESH_CUBE,     {2,2,2}},
-    {"Brick",      "2x1 long block.",                       RK_MESH_CUBE,     {2,1,1}},
-    {"Beam",       "4x thin beam.",                         RK_MESH_CUBE,     {4,0.5f,0.5f}},
-    {"Panel",      "Tall thin wall.",                       RK_MESH_CUBE,     {3,2,0.25f}},
-    {"Pole",       "Slim column.",                          RK_MESH_CUBE,     {0.35f,1,0.35f}},
+    {"Sphere",     "Ball.",                                 RK_MESH_SPHERE,   {1,1,1}},
+    {"Cylinder",   "Round column.",                         RK_MESH_CYLINDER, {1,1,1}},
+    {"Cone",       "Pointy top.",                           RK_MESH_CONE,     {1,1,1}},
+    {"Dome",       "Half sphere.",                          RK_MESH_DOME,     {1,0.55f,1}},
+    {"Pyramid",    "Square pyramid.",                       RK_MESH_PYRAMID,  {1,1,1}},
     /* SLOPES */
     {"Wedge",      "45 deg ramp.",                          RK_MESH_WEDGE,    {1,1,1}},
-    {"Ramp",       "Wide 45 deg ramp.",                     RK_MESH_WEDGE,    {2,1,1}},
-    {"Tall Wedge", "Steep 2-high ramp.",                    RK_MESH_WEDGE,    {1,2,1}},
-    {"Pyramid",    "Square pyramid.",                       RK_MESH_PYRAMID,  {1,1,1}},
-    /* ROUND */
-    {"Cylinder",   "Round column.",                         RK_MESH_CYLINDER, {1,1,1}},
-    {"Tube",       "Wide flat ring section.",               RK_MESH_CYLINDER, {2,0.4f,2}},
-    {"Sphere",     "Ball.",                                 RK_MESH_SPHERE,   {1,1,1}},
-    {"Dome",       "Half sphere.",                          RK_MESH_DOME,     {1,0.55f,1}},
-    {"Cone",       "Pointy top.",                           RK_MESH_CONE,     {1,1,1}},
-    {"Wheel",      "Rolls sideways. Physics soon.",         RK_MESH_WHEEL,    {1,1,1}},
-    {"Torus",      "Donut ring.",                           RK_MESH_TORUS,    {1,0.4f,1}},
+    {"Corner",     "Corner wedge - slopes from one corner.",RK_MESH_CORNERW,  {1,1,1}},
+    /* PARTS */
+    {"Wheel",      "Rolls sideways.",                       RK_MESH_WHEEL,    {1,1,1}},
+    {"Torus",      "Donut ring / tire.",                    RK_MESH_TORUS,    {1,1,1}},
 };
 #define N_ASSETS ((int)(sizeof ASSETS / sizeof ASSETS[0]))
 
 typedef struct { const char *name; int first, count; } Cat;
 static const Cat CATS[] = {
-    {"SIMPLE",  0, 9},
-    {"SLOPES",  9, 4},
-    {"ROUND",  13, 7},
-    {"CUSTOM",  0, 0},          /* dynamic: fused models */
+    {"PRIMITIVES", 0, 6},
+    {"SLOPES",     6, 2},
+    {"PARTS",      8, 2},
+    {"CUSTOM",     0, 0},       /* dynamic: fused models + sculpted shapes */
 };
 #define N_CATS ((int)(sizeof CATS / sizeof CATS[0]))
 
@@ -113,8 +107,34 @@ static void hsv2rgb(float h, float s, float v, float out[3]) {
     }
 }
 
+/* ---- search filter (SHAPES tab) ---- */
+static int name_hit(const char *name) {
+    if (!A.search[0]) return 1;
+    char nl[64]; int i = 0;
+    for (; name[i] && i < 63; i++) nl[i] = (char)tolower((unsigned char)name[i]);
+    nl[i] = 0;
+    char q[33]; i = 0;
+    for (; A.search[i] && i < 32; i++) q[i] = (char)tolower((unsigned char)A.search[i]);
+    q[i] = 0;
+    return strstr(nl, q) != NULL;
+}
+
+static int match_ids(int *ids) {              /* fill filtered asset ids */
+    int n = 0;
+    for (int i = 0; i < N_ASSETS; i++)
+        if (name_hit(ASSETS[i].name)) ids[n++] = i;
+    for (int m = 0; m < g_nmodels; m++)
+        if (name_hit(g_models[m].name)) ids[n++] = N_ASSETS + m;
+    return n;
+}
+
 /* SHAPES tab content height */
 static float shapes_h(void) {
+    if (A.search[0]) {
+        int ids[N_ASSETS + RK_MAX_MODELS];
+        int n = match_ids(ids);
+        return HDRH + ((n + COLS - 1) / COLS) * CELL + 6.0f;
+    }
     float h = 0;
     for (int c = 0; c < N_CATS; c++) {
         h += HDRH;
@@ -123,12 +143,23 @@ static float shapes_h(void) {
     return h;
 }
 
-static float cy(float contentY) { return TOPH + contentY - A.panelScroll; }
+static float cy(float contentY) { return SHAPES_TOP + contentY - A.panelScroll; }
 
 /* asset at screen pos (SHAPES tab), -1 none */
 static int asset_at(float x, float y) {
     float px = panel_x();
     float yy = 0;
+    if (A.search[0]) {                        /* filtered flat list */
+        int ids[N_ASSETS + RK_MAX_MODELS];
+        int n = match_ids(ids);
+        yy += HDRH;
+        for (int i = 0; i < n; i++) {
+            float cx0 = px + 8 + (i % COLS) * CELL;
+            float cy0 = cy(yy + (i / COLS) * CELL);
+            if (in_rect(x, y, cx0, cy0, CELL-4, CELL-4)) return ids[i];
+        }
+        return -1;
+    }
     for (int c = 0; c < N_CATS; c++) {
         yy += HDRH;
         if (A.catOpen[c]) {
@@ -197,7 +228,9 @@ int panel_over(double x, double y) {
 int panel_press(double x, double y) {
     float px = panel_x();
     if (in_rect((float)x,(float)y, 10, 10, 110, 34)) { app_toggle_mode(); return 1; }
-    if (x < px) return 0;
+    if (x < px) { A.textMode = 0; return 0; }
+    /* clicks anywhere but the search box defocus text input */
+    if (!in_rect((float)x,(float)y, px + 8, SRCHY, PW - 16, SRCHH)) A.textMode = 0;
     if (!A.panelOpen) { A.panelOpen = 1; return 1; }
     if (in_rect((float)x,(float)y, px + PW - 26, 4, 24, 22)) { A.panelOpen = 0; return 1; }
 
@@ -208,13 +241,18 @@ int panel_press(double x, double y) {
     float fx = (float)x, fy = (float)y;
 
     if (A.panelTab == 0) {           /* SHAPES */
+        /* search box */
+        if (in_rect(fx, fy, px + 8, SRCHY, PW - 16, SRCHH)) {
+            A.textMode = 1; return 1;
+        }
+        A.textMode = 0;
         float yy = 0;
         for (int c = 0; c < N_CATS; c++) {
             if (in_rect(fx, fy, px, cy(yy), PW, HDRH)) {
                 A.catOpen[c] ^= 1;
                 float ch = shapes_h();
-                if (A.panelScroll > ch - (A.fbh - TOPH))
-                    A.panelScroll = fmaxf(0, ch - (A.fbh - TOPH));
+                if (A.panelScroll > ch - (A.fbh - SHAPES_TOP))
+                    A.panelScroll = fmaxf(0, ch - (A.fbh - SHAPES_TOP));
                 return 1;
             }
             yy += HDRH;
@@ -308,7 +346,7 @@ void panel_drag_update(void) {
 void panel_scroll(double dy) {
     if (!A.panelOpen || A.panelTab != 0) return;
     A.panelScroll = clampf(A.panelScroll - (float)dy * 42.0f,
-                           0, fmaxf(0.0f, shapes_h() - (A.fbh - TOPH)));
+                           0, fmaxf(0.0f, shapes_h() - (A.fbh - SHAPES_TOP)));
 }
 
 static void draw_script_menu(void);          /* defined below */
@@ -323,10 +361,51 @@ static void ui_rect_clipped(float x, float y, float w, float h,
     rk_ui_rect(x, top, w, bot - top, r, g, b, a);
 }
 
+static void draw_cell_row(float px, float yy, int i, int ai, float cy0, float cy1) {
+    float ix = px + 8 + (i % COLS) * CELL;
+    float iy = cy(yy + (i / COLS) * CELL);
+    int hov = in_rect((float)A.mx,(float)A.my, ix, iy, CELL-4, CELL-4);
+    if (hov) A.hoverAsset = ai;
+    float bg = (A.armedAsset == ai) ? 0.30f : (hov ? 0.26f : 0.19f);
+    ui_rect_clipped(ix, iy, CELL-4, CELL-4, bg, bg+0.02f, bg+0.07f, 1, cy0, cy1);
+}
+
+static void draw_icon_cell(float px, float yy, int i, int ai, float cy0, float cy1) {
+    float ix = px + 8 + (i % COLS) * CELL;
+    float iy = cy(yy + (i / COLS) * CELL);
+    float t = iy < cy0 ? cy0 : iy;
+    float b = iy + CELL-4 > cy1 ? cy1 : iy + CELL-4;
+    const Asset *a = panel_asset(ai);
+    if (b - t > 4 && a)
+        rk_draw_icon(a->mesh, (int)ix, (int)t,
+                     (int)(CELL-4), (int)(b-t),
+                     A.paintCol[0], A.paintCol[1], A.paintCol[2]);
+}
+
 static void draw_shapes(float px) {
-    float cy0 = TOPH, cy1 = (float)A.fbh;
+    float cy0 = SHAPES_TOP, cy1 = (float)A.fbh;
     float yy = 0;
     A.hoverAsset = -1;
+
+    if (A.search[0]) {                        /* filtered flat list */
+        int ids[N_ASSETS + RK_MAX_MODELS];
+        int n = match_ids(ids);
+        char hdr[24]; snprintf(hdr, sizeof hdr, "RESULTS %d", n);
+        ui_text_clip(px + 12, cy(yy) + 5, hdr, 2, 0.85f,0.87f,0.95f,1, cy0, cy1);
+        yy += HDRH;
+        float cellsY = yy;
+        for (int i = 0; i < n; i++) draw_cell_row(px, cellsY, i, ids[i], cy0, cy1);
+        float ch = shapes_h(), vh = cy1 - cy0;
+        if (ch > vh) {
+            float sh = fmaxf(24.0f, vh * vh / ch);
+            float sy = cy0 + (vh - sh) * (A.panelScroll / (ch - vh));
+            rk_ui_rect(px + PW - 6, sy, 4, sh, 0.5f,0.55f,0.65f, 0.8f);
+        }
+        rk_ui_flush();
+        for (int i = 0; i < n; i++) draw_icon_cell(px, cellsY, i, ids[i], cy0, cy1);
+        return;
+    }
+
     for (int c = 0; c < N_CATS; c++) {
         float hy = cy(yy);
         int hov = in_rect((float)A.mx,(float)A.my, px, hy, PW, HDRH);
@@ -500,7 +579,19 @@ void panel_draw(void) {
                 selT?1.0f:0.65f, selT?1.0f:0.65f, selT?1.0f:0.7f, 1);
     }
 
-    if (A.panelTab == 0)      draw_shapes(px);
+    if (A.panelTab == 0) {
+        /* search box */
+        int foc = A.textMode == 1;
+        rk_ui_rect(px + 8, SRCHY, PW - 16, SRCHH,
+                   foc ? 0.24f : 0.15f, foc ? 0.26f : 0.16f, foc ? 0.34f : 0.21f, 1);
+        rk_ui_rect(px + 8, SRCHY, PW - 16, 1.5f, 0.4f,0.6f,0.9f, foc ? 0.9f : 0.4f);
+        char sb[48];
+        if (A.search[0]) snprintf(sb, sizeof sb, "SEARCH: %s", A.search);
+        else snprintf(sb, sizeof sb, "SEARCH");
+        ui_text(px + 14, SRCHY + 7, sb, 1,
+                foc ? 1.0f : 0.55f, foc ? 1.0f : 0.55f, foc ? 1.0f : 0.6f, 1);
+        draw_shapes(px);
+    }
     else if (A.panelTab == 1) draw_paint(px);
     else                      draw_world(px);
     rk_ui_flush();

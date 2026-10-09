@@ -77,6 +77,14 @@ typedef struct {
 
     double lastT, speedMsgT;
     uint16_t trigHeld;          /* play mode: bit per TRIG_* currently active */
+
+    /* text input: TM_* focus modes share key/char dispatch */
+    int textMode;               /* 0 off, 1 search bar, 2 console command */
+    char search[33];            /* SHAPES filter (non-empty = filtered view) */
+    char cmdBuf[96]; int cmdLen;
+
+    /* borderless fullscreen (F11): saved windowed rect for restore */
+    int winX, winY, winW, winH, fullscreen;
 } App;
 
 extern App A;

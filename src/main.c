@@ -29,6 +29,31 @@ void app_toggle_mode(void) {
 
 /* ---------------- glfw callbacks ---------------- */
 
+static void on_char(GLFWwindow *w, unsigned int cp) {
+    (void)w;
+    if (!A.textMode || cp < 32 || cp >= 127) return;
+    if (A.textMode == 1) {
+        int n = (int)strlen(A.search);
+        if (n < 32) { A.search[n] = (char)cp; A.search[n+1] = 0; }
+    } else if (A.textMode == 2) {
+        if (A.cmdLen < 95) { A.cmdBuf[A.cmdLen++] = (char)cp; A.cmdBuf[A.cmdLen] = 0; }
+    }
+}
+
+static void toggle_fullscreen(void) {
+    if (!A.fullscreen) {
+        glfwGetWindowPos(A.win, &A.winX, &A.winY);
+        glfwGetWindowSize(A.win, &A.winW, &A.winH);
+        GLFWmonitor *m = glfwGetPrimaryMonitor();
+        const GLFWvidmode *vm = glfwGetVideoMode(m);
+        glfwSetWindowMonitor(A.win, m, 0, 0, vm->width, vm->height, GLFW_DONT_CARE);
+        A.fullscreen = 1;
+    } else {
+        glfwSetWindowMonitor(A.win, NULL, A.winX, A.winY, A.winW, A.winH, GLFW_DONT_CARE);
+        A.fullscreen = 0;
+    }
+}
+
 static void on_cursor(GLFWwindow *w, double x, double y) {
     double dx = x - A.mx, dy = y - A.my;
     A.mx = x; A.my = y;
@@ -86,6 +111,16 @@ static void on_scroll(GLFWwindow *w, double xoff, double yoff) {
 static void on_key(GLFWwindow *w, int key, int sc, int action, int mods) {
     (void)w; (void)sc;
     if (action == GLFW_RELEASE) return;
+    /* text input swallows keys first */
+    if (A.textMode) {
+        if (key == GLFW_KEY_ESCAPE || key == GLFW_KEY_ENTER) A.textMode = 0;
+        else if (key == GLFW_KEY_BACKSPACE) {
+            if (A.textMode == 1) { int n = (int)strlen(A.search); if (n) A.search[n-1] = 0; }
+            else if (A.textMode == 2 && A.cmdLen) A.cmdBuf[--A.cmdLen] = 0;
+        }
+        return;
+    }
+    if (key == GLFW_KEY_F11 && action == GLFW_PRESS) { toggle_fullscreen(); return; }
     if (key == GLFW_KEY_TAB && (action == GLFW_PRESS)) { app_toggle_mode(); return; }
     if (key == GLFW_KEY_ESCAPE && A.app == APP_PLAY) { app_toggle_mode(); return; }
     if (A.app == APP_EDIT) edit_key(key, mods);
@@ -109,6 +144,7 @@ int main(void) {
     glfwSetInputMode(A.win, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
 
     glfwSetCursorPosCallback(A.win, on_cursor);
+    glfwSetCharCallback(A.win, on_char);
     glfwSetMouseButtonCallback(A.win, on_mouse);
     glfwSetScrollCallback(A.win, on_scroll);
     glfwSetKeyCallback(A.win, on_key);

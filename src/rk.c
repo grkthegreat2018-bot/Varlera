@@ -282,6 +282,19 @@ static int gen_dome(int lat, int lon) { /* upper hemisphere + bottom disc, unit 
     return s;
 }
 
+static int gen_cornerw(void) { /* apex at (-x,+y,-z) corner, crease to opposite */
+    int s = g_nv;
+    float h = 0.5f;
+    v3 d={-h,-h,-h}, c={h,-h,-h}, b={h,-h,h}, a={-h,-h,h};
+    v3 p={-h,h,-h};
+    quad(d,c,b,a, v3_make(0,-1,0));                 /* base */
+    tri(d,c,p, v3_make(0,0,-1));                    /* -z wall */
+    tri(a,d,p, v3_make(-1,0,0));                    /* -x wall */
+    tri(p,b,c, v3_norm(v3_make(1,1,0)));            /* slope toward +x */
+    tri(p,a,b, v3_norm(v3_make(0,1,1)));            /* slope toward +z */
+    return s;
+}
+
 static int gen_pyramid(void) { /* square pyramid, unit box */
     int s = g_nv;
     float h = 0.5f;
@@ -331,6 +344,7 @@ static int gen_by_index(int shape) {
     case RK_MESH_TORUS:    return gen_torus(20, 10);
     case RK_MESH_DOME:     return gen_dome(7, 16);
     case RK_MESH_PYRAMID:  return gen_pyramid();
+    case RK_MESH_CORNERW:  return gen_cornerw();
     }
     return g_nv;
 }
@@ -354,6 +368,7 @@ static void build_mesh_data(void) {
     G.meshOff[RK_MESH_TORUS]    = gen_torus(20, 10);
     G.meshOff[RK_MESH_DOME]     = gen_dome(7, 16);
     G.meshOff[RK_MESH_PYRAMID]  = gen_pyramid();
+    G.meshOff[RK_MESH_CORNERW]  = gen_cornerw();
     G.meshOff[MESH_PLANE]       = gen_plane();
     G.lineOff = gen_line_box();
     for (int i = 0; i < MESH_TOTAL; i++) {
