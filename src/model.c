@@ -3,6 +3,7 @@
 #include "model.h"
 #include "app.h"
 #include "edit.h"
+#include "sculpt.h"
 #include "math3d.h"
 #include <string.h>
 #include <stdio.h>
@@ -109,6 +110,16 @@ static int bake_mesh(const Block *rel, int n) {
     return rk_model_mesh_add(poolbuf, pn);
 }
 
+/* mesh bake for either model kind (children blocks vs sculpted voxels) */
+static int model_rebake(const Model *m) {
+    if (m->vox) {
+        int sz = (int)(m->size.x + 0.5f);
+        if (sz < 1) sz = 1;
+        return sculpt_bake_mesh(m->voxd, sz);
+    }
+    return bake_mesh(m->ch, m->nch);
+}
+
 /* ---------------- public api ---------------- */
 
 int model_bake(const Block *children, int n) {
@@ -140,6 +151,23 @@ int model_bake(const Block *children, int n) {
     return g_nmodels++;
 }
 
+/* sculpted voxel model: bake surface once, keep field for save/unfuse */
+int model_sculpt(const uint16_t *vox, int size) {
+    if (g_nmodels >= RK_MAX_MODELS) return -1;
+    int solid = 0;
+    for (int i = 0; i < MODEL_VOX_N; i++) if (vox[i] & 0x8000) solid++;
+    if (!solid) return -1;
+    Model *m = &g_models[g_nmodels];
+    memset(m, 0, sizeof *m);
+    snprintf(m->name, sizeof m->name, "SCULPT %d", g_nmodels + 1);
+    m->nch = 0; m->vox = 1;
+    m->size = v3_make((float)size, (float)size, (float)size);
+    memcpy(m->voxd, vox, sizeof m->voxd);
+    m->mesh = sculpt_bake_mesh(vox, size);
+    if (m->mesh < 0) return -1;
+    return g_nmodels++;
+}
+
 /* unfuse every placed instance of model `mid`, then drop the record and
    re-bake all meshes so mesh ids stay dense (16+i matches g_models[i]) */
 void model_delete(int mid) {
@@ -161,7 +189,7 @@ void model_delete(int mid) {
             A.clip[i].shape--;
     rk_models_reset();
     for (int i = 0; i < g_nmodels; i++)
-        g_models[i].mesh = bake_mesh(g_models[i].ch, g_models[i].nch);
+        g_models[i].mesh = model_rebake(&g_models[i]);
     rk_models_commit();
     models_save(NULL);
 }
@@ -171,14 +199,16 @@ static const char *def_path(void) { return "models.bw"; }
 int models_save(const char *path) {
     FILE *f = fopen(path ? path : def_path(), "wb");
     if (!f) return 0;
-    uint32_t hdr[3] = {0x44574D42u /* 'BWMD' */, 3, (uint32_t)g_nmodels};
+    uint32_t hdr[3] = {0x44574D42u /* 'BWMD' */, 4, (uint32_t)g_nmodels};
     fwrite(hdr, 4, 3, f);
     for (int i = 0; i < g_nmodels; i++) {
         Model *m = &g_models[i];
         fwrite(m->name, 1, 16, f);
-        fwrite(&m->nch, 4, 1, f);
+        int nrec = m->vox ? -1 : m->nch;      /* -1 marks a sculpted model */
+        fwrite(&nrec, 4, 1, f);
         fwrite(m->size.e, 4, 3, f);
-        fwrite(m->ch, sizeof(Block), m->nch, f);
+        if (m->vox) fwrite(m->voxd, 2, MODEL_VOX_N, f);
+        else      fwrite(m->ch, sizeof(Block), m->nch, f);
     }
     fclose(f);
     return 1;
@@ -192,7 +222,7 @@ int models_load(const char *path) {
     if (!f) return 0;
     uint32_t hdr[3];
     if (fread(hdr, 4, 3, f) != 3 || hdr[0] != 0x44574D42u ||
-        (hdr[1] != 1 && hdr[1] != 2 && hdr[1] != 3)) { fclose(f); return 0; }
+        (hdr[1] < 1 || hdr[1] > 4)) { fclose(f); return 0; }
     int ver = (int)hdr[1];
     int n = (int)hdr[2];
     if (n > RK_MAX_MODELS) n = RK_MAX_MODELS;
@@ -202,18 +232,23 @@ int models_load(const char *path) {
         if (fread(m->name, 1, 16, f) != 16) break;
         if (fread(&m->nch, 4, 1, f) != 1) break;
         if (fread(m->size.e, 4, 3, f) != 3) break;
-        if (m->nch < 1 || m->nch > MODEL_MAX_CHILDREN) break;
-        if (ver < 3) {
-            int rec = ver == 1 ? MODELS_V1_BLKSZ : MODELS_V2_BLKSZ;
-            uint8_t buf[MODELS_V2_BLKSZ]; int ok = 1;
-            for (int c = 0; c < m->nch; c++) {
-                if (fread(buf, rec, 1, f) != 1) { ok = 0; break; }
-                world_block_migrate(&m->ch[c], buf, ver);
-                m->ch[c].id = 0;            /* children don't need ids */
-            }
-            if (!ok) break;
-        } else if (fread(m->ch, sizeof(Block), m->nch, f) != (size_t)m->nch) break;
-        m->mesh = bake_mesh(m->ch, m->nch);
+        if (m->nch == -1 && ver >= 4) {          /* sculpted voxel model */
+            m->vox = 1; m->nch = 0;
+            if (fread(m->voxd, 2, MODEL_VOX_N, f) != MODEL_VOX_N) break;
+        } else {
+            if (m->nch < 1 || m->nch > MODEL_MAX_CHILDREN) break;
+            if (ver < 3) {
+                int rec = ver == 1 ? MODELS_V1_BLKSZ : MODELS_V2_BLKSZ;
+                uint8_t buf[MODELS_V2_BLKSZ]; int ok = 1;
+                for (int c = 0; c < m->nch; c++) {
+                    if (fread(buf, rec, 1, f) != 1) { ok = 0; break; }
+                    world_block_migrate(&m->ch[c], buf, ver);
+                    m->ch[c].id = 0;            /* children don't need ids */
+                }
+                if (!ok) break;
+            } else if (fread(m->ch, sizeof(Block), m->nch, f) != (size_t)m->nch) break;
+        }
+        m->mesh = model_rebake(m);
         if (m->mesh < 0) break;
         g_nmodels++;
     }

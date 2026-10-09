@@ -30,7 +30,7 @@ foreach(S ${SHADERS})
 endforeach()
 add_custom_target(shaders ALL DEPENDS ${SPV_FILES})
 
-add_executable(varlera
+add_executable(varlera WIN32
   src/main.c
   src/rk.c
   src/world.c
@@ -40,6 +40,7 @@ add_executable(varlera
   src/model.c
   src/tex.c
   src/art.c
+  src/sculpt.c
 )
 add_dependencies(varlera shaders)
 target_include_directories(varlera PRIVATE src ${VULKAN_INCLUDE_DIR})
@@ -53,6 +54,8 @@ add_custom_command(TARGET varlera POST_BUILD
 
 if(MSVC)
   target_compile_options(varlera PRIVATE /W3 /wd4201)
+  # GUI subsystem but keep main() (stderr still works when redirected)
+  target_link_options(varlera PRIVATE /ENTRY:mainCRTStartup)
   set_property(TARGET varlera PROPERTY VS_DEBUGGER_WORKING_DIRECTORY $<TARGET_FILE_DIR:varlera>)
   if(VARLERA_ASAN)
     target_compile_options(varlera PRIVATE /fsanitize=address)

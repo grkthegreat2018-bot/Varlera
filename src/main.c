@@ -10,6 +10,7 @@
 #include "panel.h"
 #include "model.h"
 #include "art.h"
+#include "sculpt.h"
 #include "tex.h"
 #include "rk.h"
 #include "world.h"
@@ -60,6 +61,7 @@ static void on_cursor(GLFWwindow *w, double x, double y) {
     double dx = x - A.mx, dy = y - A.my;
     A.mx = x; A.my = y;
     if (A.modal == 1) { art_motion(); return; }
+    if (A.modal == 2) { sculpt_move((int)x, (int)y); return; }
     if (A.drag == M_LOOK) cam_look((float)dx, (float)dy);
     if (A.drag == M_PAN)  cam_pan((float)dx, (float)dy);
     if (A.drag == M_MARQUEE) { A.marqX1 = (float)x; A.marqY1 = (float)y; }
@@ -72,6 +74,18 @@ static void on_mouse(GLFWwindow *w, int button, int action, int mods) {
         if (button == GLFW_MOUSE_BUTTON_LEFT) {
             if (action == GLFW_PRESS) art_press((float)A.mx, (float)A.my);
             else art_release();
+        }
+        return;
+    }
+    if (A.modal == 2) {
+        if (button == GLFW_MOUSE_BUTTON_LEFT) {
+            if (action == GLFW_PRESS) sculpt_press((int)A.mx, (int)A.my);
+            else sculpt_release();
+        } else if (button == GLFW_MOUSE_BUTTON_RIGHT) {
+            A.drag = (action == GLFW_PRESS) ? M_LOOK : M_IDLE;
+            if (action == GLFW_PRESS) { A.rmbX = A.mx; A.rmbY = A.my; }
+        } else if (button == GLFW_MOUSE_BUTTON_MIDDLE) {
+            A.drag = (action == GLFW_PRESS) ? M_PAN : M_IDLE;
         }
         return;
     }
@@ -105,6 +119,7 @@ static int mods_ctrl(void) {
 static void on_scroll(GLFWwindow *w, double xoff, double yoff) {
     (void)w; (void)xoff;
     if (A.modal == 1) { art_scroll(yoff); return; }
+    if (A.modal == 2) { sculpt_wheel(yoff); return; }
     if (panel_over(A.mx, A.my)) { panel_scroll(yoff); return; }
     if (A.drag == M_MOVE || A.drag == M_CLICK) {  /* raise/lower while moving */
         A.dyMove += (float)yoff * 0.5f;
@@ -123,6 +138,7 @@ static void on_key(GLFWwindow *w, int key, int sc, int action, int mods) {
     (void)w; (void)sc;
     if (action == GLFW_RELEASE) return;
     if (A.modal == 1) { art_key(key); return; }
+    if (A.modal == 2) { sculpt_key(key); return; }
     /* text input swallows keys first */
     if (A.textMode) {
         if (key == GLFW_KEY_ESCAPE || key == GLFW_KEY_ENTER) A.textMode = 0;
@@ -149,9 +165,19 @@ int main(void) {
     memset(&A, 0, sizeof A);
     if (!glfwInit()) { fputs("glfwInit failed\n", stderr); return 1; }
     glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
-    glfwWindowHint(GLFW_MAXIMIZED, GLFW_TRUE);
     A.win = glfwCreateWindow(1280, 720, "Varlera", NULL, NULL);
     if (!A.win) { fputs("window failed\n", stderr); return 1; }
+    /* start in borderless fullscreen: swap the window onto the primary
+       monitor at desktop resolution; F11 restores the windowed rect */
+    glfwGetWindowPos(A.win, &A.winX, &A.winY);
+    glfwGetWindowSize(A.win, &A.winW, &A.winH);
+    {
+        GLFWmonitor *m = glfwGetPrimaryMonitor();
+        const GLFWvidmode *vm = glfwGetVideoMode(m);
+        glfwSetWindowMonitor(A.win, m, 0, 0, vm->width, vm->height,
+                             GLFW_DONT_CARE);
+        A.fullscreen = 1;
+    }
     glfwGetFramebufferSize(A.win, &A.fbw, &A.fbh);
     glfwSetInputMode(A.win, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
 
@@ -214,7 +240,9 @@ int main(void) {
 
         rk_draw_grid();
         edit_draw_world();
-        if (A.modal == 1) art_draw(); else panel_draw();   /* modal overlays editor */
+        if (A.modal == 1) art_draw();
+        else if (A.modal == 2) sculpt_draw();
+        else panel_draw();                               /* modal overlays editor */
         rk_ui_flush();
 
         rk_end_frame();

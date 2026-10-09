@@ -75,6 +75,27 @@ void unfuse_block(int i) {
     world_delete(i);
     sel_clear();
     int first = g_nb;
+    if (m->vox) {
+        /* sculpted model: explode into one micro-cube per solid voxel */
+        float cs = m->size.x / 16.0f, h = m->size.x * 0.5f;
+        v3 sz = v3_make(cs, cs, cs);
+        for (int z = 0; z < 16 && g_nb < MAX_BLOCKS; z++)
+        for (int y = 0; y < 16 && g_nb < MAX_BLOCKS; y++)
+        for (int x = 0; x < 16 && g_nb < MAX_BLOCKS; x++) {
+            uint16_t v = m->voxd[(z*16 + y)*16 + x];
+            if (!(v & 0x8000)) continue;
+            float cc[3] = { ((v>>11)&31)/31.0f, ((v>>5)&63)/63.0f,
+                            (v&31)/31.0f };
+            v3 lp = v3_make((x + 0.5f)*cs - h, (y + 0.5f)*cs - h,
+                            (z + 0.5f)*cs - h);
+            v3 p = lp;
+            for (int k = 0; k < (fb.rot & 3); k++) p = v3_make(p.z, p.y, -p.x);
+            int ni = world_add(v3_add(fb.pos, p), sz, RK_MESH_CUBE, 0, cc);
+            if (ni >= 0) g_blocks[ni].alpha = 1.0f;
+        }
+        for (int j = first; j < g_nb; j++) { A.sel[j] = 1; A.nsel++; }
+        return;
+    }
     for (int c = 0; c < m->nch; c++) {
         Block ch = m->ch[c];
         /* re-apply parent rotation to child offsets */

@@ -5,6 +5,7 @@
 #include "model.h"
 #include "tex.h"
 #include "art.h"
+#include "sculpt.h"
 #include "font.h"
 #include "math3d.h"
 #include <string.h>
@@ -264,6 +265,10 @@ int panel_press(double x, double y) {
             A.textMode = 1; return 1;
         }
         A.textMode = 0;
+        /* sculpt entry button (fixed at panel bottom) */
+        if (in_rect(fx, fy, px + 8, (float)A.fbh - 34.0f, PW - 16, 26)) {
+            sculpt_open(); return 1;
+        }
         float yy = 0;
         for (int c = 0; c < N_CATS; c++) {
             if (in_rect(fx, fy, px, cy(yy), PW, HDRH)) {
@@ -688,6 +693,14 @@ void panel_draw(void) {
         ui_text(px + 14, SRCHY + 7, sb, 1,
                 foc ? 1.0f : 0.55f, foc ? 1.0f : 0.55f, foc ? 1.0f : 0.6f, 1);
         draw_shapes(px);
+        /* sculpt entry button (fixed at panel bottom) */
+        float sy = (float)A.fbh - 34.0f;
+        rk_ui_rect(px, sy - 8, PW, 42, 0.13f, 0.14f, 0.17f, 1);
+        int hov = in_rect((float)A.mx, (float)A.my, px + 8, sy, PW - 16, 26);
+        rk_ui_rect(px + 8, sy, PW - 16, 26,
+                   0.22f + hov*0.08f, 0.32f + hov*0.08f, 0.24f + hov*0.04f, 1);
+        ui_text(px + 8 + (PW - 16 - ui_text_w("SCULPT", 1)) * 0.5f, sy + 9,
+                "SCULPT", 1, 1, 1, 1, 1);
     }
     else if (A.panelTab == 1) draw_paint(px);
     else                      draw_world(px);
