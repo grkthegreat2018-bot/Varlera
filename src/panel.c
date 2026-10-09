@@ -241,12 +241,14 @@ static void apply_tex_sel(void) {
 
 int panel_over(double x, double y) {
     if (x >= panel_x()) return 1;
-    return y < 46 && x < 130;
+    return y < 46 && x < 244;
 }
 
 int panel_press(double x, double y) {
     float px = panel_x();
     if (in_rect((float)x,(float)y, 10, 10, 110, 34)) { app_toggle_mode(); return 1; }
+    if (A.app == APP_EDIT &&
+        in_rect((float)x,(float)y, 128, 10, 110, 34)) { sculpt_open(); return 1; }
     if (x < px) { A.textMode = 0; return 0; }
     /* clicks anywhere but the search box defocus text input */
     if (!in_rect((float)x,(float)y, px + 8, SRCHY, PW - 16, SRCHH)) A.textMode = 0;
@@ -649,6 +651,14 @@ void panel_draw(void) {
     rk_ui_rect(10, 10, 110, 34, play?0.25f:0.90f, play?0.75f:0.45f, play?0.35f:0.20f, 1);
     rk_ui_rect(10, 10, 110, 2, 1,1,1, 0.4f);
     ui_text(24, 19, play ? "> PLAY" : "|| EDIT", 2, 1,1,1,1);
+    if (play) {   /* edit mode: SCULPT button next to PLAY */
+        int hov = in_rect((float)A.mx, (float)A.my, 128, 10, 110, 34);
+        rk_ui_rect(128, 10, 110, 34, 0.30f+hov*0.10f, 0.42f+hov*0.10f,
+                   0.62f+hov*0.08f, 1);
+        rk_ui_rect(128, 10, 110, 2, 1,1,1, 0.4f);
+        ui_text(128.0f + (110.0f - (float)ui_text_w("SCULPT", 2)) * 0.5f, 19,
+                "SCULPT", 2, 1,1,1, 1);
+    }
 
     if (glfwGetTime() - A.speedMsgT < 1.6f) {
         char buf[32]; snprintf(buf, sizeof buf, "SPEED %d", (int)A.speed);

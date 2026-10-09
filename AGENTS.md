@@ -62,6 +62,19 @@ the action runs while the trigger key/button is held; BOOST is a thruster
 RMB on a CUSTOM cell deletes the model — placed instances auto-unfuse and
 mesh ids are re-baked dense. Eyedropper (RMB world click) picks color+texture.
 
+Modals (main.c routes all input by A.modal): 1 = pixel-art tool (art.c,
+PAINT tab EDIT/NEW/SHEET), 2 = sculpt mode (sculpt.c, SCULPT button top-left
+next to PLAY or SHAPES footer). Editor is paused while a modal is open;
+camera still flies. Sculpt: 16^3 voxel field, ADD/SUB/SMOOTH sphere brushes
+(BR1/BR2), 1X/2X/4X output size; DONE -> marching-tet bake -> CUSTOM model;
+RESCULPT row on a selected sculpted block reloads + edits it in place.
+models.bw v4 stores the voxel field (nch=-1 record) and re-bakes on load;
+unfusing a sculpted model explodes it into micro-cubes.
+
+Window: GUI subsystem (/ENTRY:mainCRTStartup, no console; stderr still works
+when redirected). Starts borderless fullscreen on the primary monitor;
+F11 toggles back to the saved windowed rect.
+
 ## Verify
 
 Debug config runs with the validation layer enabled — run it and check stderr for
