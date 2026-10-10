@@ -102,8 +102,8 @@ static int          cat_ai(int c, int i) {
     return c < 3 ? CATS[c].first + i : N_ASSETS + vox_model_idx(i);
 }
 
-static const char *TABS[] = {"SHAPES", "PAINT", "WORLD", "MODELS", "PROPS"};
-#define N_TABS 5
+static const char *TABS[] = {"SHAPES", "PAINT", "TEX", "WORLD", "MODELS", "PROPS"};
+#define N_TABS 6
 
 static void env_load(void);
 
@@ -325,12 +325,25 @@ static int custom_at(float x, float y) {
     return -1;
 }
 
-/* ---- texture swatch grid (atlas textures + mode/type/alpha) ---- */
+/* ---- TEX tab: art-tool row + mode/type + scrollable preview grid ---- */
 static const char *TEXMODE_NAME[] = {"STRETCH", "LOOP", "PROC"};
-static float tex_row_y(void) { return CUS_Y + ((A.nCustoms + 3) / 4) * 34.0f + 26.0f; }
-#define TEXCOLS 3
-#define TEXROWS 4
+static float alpha_y(void) { return CUS_Y + ((A.nCustoms + 3) / 4) * 34.0f + 22.0f; }
+#define TG_TOP   152.0f   /* texture grid top y */
+#define TG_CW    70.0f    /* cell stride x */
+#define TG_CH    70.0f    /* cell stride y */
+#define TG_IW    64.0f    /* preview image w/h */
+#define TEXCOLS  3
 static float texScroll;                 /* scroll offset in tex grid rows */
+static int tex_vis_rows(void) {
+    int r = (int)(((float)A.fbh - TG_TOP - 8.0f) / TG_CH);
+    return r < 1 ? 1 : r;
+}
+/* atlas uv rect for texture id (8 tiles per row: 128px tiles in 1024 atlas) */
+static void tex_uv(int id, float uv[4]) {
+    const Tex *t = &g_tex[id];
+    uv[0] = t->tx / 8.0f;            uv[1] = t->ty / 8.0f;
+    uv[2] = (t->tx + t->tw) / 8.0f;  uv[3] = (t->ty + t->th) / 8.0f;
+}
 
 /* apply current paint tex settings to selection */
 static void apply_tex_sel(void) {
@@ -374,7 +387,7 @@ int panel_press(double x, double y) {
 
     /* tabs */
     for (int t = 0; t < N_TABS; t++)
-        if (in_rect((float)x,(float)y, px + 4 + t*46, 30, 44, 22)) { A.panelTab = t; return 1; }
+        if (in_rect((float)x,(float)y, px + 4 + t*38, 30, 36, 22)) { A.panelTab = t; return 1; }
 
     float fx = (float)x, fy = (float)y;
 
@@ -433,66 +446,68 @@ int panel_press(double x, double y) {
         }
         int cu = custom_at(fx, fy);
         if (cu >= 0) { set_paint(A.customs[cu], 100 + cu); return 1; }
-        /* texture header buttons: MODE / TYPE */
-        float ty = tex_row_y();
-        if (in_rect(fx, fy, px + 62, ty - 18, 66, 16)) {   /* MODE cycle */
-            A.paintTexM = (A.paintTexM & ~3) | ((A.paintTexM + 1) % 3);
-            apply_tex_sel(); return 1;
-        }
-        if (in_rect(fx, fy, px + 132, ty - 18, 72, 16)) {  /* TYPE toggle */
-            A.paintTexM ^= TEXM_OVR;
-            apply_tex_sel(); return 1;
-        }
-        /* texture cells (scrolled list of atlas textures incl. id 0 NONE) */
-        float tgy = ty + 6;
-        int first = (int)texScroll * TEXCOLS;
-        for (int r = 0; r < TEXROWS; r++) for (int c = 0; c < TEXCOLS; c++) {
-            int i = first + r * TEXCOLS + c;
-            if (i >= g_ntex) break;
-            float tx0 = px + 10 + c * 66.0f, ty0 = tgy + r * 28.0f;
-            if (in_rect(fx, fy, tx0, ty0, 62, 22)) {
-                A.paintTex = i;
-                apply_tex_sel();
-                return 1;
-            }
-        }
         /* alpha slider (drag, applied to selection on release) */
-        float ay = tgy + TEXROWS * 28.0f + 4.0f;
+        float ay = alpha_y() + 16.0f;
         if (in_rect(fx, fy, sx, ay, PV_W, 20)) {
             A.paintAlpha = clampf((fx - sx) / PV_W, 0.05f, 1.0f);
             A.pickDrag = 3;
             return 1;
         }
-        /* art tool: EDIT selected / NEW tex / NEW SHEET */
-        float ny = ay + 30.0f;
-        if (in_rect(fx, fy, px + 10, ny, 62, 22)) {
+        return 1;
+    }
+
+    if (A.panelTab == 2) {           /* TEX */
+        /* art tool: EDIT selected / NEW tex / NEW SHEET (top of tab) */
+        if (in_rect(fx, fy, px + 10, 78, 64, 24)) {
             if (A.paintTex > 0 && A.paintTex < g_ntex) art_open(A.paintTex);
             return 1;
         }
-        if (in_rect(fx, fy, px + 76, ny, 62, 22)) {
+        if (in_rect(fx, fy, px + 82, 78, 64, 24)) {
             int id = tex_new("TEX", 1, 1);
             if (id > 0) { tex_commit(id); tex_save("textures.bw");
                           A.paintTex = id; art_open(id); }
             return 1;
         }
-        if (in_rect(fx, fy, px + 142, ny, 62, 22)) {
+        if (in_rect(fx, fy, px + 154, 78, 64, 24)) {
             int id = tex_new("SHEET", 3, 3);
             if (id > 0) { tex_commit(id); tex_save("textures.bw");
                           A.paintTex = id; art_open(id); }
             return 1;
         }
+        /* MODE / TYPE */
+        if (in_rect(fx, fy, px + 62, 114, 66, 22)) {
+            A.paintTexM = (A.paintTexM & ~3) | ((A.paintTexM + 1) % 3);
+            apply_tex_sel(); return 1;
+        }
+        if (in_rect(fx, fy, px + 138, 114, 80, 22)) {
+            A.paintTexM ^= TEXM_OVR;
+            apply_tex_sel(); return 1;
+        }
+        /* texture preview cells */
+        int first = (int)texScroll * TEXCOLS;
+        int vrows = tex_vis_rows();
+        for (int r = 0; r < vrows; r++) for (int c = 0; c < TEXCOLS; c++) {
+            int i = first + r * TEXCOLS + c;
+            if (i >= g_ntex) break;
+            float tx0 = px + 10 + c * TG_CW, ty0 = TG_TOP + r * TG_CH;
+            if (in_rect(fx, fy, tx0, ty0, TG_IW, TG_CH - 2)) {
+                A.paintTex = i;
+                apply_tex_sel();
+                return 1;
+            }
+        }
         return 1;
     }
 
-    if (A.panelTab == 3 || A.panelTab == 4) {  /* MODELS / PROPS grids */
-        int kind = A.panelTab - 3;
+    if (A.panelTab == 4 || A.panelTab == 5) {  /* MODELS / PROPS grids */
+        int kind = A.panelTab - 4;
         int m = model_at(kind, fx, fy);
         if (m >= 0) { A.armedAsset = N_ASSETS + m; A.drag = M_PLACE; }
         return 1;
     }
 
     /* WORLD tab */
-    if (A.panelTab != 2) return 1;
+    if (A.panelTab != 3) return 1;
     float by = 80;
     struct { float x; const char *n; } btns[] = {
         {px+8, "SAVE"}, {px+76, "LOAD"}, {px+144, "UNDO"},
@@ -549,15 +564,15 @@ void panel_scroll(double dy) {
     if (A.panelTab == 0) {
         A.panelScroll = clampf(A.panelScroll - (float)dy * 42.0f,
                                0, fmaxf(0.0f, shapes_h() - (A.fbh - SHAPES_TOP)));
-    } else if (A.panelTab == 3 || A.panelTab == 4) {
+    } else if (A.panelTab == 4 || A.panelTab == 5) {
         A.panelScroll = clampf(A.panelScroll - (float)dy * 42.0f,
-                               0, fmaxf(0.0f, models_h(A.panelTab - 3) - (A.fbh - SHAPES_TOP)));
-    } else if (A.panelTab == 1) {
+                               0, fmaxf(0.0f, models_h(A.panelTab - 4) - (A.fbh - SHAPES_TOP)));
+    } else if (A.panelTab == 2) {
         /* scroll the texture grid when hovering its area */
-        float ty = tex_row_y() + 6;
-        if (A.my >= ty && A.my <= ty + TEXROWS * 28.0f) {
+        if (A.my >= TG_TOP) {
             int rows = (g_ntex + TEXCOLS - 1) / TEXCOLS;
-            texScroll = clampf(texScroll - (float)dy, 0.0f, fmaxf(0.0f, (float)(rows - TEXROWS)));
+            texScroll = clampf(texScroll - (float)dy, 0.0f,
+                               fmaxf(0.0f, (float)(rows - tex_vis_rows())));
         }
     }
 }
@@ -750,45 +765,86 @@ static void draw_paint(float px) {
         rk_ui_rect(cx2, cy2, 40, 28, A.customs[i][0],A.customs[i][1],A.customs[i][2], 1);
     }
 
-    /* texture section: label + MODE/TYPE buttons + scrollable tex grid + alpha */
-    float ty = tex_row_y();
-    ui_text(px+12, ty - 14, "TEX", 1, 0.7f,0.72f,0.8f, 1);
-    rk_ui_rect(px + 62, ty - 18, 66, 16, 0.20f,0.24f,0.32f, 1);
-    ui_text(px + 66, ty - 14, TEXMODE_NAME[A.paintTexM & 3], 1, 0.9f,0.9f,0.95f, 1);
-    int ovr = (A.paintTexM & TEXM_OVR) != 0;
-    rk_ui_rect(px + 132, ty - 18, 72, 16,
-               ovr ? 0.45f : 0.20f, ovr ? 0.30f : 0.24f, ovr ? 0.22f : 0.32f, 1);
-    ui_text(px + 136, ty - 14, ovr ? "OVR" : "OVL", 1, 0.95f,0.95f,1.0f, 1);
-
-    float tgy = ty + 6;
-    int first = (int)texScroll * TEXCOLS;
-    for (int r = 0; r < TEXROWS; r++) for (int c = 0; c < TEXCOLS; c++) {
-        int i = first + r * TEXCOLS + c;
-        if (i >= g_ntex) break;
-        float tx0 = px + 10 + c * 66.0f, ty0 = tgy + r * 28.0f;
-        int sel = (A.paintTex == i);
-        int hov = in_rect((float)A.mx,(float)A.my, tx0, ty0, 62, 22);
-        rk_ui_rect(tx0, ty0, 62, 22,
-                   sel?0.30f:0.19f+hov*0.07f, sel?0.36f:0.20f+hov*0.07f, sel?0.48f:0.26f+hov*0.07f, 1);
-        ui_text(tx0 + (62 - ui_text_w(g_tex[i].name,1))/2, ty0 + 7, g_tex[i].name, 1,
-                sel?1.0f:0.8f, sel?1.0f:0.8f, sel?1.0f:0.9f, 1);
-    }
     /* alpha slider: track + handle + % readout */
-    float ay = tgy + TEXROWS * 28.0f + 4.0f;
+    float ay = alpha_y() + 16.0f;
     char albuf[16]; snprintf(albuf, sizeof albuf, "ALPHA %d%%", (int)(A.paintAlpha * 100.0f + 0.5f));
+    ui_text(px + 12, alpha_y(), albuf, 1, 0.7f,0.72f,0.8f, 1);
     rk_ui_rect(sx, ay + 8, PV_W, 5, 0.10f,0.11f,0.14f, 1);
     rk_ui_rect(sx, ay + 8, PV_W * A.paintAlpha, 5, 0.35f,0.60f,0.90f, 1);
     float hx2 = sx + PV_W * A.paintAlpha;
     rk_ui_rect(hx2 - 3, ay + 2, 6, 17, 0.95f,0.96f,1.0f, 1);
-    ui_text(px + 12, ay + 24, albuf, 1, 0.7f,0.72f,0.8f, 1);
-    /* art tool entry: EDIT / NEW / SHEET */
-    float ny = ay + 30.0f;
-    const char *nbn[] = {"EDIT", "NEW", "SHEET"};
+    rk_ui_flush();
+}
+
+/* TEX tab: art-tool buttons on top, mode/type, scrollable preview grid */
+static void draw_tex(float px) {
+    ui_text(px + 12, 62, "ART TOOL", 1, 0.7f,0.72f,0.8f, 1);
+    const char *ab[] = {"EDIT", "NEW", "SHEET"};
     for (int i = 0; i < 3; i++) {
-        float bx = px + 10 + i * 66.0f;
-        int hov = in_rect((float)A.mx,(float)A.my, bx, ny, 62, 22);
-        rk_ui_rect(bx, ny, 62, 22, 0.22f + hov*0.08f, 0.34f + hov*0.08f, 0.50f + hov*0.08f, 1);
-        ui_text(bx + (62 - ui_text_w(nbn[i],1))/2, ny + 7, nbn[i], 1, 1,1,1, 1);
+        float bx = px + 10 + i * 72.0f;
+        int hov = in_rect((float)A.mx,(float)A.my, bx, 78, 64, 24);
+        rk_ui_rect(bx, 78, 64, 24,
+                   0.24f + hov*0.10f, 0.42f + hov*0.10f, 0.62f + hov*0.08f, 1);
+        ui_text(bx + (64 - ui_text_w(ab[i],1)) * 0.5f, 86, ab[i], 1, 1,1,1, 1);
+    }
+
+    /* MODE / TYPE row */
+    ui_text(px + 12, 120, "MODE:", 1, 0.7f,0.72f,0.8f, 1);
+    int hovM = in_rect((float)A.mx,(float)A.my, px + 62, 114, 66, 22);
+    rk_ui_rect(px + 62, 114, 66, 22, 0.20f + hovM*0.06f, 0.24f + hovM*0.06f, 0.32f + hovM*0.06f, 1);
+    ui_text(px + 62 + (66 - ui_text_w(TEXMODE_NAME[A.paintTexM & 3],1)) * 0.5f, 121,
+            TEXMODE_NAME[A.paintTexM & 3], 1, 0.9f,0.9f,0.95f, 1);
+    int ovr = (A.paintTexM & TEXM_OVR) != 0;
+    int hovT = in_rect((float)A.mx,(float)A.my, px + 138, 114, 80, 22);
+    rk_ui_rect(px + 138, 114, 80, 22,
+               (ovr ? 0.45f : 0.20f) + hovT*0.06f,
+               (ovr ? 0.30f : 0.24f) + hovT*0.06f,
+               (ovr ? 0.22f : 0.32f) + hovT*0.06f, 1);
+    ui_text(px + 138 + (80 - ui_text_w(ovr ? "OVR" : "OVL",1)) * 0.5f, 121,
+            ovr ? "OVR" : "OVL", 1, 0.95f,0.95f,1.0f, 1);
+
+    /* texture preview grid */
+    int first = (int)texScroll * TEXCOLS;
+    int vrows = tex_vis_rows();
+    for (int r = 0; r < vrows; r++) for (int c = 0; c < TEXCOLS; c++) {
+        int i = first + r * TEXCOLS + c;
+        if (i >= g_ntex) break;
+        float tx0 = px + 10 + c * TG_CW, ty0 = TG_TOP + r * TG_CH;
+        int sel = (A.paintTex == i);
+        int hov = in_rect((float)A.mx,(float)A.my, tx0, ty0, TG_IW, TG_CH - 2);
+        float bg = sel ? 0.30f : (hov ? 0.26f : 0.19f);
+        rk_ui_rect(tx0, ty0, TG_IW, TG_CH - 2, bg, bg + 0.02f, bg + 0.07f, 1);
+        if (i == 0) {
+            /* NONE: checker stripes */
+            for (int k = 0; k < 4; k++)
+                rk_ui_rect(tx0 + 3 + k * 15, ty0 + 3, 8, TG_IW - 6,
+                           (k & 1) ? 0.24f : 0.34f, (k & 1) ? 0.24f : 0.34f,
+                           (k & 1) ? 0.26f : 0.36f, 1);
+        } else {
+            float uv[4]; tex_uv(i, uv);
+            /* checkerboard backing so translucent areas read */
+            rk_ui_rect(tx0 + 2, ty0 + 2, TG_IW - 4, TG_IW - 4,
+                       0.22f, 0.22f, 0.24f, 1);
+            rk_ui_texrect(tx0 + 2, ty0 + 2, TG_IW - 4, TG_IW - 4,
+                          uv[0], uv[1], uv[2], uv[3]);
+        }
+        if (sel) {
+            rk_ui_rect(tx0, ty0, TG_IW, 2, 1,1,1, 0.9f);
+            rk_ui_rect(tx0, ty0 + TG_IW - 2, TG_IW, 2, 1,1,1, 0.9f);
+            rk_ui_rect(tx0, ty0, 2, TG_IW, 1,1,1, 0.9f);
+            rk_ui_rect(tx0 + TG_IW - 2, ty0, 2, TG_IW, 1,1,1, 0.9f);
+        }
+        ui_text(tx0 + (TG_IW - ui_text_w(g_tex[i].name,1)) * 0.5f, ty0 + TG_IW + 2,
+                g_tex[i].name, 1,
+                sel ? 1.0f : 0.75f, sel ? 1.0f : 0.75f, sel ? 1.0f : 0.85f, 1);
+    }
+    /* grid scrollbar */
+    int rows = (g_ntex + TEXCOLS - 1) / TEXCOLS;
+    if (rows > vrows) {
+        float vh = vrows * TG_CH;
+        float sh = fmaxf(24.0f, vh * vrows / rows);
+        float sy = TG_TOP + (vh - sh) * (texScroll / (float)(rows - vrows));
+        rk_ui_rect(px + PW - 6, sy, 4, sh, 0.5f,0.55f,0.65f, 0.8f);
     }
     rk_ui_flush();
 }
@@ -866,10 +922,10 @@ void panel_draw(void) {
 
     /* tab buttons */
     for (int t = 0; t < N_TABS; t++) {
-        float tx = px + 4 + t*46;
+        float tx = px + 4 + t*38;
         int selT = (A.panelTab == t);
-        rk_ui_rect(tx, 30, 44, 22, selT?0.30f:0.17f, selT?0.34f:0.18f, selT?0.42f:0.22f, 1);
-        ui_text(tx + (44 - ui_text_w(TABS[t],1))/2, 37, TABS[t], 1,
+        rk_ui_rect(tx, 30, 36, 22, selT?0.30f:0.17f, selT?0.34f:0.18f, selT?0.42f:0.22f, 1);
+        ui_text(tx + (36 - ui_text_w(TABS[t],1)) * 0.5f, 37, TABS[t], 1,
                 selT?1.0f:0.65f, selT?1.0f:0.65f, selT?1.0f:0.7f, 1);
     }
 
@@ -895,7 +951,8 @@ void panel_draw(void) {
                 "SCULPT", 1, 1, 1, 1, 1);
     }
     else if (A.panelTab == 1) draw_paint(px);
-    else if (A.panelTab == 3 || A.panelTab == 4) draw_models(px, A.panelTab - 3);
+    else if (A.panelTab == 2) draw_tex(px);
+    else if (A.panelTab == 4 || A.panelTab == 5) draw_models(px, A.panelTab - 4);
     else                      draw_world(px);
     rk_ui_flush();
 
@@ -1037,8 +1094,8 @@ int panel_rmb(double x, double y) {
     if (A.panelTab == 0) {
         ai = asset_at((float)x, (float)y);
         if (ai < N_ASSETS) return 0;
-    } else if (A.panelTab == 3 || A.panelTab == 4) {
-        int m = model_at(A.panelTab - 3, (float)x, (float)y);
+    } else if (A.panelTab == 4 || A.panelTab == 5) {
+        int m = model_at(A.panelTab - 4, (float)x, (float)y);
         if (m < 0) return 0;
         ai = N_ASSETS + m;
     } else return 0;

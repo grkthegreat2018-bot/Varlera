@@ -63,7 +63,7 @@ typedef struct {
 
     /* panel */
     int panelOpen;
-    int panelTab;                /* 0 shapes, 1 paint, 2 world */
+    int panelTab;                /* 0 shapes,1 paint,2 tex,3 world,4 models,5 props */
     float panelScroll;
     uint8_t catOpen[8];
     int curColor;                /* preset/custom index, -1 = picker */
@@ -88,7 +88,7 @@ typedef struct {
     /* modal editors: 0 none, 1 pixel-art tool, 2 sculpt mode */
     int modal;
     int artTex;                  /* texture id being edited */
-    int artTool;                 /* 0 pen, 1 erase, 2 fill, 3 pick */
+    int artTool;                 /* 0 pen,1 erase,2 fill,3 pick,4 line,5 rect */
     int artLMB;
 
     /* borderless fullscreen (F11): saved windowed rect for restore */

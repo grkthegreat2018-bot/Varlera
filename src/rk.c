@@ -28,7 +28,7 @@
 #define VKC(x) do { VkResult _r = (x); if (_r != VK_SUCCESS) { \
     fprintf(stderr, "VK error %d at %s:%d\n", _r, __FILE__, __LINE__); exit(1); } } while (0)
 
-typedef struct { float pos[2]; float col[4]; } UIVert;
+typedef struct { float pos[2]; float col[4]; float uv[2]; float tex; } UIVert;
 typedef struct { m4 model; float color[4]; uint32_t flags; uint32_t pad[3]; } Push;
 typedef struct {
     m4 viewProj, iconVP, shadowVP;
@@ -37,7 +37,8 @@ typedef struct {
     float groundCol[4];             /* grid base color (world-settings tint) */
 } UBO;
 
-typedef struct { float x, y, w, h, r, g, b, a; } UIRect;
+typedef struct { float x, y, w, h, r, g, b, a;
+                 float u0, v0, u1, v1; int tex; } UIRect;
 
 static v3 light_dir(void);
 
@@ -888,7 +889,9 @@ static void make_pipelines(void) {
     d.binds[0] = (VkVertexInputBindingDescription){0, sizeof(UIVert), VK_VERTEX_INPUT_RATE_VERTEX};
     d.attrs[0] = (VkVertexInputAttributeDescription){0, 0, VK_FORMAT_R32G32_SFLOAT, 0};
     d.attrs[1] = (VkVertexInputAttributeDescription){1, 0, VK_FORMAT_R32G32B32A32_SFLOAT, 8};
-    d.attrCount=2; d.bindCount=1;
+    d.attrs[2] = (VkVertexInputAttributeDescription){2, 0, VK_FORMAT_R32G32_SFLOAT, 24};
+    d.attrs[3] = (VkVertexInputAttributeDescription){3, 0, VK_FORMAT_R32_SFLOAT, 32};
+    d.attrCount=4; d.bindCount=1;
     d.blend=1; d.depthTest=1; d.depthWrite=1; d.cmp=VK_COMPARE_OP_ALWAYS;
     d.cull=VK_CULL_MODE_NONE; d.samples=G.samples;
     G.pUI = make_pipeline(&d);
@@ -1383,7 +1386,14 @@ void rk_draw_icon(RkMesh m, int px, int py, int pw, int ph,
 
 void rk_ui_rect(float px, float py, float pw, float ph, float r, float g, float b, float a) {
     if (G.uiN < MAX_UI_QUADS)
-        G.uiQ[G.uiN++] = (UIRect){px, py, pw, ph, r, g, b, a};
+        G.uiQ[G.uiN++] = (UIRect){px, py, pw, ph, r, g, b, a, 0,0,0,0, -1};
+}
+
+/* textured UI quad: samples the atlas region [u0,v0]-[u1,v1] */
+void rk_ui_texrect(float px, float py, float pw, float ph,
+                   float u0, float v0, float u1, float v1) {
+    if (G.uiN < MAX_UI_QUADS)
+        G.uiQ[G.uiN++] = (UIRect){px, py, pw, ph, 1,1,1,1, u0, v0, u1, v1, 1};
 }
 
 void rk_ui_flush(void) {
@@ -1397,13 +1407,17 @@ void rk_ui_flush(void) {
         float y0 = q->y / G.ext.height * 2.0f - 1.0f;
         float y1 = (q->y + q->h) / G.ext.height * 2.0f - 1.0f;
         float c[4] = {q->r, q->g, q->b, q->a};
+        float us[6] = {q->u0, q->u1, q->u1, q->u0, q->u1, q->u0};
+        float vs[6] = {q->v0, q->v0, q->v1, q->v0, q->v1, q->v1};
+        float xs[6] = {x0, x1, x1, x0, x1, x0};
+        float ys[6] = {y0, y0, y1, y0, y1, y1};
         UIVert *o = G.uiStage + G.uiVn;
-        o[0].pos[0]=x0; o[0].pos[1]=y0; memcpy(o[0].col,c,16);
-        o[1].pos[0]=x1; o[1].pos[1]=y0; memcpy(o[1].col,c,16);
-        o[2].pos[0]=x1; o[2].pos[1]=y1; memcpy(o[2].col,c,16);
-        o[3].pos[0]=x0; o[3].pos[1]=y0; memcpy(o[3].col,c,16);
-        o[4].pos[0]=x1; o[4].pos[1]=y1; memcpy(o[4].col,c,16);
-        o[5].pos[0]=x0; o[5].pos[1]=y1; memcpy(o[5].col,c,16);
+        for (int k = 0; k < 6; k++) {
+            o[k].pos[0] = xs[k]; o[k].pos[1] = ys[k];
+            memcpy(o[k].col, c, 16);
+            o[k].uv[0] = us[k]; o[k].uv[1] = vs[k];
+            o[k].tex = (float)q->tex;
+        }
         G.uiVn += 6; n += 6;
     }
     G.uiN = 0;

@@ -84,6 +84,8 @@ static void on_mouse(GLFWwindow *w, int button, int action, int mods) {
         if (button == GLFW_MOUSE_BUTTON_LEFT) {
             if (action == GLFW_PRESS) art_press((float)A.mx, (float)A.my);
             else art_release();
+        } else if (button == GLFW_MOUSE_BUTTON_RIGHT) {
+            art_rmb(action == GLFW_PRESS, (float)A.mx, (float)A.my);
         }
         return;
     }

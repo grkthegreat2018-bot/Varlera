@@ -25,8 +25,11 @@ links m/dl/pthread. Win32-only code (file dialog, DPI awareness) is `_WIN32`
   (clear 0, GREATER), 4x MSAA + resolve, 2048px directional shadow map (forward-Z
   ortho `m4_ortho`, hardware-compare sampler + 4-tap PCF), instanced drawing
   (`RkInst` = pos/scale/RGBA8/flags; bits: 0 unlit, 1-2 rot90, 3 nofog, 4 iconVP),
-  deferred command queue replayed for shadow pass. Manual VkDeviceMemory (VMA 3.x
-  is C++-only — do not re-add to a C target). `rk_init` returns 1 on success.
+  deferred command queue replayed for shadow pass. UI quads are NDC rects
+  (`UIVert` pos/col/uv/tex — `rk_ui_rect` solid, `rk_ui_texrect` samples the
+  atlas via set1 binding 1 for real texture previews). Manual VkDeviceMemory
+  (VMA 3.x is C++-only — do not re-add to a C target). `rk_init` returns 1 on
+  success.
 - `src/app.h` — shared `App A` global (window, camera, mode, selection, drag state).
 - `src/main.c` — entry, glfw callbacks -> dispatch, frame loop.
 - `src/camera.c` — free-fly cam (yaw/pitch basis, ray gen, WASD/QE move).
@@ -40,10 +43,12 @@ links m/dl/pthread. Win32-only code (file dialog, DPI awareness) is `_WIN32`
   older migrate. `models_bake_builtins()` seeds the 10 premade PROPS assets
   (CRATE/TABLE/CHAIR/PERSON/TREE/FLOWER/ARCH/LAMP/FENCE/PILLAR) on first run
   or after loading a pre-v7 file.
-- `src/panel.c` — right panel with 5 tabs: SHAPES (categories BASIC/RAMPS/
+- `src/panel.c` — right panel with 6 tabs: SHAPES (categories BASIC/RAMPS/
   SPECIAL/SCULPTED, 15 assets + sculpted models, scrollable, tooltips), PAINT
-  (16 presets + HSV picker + texture grid + ALPHA slider -> `A.paintAlpha`
-  -> `Block.alpha`/`BF_GLASS`), WORLD (SAVE/LOAD/UNDO/REDO/CLEAR + block count
+  (16 presets + HSV picker + custom swatches + ALPHA slider -> `A.paintAlpha`
+  -> `Block.alpha`/`BF_GLASS`), TEX (ART TOOL buttons EDIT/NEW/SHEET on top ->
+  `art_open`, MODE/TYPE cycling `A.paintTexM`, scrollable grid of real atlas
+  previews via `rk_ui_texrect`), WORLD (SAVE/LOAD/UNDO/REDO/CLEAR + block count
   + ENVIRONMENT: SKY x6 / GROUND x5 preset cycler -> `rk_set_env`, saved to
   `env.bw`), MODELS (fused block groups), PROPS (`adv` premade assets).
   Asset geometry, paint color and texture are fully decoupled. Script menu
@@ -84,9 +89,11 @@ any non-DELETE click cancels. Eyedropper (RMB world click) picks
 color+texture.
 
 Modals (main.c routes all input by A.modal): 1 = pixel-art tool (art.c,
-PAINT tab EDIT/NEW/SHEET), 2 = sculpt mode (sculpt.c, SCULPT button top-left
-next to PLAY or SHAPES footer). Editor is paused while a modal is open;
-camera still flies. Sculpt: direct vertex editing on a welded tri mesh —
+TEX tab EDIT/NEW/SHEET at the top; tools PEN/ERASE/FILL/LINE/RECT/PICK +
+MIRROR/UNDO/CLEAR, wheel zoom, RMB pan, per-stroke snapshot undo, DONE
+commits + saves, CANCEL/ESC discards), 2 = sculpt mode (sculpt.c, SCULPT
+button top-left next to PLAY or SHAPES footer). Editor is paused while a
+modal is open; camera still flies. Sculpt: direct vertex editing on a welded tri mesh —
 LMB grabs a vertex dot and drags on a camera-parallel plane (snapped to the
 marker grid), short RMB click splits the nearest edge (RMB drag still looks),
 Del removes the selected vertex, release welds overlapping verts and splits
