@@ -94,9 +94,13 @@ void main() {
         }
     }
     vec3 L = normalize(u.lightDir.xyz);
+    float sh = shadowFactor(vWorld);
+    if ((vFlags & 16u) != 0u) {         /* icon: fixed key light, no shadow */
+        L = normalize(vec3(-0.40, 0.85, 0.50));
+        sh = 1.0;
+    }
     float diff = max(dot(n, L), 0.0);
     float hemi = 0.32 + 0.22 * (n.y * 0.5 + 0.5);  /* sky-ish ambient */
-    float sh = shadowFactor(vWorld);
     vec3 col = base * (hemi + 0.95 * diff * sh);
     if ((vFlags & 8u) == 0u) {                     /* fog unless NOFOG */
         float d = distance(u.camPos.xyz, vWorld);

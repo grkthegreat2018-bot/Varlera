@@ -443,23 +443,23 @@ static int gen_cageball(int lat, int lon) {
     return s;
 }
 
-/* L-shaped corner staircase: two 3-step runs meeting at a mid landing */
+/* L-shaped corner staircase on a 3x3 cell grid: climb up the -x column
+   to the back-left corner, turn, then along the back row to back-right.
+   Each cell is a solid column whose top is (i+1)/5 of the height, so the
+   5 steps climb monotonically from the front-left corner to back-right. */
 static int gen_corstair(void) {
     int s = g_nv;
-    /* landing block in the +x,-z corner at mid height */
-    beam(v3_make(0.0f,-0.5f,-0.5f), v3_make(0.5f,-0.1666f,0.0f));
-    /* run A: 3 steps climbing -z -> landing (along -x half) */
-    for (int i = 0; i < 3; i++) {
-        float z0 = 0.5f - i / 3.0f, z1 = z0 - 1.0f / 3.0f;
-        float y1 = -0.5f + (i + 1) * (1.0f / 3.0f) * 0.5f;
-        beam(v3_make(-0.5f,-0.5f,z1), v3_make(0.0f,y1,z0));
-    }
-    /* run B: 3 steps climbing -x -> landing top (along -z half) */
-    for (int i = 0; i < 3; i++) {
-        float x0 = 0.5f - i / 3.0f, x1 = x0 - 1.0f / 3.0f;
-        float y1 = -0.1666f + (i + 1) * (1.0f / 3.0f) * 0.5f;
-        beam(v3_make(x1,-0.5f,-0.5f), v3_make(x0,y1,0.0f));
-    }
+    const float h0 = -0.5f, st = 1.0f / 5.0f;
+    static const float C[5][4] = {          /* x0, x1, z0, z1 per cell */
+        {-0.5f,-0.16667f, 0.16667f, 0.5f},  /* front-left (lowest)  */
+        {-0.5f,-0.16667f,-0.16667f, 0.16667f},/* mid-left           */
+        {-0.5f,-0.16667f,-0.5f,-0.16667f},  /* back-left (corner)   */
+        {-0.16667f, 0.16667f,-0.5f,-0.16667f},/* back-mid           */
+        { 0.16667f, 0.5f,  -0.5f,-0.16667f},/* back-right (top)     */
+    };
+    for (int i = 0; i < 5; i++)
+        beam(v3_make(C[i][0], h0, C[i][2]),
+             v3_make(C[i][1], h0 + (i + 1) * st, C[i][3]));
     return s;
 }
 
@@ -1348,8 +1348,26 @@ void rk_meshlines(const Vert *v, uint32_t n, const float model[16],
         e->pw = (int)(a * 1000.0f);      /* alpha rides in pw */
     }
 }
-/* panel icon: fixed readable angle, scaled to the asset's real proportions
-   (largest dimension fills the cell). size=NULL -> unit cube. */
+/* icon framing: yaw/pitch per mesh so every shape's signature face shows.
+   The icon camera sits on the +x+y+z diagonal; yaw -0.79 turns a mesh's
+   x-side profile square to it, steeper rx tilts the top into view. */
+static void icon_angles(int mesh, float *rx, float *ry) {
+    *rx = -0.55f; *ry = 0.75f;
+    switch (mesh) {
+    case RK_MESH_WEDGE:
+    case RK_MESH_STAIR:
+    case RK_MESH_WHEEL:   *ry = -0.79f; break;       /* side profile */
+    case RK_MESH_TORUS:   *rx = -1.15f; break;       /* see the hole */
+    case RK_MESH_CONE:
+    case RK_MESH_PYRAMID: *rx = -0.30f; break;       /* silhouette */
+    case RK_MESH_DOME:    *rx = -0.35f; break;
+    case RK_MESH_CORNERW: *ry = 2.35f; break;        /* apex corner out */
+    case RK_MESH_CORSTAIR:*ry = -0.40f; *rx = -0.62f; break;
+    }
+}
+
+/* panel icon: per-shape readable angle, scaled to the asset's real
+   proportions (largest dimension fills the cell). size=NULL -> unit. */
 void rk_draw_icon(RkMesh m, int px, int py, int pw, int ph,
                   float r, float g, float b, const float size[3]) {
     if (G.qn >= MAX_Q) return;
@@ -1359,7 +1377,8 @@ void rk_draw_icon(RkMesh m, int px, int py, int pw, int ph,
     float k = mx > 1e-5f ? 0.62f / mx : 0.62f;
     v3 sc = size ? v3_make(size[0]*k, size[1]*k, size[2]*k)
                : v3_make(0.62f, 0.62f, 0.62f);
-    m4_trs(e->mm, v3_make(0,0,0), sc, -0.55f, 0.75f, 0);
+    float rx, ry; icon_angles(m, &rx, &ry);
+    m4_trs(e->mm, v3_make(0,0,0), sc, rx, ry, 0);
 }
 
 void rk_ui_rect(float px, float py, float pw, float ph, float r, float g, float b, float a) {
