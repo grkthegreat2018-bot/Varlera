@@ -16,14 +16,15 @@ int g_nmodels;
 
 static Vert *pool; static int pn, pmax;
 
-static void ev(v3 p, v3 n, const float c[3]) {
+static void ev(v3 p, v3 n, const float c[3], float tex) {
     if (pn >= pmax) return;
     Vert *v = &pool[pn++];
     memcpy(v->pos, p.e, 12); memcpy(v->nrm, n.e, 12); memcpy(v->col, c, 12);
+    v->tex = tex;
 }
-static void emit_quad(v3 a, v3 b, v3 c, v3 d, v3 n, const float col[3]) {
-    ev(a,n,col); ev(b,n,col); ev(c,n,col);
-    ev(a,n,col); ev(c,n,col); ev(d,n,col);
+static void emit_quad(v3 a, v3 b, v3 c, v3 d, v3 n, const float col[3], float tex) {
+    ev(a,n,col,tex); ev(b,n,col,tex); ev(c,n,col,tex);
+    ev(a,n,col,tex); ev(c,n,col,tex); ev(d,n,col,tex);
 }
 
 /* rotate about Y in 90-degree steps — matches world_i.vert rotY() */
@@ -82,7 +83,8 @@ static void bake_cube(const Block *ch, v3 pivot, const Block *rel, int n, int se
         }
         wn = roty(CUBE_N[f], rot);
         if (!face_covered(wc, wn, rel, n, self))
-            emit_quad(wc[0], wc[1], wc[2], wc[3], wn, ch->col);
+            emit_quad(wc[0], wc[1], wc[2], wc[3], wn, ch->col,
+                      ch->tex ? (float)ch->tex : -1.0f);
     }
 }
 
@@ -95,7 +97,8 @@ static void bake_shape(const Block *ch, v3 pivot) {
         v3 p = v3_make(tmp[i].pos[0]*ch->size.x, tmp[i].pos[1]*ch->size.y,
                        tmp[i].pos[2]*ch->size.z);
         v3 n = v3_make(tmp[i].nrm[0], tmp[i].nrm[1], tmp[i].nrm[2]);
-        ev(v3_add(rp, roty(p, rot)), roty(n, rot), ch->col);
+        ev(v3_add(rp, roty(p, rot)), roty(n, rot), ch->col,
+           ch->tex ? (float)ch->tex : -1.0f);
     }
 }
 
@@ -120,7 +123,10 @@ static int bake_mesh(const Block *rel, int n, v3 size) {
 
 /* topo mesh -> GPU: expand faces to flat-shaded tri soup, normalize to the
  * unit box of `size`, vertex colors preserved */
+/* same-material shading: verts welded to one dot share their material id,
+   so touching faces box-project continuously and read as one piece */
 static int bake_topo(const float (*vx)[3], const uint8_t (*vc)[3],
+                     const int8_t *vt,
                      const uint16_t (*fc)[3], int nv, int nf, v3 size) {
     static Vert buf[MODEL_MAX_FACES * 3];
     int n = 0;
@@ -131,6 +137,11 @@ static int bake_topo(const float (*vx)[3], const uint8_t (*vc)[3],
             p[k] = v3_make(vx[vi][0], vx[vi][1], vx[vi][2]);
         }
         v3 nrm = v3_norm(v3_cross(v3_sub(p[1],p[0]), v3_sub(p[2],p[0])));
+        /* a face keeps one material: majority/first non-(-1) wins, so a
+           face whose corners carry the same layer shades seamlessly */
+        float ft = -1.0f;
+        for (int k = 0; k < 3; k++)
+            if (vt && vt[fc[f][k]] >= 0) { ft = (float)vt[fc[f][k]]; break; }
         for (int k = 0; k < 3; k++) {
             Vert *v = &buf[n++];
             for (int a = 0; a < 3; a++) {
@@ -141,6 +152,7 @@ static int bake_topo(const float (*vx)[3], const uint8_t (*vc)[3],
             int vi = fc[f][k];
             v->col[0] = vc[vi][0]/255.0f; v->col[1] = vc[vi][1]/255.0f;
             v->col[2] = vc[vi][2]/255.0f;
+            v->tex = ft;   /* per-face material keeps flat interp stable */
         }
     }
     return rk_model_mesh_add(buf, n);
@@ -149,7 +161,8 @@ static int bake_topo(const float (*vx)[3], const uint8_t (*vc)[3],
 /* mesh bake for either model kind (children blocks vs sculpted topo) */
 static int model_rebake(const Model *m) {
     if (m->vox)
-        return bake_topo(m->mv, m->mvcol, m->mf, m->nvert, m->nface, m->size);
+        return bake_topo(m->mv, m->mvcol, m->mvtex, m->mf,
+                         m->nvert, m->nface, m->size);
     return bake_mesh(m->ch, m->nch, m->size);
 }
 
@@ -186,7 +199,9 @@ int model_bake(const Block *children, int n) {
 
 /* sculpted vertex-edited mesh -> model (verts arrive centered on AABB) */
 int model_sculpt_topo(const float (*vx)[3], const uint8_t (*vc)[3],
-                      const uint16_t (*fc)[3], int nv, int nf) {
+                      const int8_t *vt, const uint8_t *vl,
+                      const uint16_t (*fc)[3], int nv, int nf,
+                      const char *name) {
     if (g_nmodels >= RK_MAX_MODELS || nv < 1 || nf < 1 ||
         nv > MODEL_MAX_VERTS || nf > MODEL_MAX_FACES) return -1;
     /* bounds from the (centered) verts */
@@ -196,15 +211,20 @@ int model_sculpt_topo(const float (*vx)[3], const uint8_t (*vc)[3],
             if (vx[i][a] > hi.e[a]) hi.e[a] = vx[i][a];
     Model *m = &g_models[g_nmodels];
     memset(m, 0, sizeof *m);
-    snprintf(m->name, sizeof m->name, "SCULPT %d", g_nmodels + 1);
+    if (name && name[0])
+        snprintf(m->name, sizeof m->name, "%.11s", name);
+    else snprintf(m->name, sizeof m->name, "SCULPT %d", g_nmodels + 1);
     m->nch = 0; m->vox = 1;
     m->size = v3_make(fmaxf(hi.x*2,0.125f), fmaxf(hi.y*2,0.125f),
                       fmaxf(hi.z*2,0.125f));
     m->nvert = nv; m->nface = nf;
     memcpy(m->mv, vx, (size_t)nv * sizeof m->mv[0]);
     memcpy(m->mvcol, vc, (size_t)nv * sizeof m->mvcol[0]);
+    if (vt) memcpy(m->mvtex, vt, (size_t)nv);
+    else    memset(m->mvtex, -1, (size_t)nv);
+    if (vl) memcpy(m->mvlock, vl, (size_t)nv);
     memcpy(m->mf, fc, (size_t)nf * sizeof m->mf[0]);
-    m->mesh = bake_topo(m->mv, m->mvcol, m->mf, nv, nf, m->size);
+    m->mesh = bake_topo(m->mv, m->mvcol, m->mvtex, m->mf, nv, nf, m->size);
     if (m->mesh < 0) return -1;
     return g_nmodels++;
 }
@@ -244,11 +264,12 @@ void models_rebake_all(void) {
 }
 
 static const char *def_path(void) { return "models.bw"; }
+static int s_lastver = 0;               /* file format of the loaded save */
 
 int models_save(const char *path) {
     FILE *f = fopen(path ? path : def_path(), "wb");
     if (!f) return 0;
-    uint32_t hdr[3] = {0x44574D42u /* 'BWMD' */, 6, (uint32_t)g_nmodels};
+    uint32_t hdr[3] = {0x44574D42u /* 'BWMD' */, 7, (uint32_t)g_nmodels};
     fwrite(hdr, 4, 3, f);
     for (int i = 0; i < g_nmodels; i++) {
         Model *m = &g_models[i];
@@ -256,12 +277,16 @@ int models_save(const char *path) {
         int nrec = m->vox ? -2 : m->nch;      /* -2 = sculpted topo mesh */
         fwrite(&nrec, 4, 1, f);
         fwrite(m->size.e, 4, 3, f);
+        int32_t flags = m->adv ? 1 : 0;        /* bit0 = premade asset */
+        fwrite(&flags, 4, 1, f);
         if (m->vox) {
             fwrite(&m->nvert, 4, 1, f);
             fwrite(&m->nface, 4, 1, f);
             fwrite(m->mv, 12, m->nvert, f);
             fwrite(m->mvcol, 3, m->nvert, f);
             fwrite(m->mf, 6, m->nface, f);
+            fwrite(m->mvtex, 1, m->nvert, f);
+            fwrite(m->mvlock, 1, m->nvert, f);
         } else fwrite(m->ch, sizeof(Block), m->nch, f);
     }
     fclose(f);
@@ -326,6 +351,8 @@ static int weld_topo(const Vert *soup, int ns, Model *m) {
     }
     if (!nv || !nf) return -1;
     m->nvert = nv; m->nface = nf;
+    memset(m->mvtex, -1, (size_t)nv);
+    memset(m->mvlock, 0, (size_t)nv);
     m->size = v3_make(fmaxf(hi.x-lo.x,0.125f), fmaxf(hi.y-lo.y,0.125f),
                       fmaxf(hi.z-lo.z,0.125f));
     return 0;
@@ -336,8 +363,9 @@ int models_load(const char *path) {
     if (!f) return 0;
     uint32_t hdr[3];
     if (fread(hdr, 4, 3, f) != 3 || hdr[0] != 0x44574D42u ||
-        (hdr[1] < 1 || hdr[1] > 6)) { fclose(f); return 0; }
+        (hdr[1] < 1 || hdr[1] > 7)) { fclose(f); return 0; }
     int ver = (int)hdr[1];
+    s_lastver = ver;
     int n = (int)hdr[2];
     if (n > RK_MAX_MODELS) n = RK_MAX_MODELS;
     for (int i = 0; i < n; i++) {
@@ -346,6 +374,11 @@ int models_load(const char *path) {
         if (fread(m->name, 1, 16, f) != 16) break;
         if (fread(&m->nch, 4, 1, f) != 1) break;
         if (fread(m->size.e, 4, 3, f) != 3) break;
+        if (ver >= 7) {                          /* per-model flags */
+            int32_t fl = 0;
+            if (fread(&fl, 4, 1, f) != 1) break;
+            m->adv = (fl & 1) != 0;
+        }
         if (m->nch == -2 && ver >= 6) {          /* sculpted topo mesh */
             m->vox = 1; m->nch = 0;
             if (fread(&m->nvert, 4, 1, f) != 1) break;
@@ -355,6 +388,12 @@ int models_load(const char *path) {
             if (fread(m->mv, 12, m->nvert, f) != (size_t)m->nvert) break;
             if (fread(m->mvcol, 3, m->nvert, f) != (size_t)m->nvert) break;
             if (fread(m->mf, 6, m->nface, f) != (size_t)m->nface) break;
+            memset(m->mvtex, -1, (size_t)m->nvert);
+            memset(m->mvlock, 0, (size_t)m->nvert);
+            if (ver >= 7) {
+                if (fread(m->mvtex, 1, m->nvert, f) != (size_t)m->nvert) break;
+                if (fread(m->mvlock, 1, m->nvert, f) != (size_t)m->nvert) break;
+            }
         } else if (m->nch == -1 && (ver == 4 || ver == 5)) {
             /* legacy voxel/density sculpts -> bake + weld into topo */
             m->vox = 1; m->nch = 0;
@@ -396,4 +435,130 @@ int models_load(const char *path) {
     return 1;
 }
 
-void models_init(void) { models_load(NULL); }
+/* ---------------- premade assets (PROPS tab) ---------------- */
+
+static void mkchild(Block *b, float x, float y, float z,
+                    float sx, float sy, float sz, int shape,
+                    float r, float g, float bl) {
+    memset(b, 0, sizeof *b);
+    b->pos = v3_make(x, y, z);
+    b->size = v3_make(sx, sy, sz);
+    b->shape = (uint8_t)shape;
+    b->col[0] = r; b->col[1] = g; b->col[2] = bl;
+    b->alpha = 1.0f;
+    b->texm = TEXM_LOOP;
+}
+
+/* official-looking multi-part assets; baked once on first run (adv=1) */
+void models_bake_builtins(void) {
+    static const float WOOD[3]  = {0.55f, 0.35f, 0.20f};
+    static const float DARK[3]  = {0.24f, 0.26f, 0.29f};
+    static const float LEAF[3]  = {0.25f, 0.65f, 0.30f};
+    static const float SKIN[3]  = {0.95f, 0.65f, 0.45f};
+    static const float SHIRT[3] = {0.25f, 0.55f, 0.95f};
+    static const float PANTS[3] = {0.35f, 0.30f, 0.50f};
+    static const float STONE[3] = {0.55f, 0.58f, 0.62f};
+    static const float GOLD[3]  = {0.95f, 0.80f, 0.25f};
+    static const float PINK[3]  = {0.95f, 0.55f, 0.70f};
+    static const float CREAM[3] = {0.90f, 0.92f, 0.95f};
+    Block ch[16];
+#define NCH(a) (Block*)ch, (a)
+    int i;
+
+    /* CRATE: wooden body + corner posts + lid band */
+    i = 0;
+    mkchild(&ch[i++], 0, 0, 0,        0.9f, 0.9f, 0.9f,  RK_MESH_CUBE, WOOD[0],WOOD[1],WOOD[2]);
+    mkchild(&ch[i++],-0.40f,0,-0.40f, 0.18f,0.9f, 0.18f, RK_MESH_CUBE, DARK[0],DARK[1],DARK[2]);
+    mkchild(&ch[i++], 0.40f,0,-0.40f, 0.18f,0.9f, 0.18f, RK_MESH_CUBE, DARK[0],DARK[1],DARK[2]);
+    mkchild(&ch[i++],-0.40f,0, 0.40f, 0.18f,0.9f, 0.18f, RK_MESH_CUBE, DARK[0],DARK[1],DARK[2]);
+    mkchild(&ch[i++], 0.40f,0, 0.40f, 0.18f,0.9f, 0.18f, RK_MESH_CUBE, DARK[0],DARK[1],DARK[2]);
+    mkchild(&ch[i++], 0, 0.44f, 0,    1.0f, 0.10f,1.0f,  RK_MESH_CUBE, DARK[0],DARK[1],DARK[2]);
+    i = model_bake(NCH(i)); if (i >= 0) { g_models[i].adv = 1; snprintf(g_models[i].name,16,"CRATE"); }
+
+    /* TABLE: top + 4 legs */
+    i = 0;
+    mkchild(&ch[i++], 0, 0.45f, 0,    1.6f, 0.12f,1.0f,  RK_MESH_CUBE, WOOD[0],WOOD[1],WOOD[2]);
+    mkchild(&ch[i++],-0.68f,-0.05f,-0.40f,0.14f,0.9f,0.14f,RK_MESH_CUBE, DARK[0],DARK[1],DARK[2]);
+    mkchild(&ch[i++], 0.68f,-0.05f,-0.40f,0.14f,0.9f,0.14f,RK_MESH_CUBE, DARK[0],DARK[1],DARK[2]);
+    mkchild(&ch[i++],-0.68f,-0.05f, 0.40f,0.14f,0.9f,0.14f,RK_MESH_CUBE, DARK[0],DARK[1],DARK[2]);
+    mkchild(&ch[i++], 0.68f,-0.05f, 0.40f,0.14f,0.9f,0.14f,RK_MESH_CUBE, DARK[0],DARK[1],DARK[2]);
+    i = model_bake(NCH(i)); if (i >= 0) { g_models[i].adv = 1; snprintf(g_models[i].name,16,"TABLE"); }
+
+    /* CHAIR: seat + back + 4 legs */
+    i = 0;
+    mkchild(&ch[i++], 0, 0.05f, 0,    0.55f,0.10f,0.55f, RK_MESH_CUBE, WOOD[0],WOOD[1],WOOD[2]);
+    mkchild(&ch[i++], 0, 0.45f,-0.23f,0.55f,0.75f,0.09f, RK_MESH_CUBE, WOOD[0],WOOD[1],WOOD[2]);
+    mkchild(&ch[i++],-0.20f,-0.30f,-0.20f,0.09f,0.7f,0.09f,RK_MESH_CUBE, DARK[0],DARK[1],DARK[2]);
+    mkchild(&ch[i++], 0.20f,-0.30f,-0.20f,0.09f,0.7f,0.09f,RK_MESH_CUBE, DARK[0],DARK[1],DARK[2]);
+    mkchild(&ch[i++],-0.20f,-0.30f, 0.20f,0.09f,0.7f,0.09f,RK_MESH_CUBE, DARK[0],DARK[1],DARK[2]);
+    mkchild(&ch[i++], 0.20f,-0.30f, 0.20f,0.09f,0.7f,0.09f,RK_MESH_CUBE, DARK[0],DARK[1],DARK[2]);
+    i = model_bake(NCH(i)); if (i >= 0) { g_models[i].adv = 1; snprintf(g_models[i].name,16,"CHAIR"); }
+
+    /* PERSON: head + torso + arms + legs (Blocksworld-style humanoid) */
+    i = 0;
+    mkchild(&ch[i++], 0, 0.62f, 0,    0.30f,0.30f,0.30f, RK_MESH_SPHERE, SKIN[0],SKIN[1],SKIN[2]);
+    mkchild(&ch[i++], 0, 0.18f, 0,    0.36f,0.55f,0.20f, RK_MESH_CUBE, SHIRT[0],SHIRT[1],SHIRT[2]);
+    mkchild(&ch[i++],-0.26f,0.18f,0,  0.10f,0.45f,0.10f, RK_MESH_CUBE, SKIN[0],SKIN[1],SKIN[2]);
+    mkchild(&ch[i++], 0.26f,0.18f,0,  0.10f,0.45f,0.10f, RK_MESH_CUBE, SKIN[0],SKIN[1],SKIN[2]);
+    mkchild(&ch[i++],-0.10f,-0.35f,0, 0.14f,0.55f,0.14f, RK_MESH_CUBE, PANTS[0],PANTS[1],PANTS[2]);
+    mkchild(&ch[i++], 0.10f,-0.35f,0, 0.14f,0.55f,0.14f, RK_MESH_CUBE, PANTS[0],PANTS[1],PANTS[2]);
+    i = model_bake(NCH(i)); if (i >= 0) { g_models[i].adv = 1; snprintf(g_models[i].name,16,"PERSON"); }
+
+    /* TREE: trunk + leaf cluster */
+    i = 0;
+    mkchild(&ch[i++], 0,-0.15f,0,     0.18f,0.75f,0.18f, RK_MESH_CYLINDER, WOOD[0],WOOD[1],WOOD[2]);
+    mkchild(&ch[i++], 0, 0.45f, 0,    0.85f,0.65f,0.85f, RK_MESH_SPHERE, LEAF[0],LEAF[1],LEAF[2]);
+    mkchild(&ch[i++], 0.32f,0.28f,0.18f,0.55f,0.45f,0.55f,RK_MESH_SPHERE, LEAF[0]*0.9f,LEAF[1]*0.9f,LEAF[2]*0.9f);
+    mkchild(&ch[i++],-0.30f,0.32f,-0.15f,0.6f,0.5f,0.6f, RK_MESH_SPHERE, LEAF[0]*1.1f,LEAF[1],LEAF[2]*1.05f);
+    i = model_bake(NCH(i)); if (i >= 0) { g_models[i].adv = 1; snprintf(g_models[i].name,16,"TREE"); }
+
+    /* FLOWER: stem + center + petals */
+    i = 0;
+    mkchild(&ch[i++], 0,-0.20f,0,     0.07f,0.65f,0.07f, RK_MESH_CYLINDER, LEAF[0],LEAF[1],LEAF[2]);
+    mkchild(&ch[i++], 0, 0.18f, 0,    0.16f,0.16f,0.16f, RK_MESH_SPHERE, GOLD[0],GOLD[1],GOLD[2]);
+    mkchild(&ch[i++], 0.15f,0.18f,0,  0.20f,0.08f,0.10f, RK_MESH_SPHERE, PINK[0],PINK[1],PINK[2]);
+    mkchild(&ch[i++],-0.15f,0.18f,0,  0.20f,0.08f,0.10f, RK_MESH_SPHERE, PINK[0],PINK[1],PINK[2]);
+    mkchild(&ch[i++], 0, 0.18f, 0.15f,0.10f,0.08f,0.20f, RK_MESH_SPHERE, PINK[0],PINK[1],PINK[2]);
+    mkchild(&ch[i++], 0, 0.18f,-0.15f,0.10f,0.08f,0.20f, RK_MESH_SPHERE, PINK[0],PINK[1],PINK[2]);
+    i = model_bake(NCH(i)); if (i >= 0) { g_models[i].adv = 1; snprintf(g_models[i].name,16,"FLOWER"); }
+
+    /* ARCH: two posts + top beam */
+    i = 0;
+    mkchild(&ch[i++],-0.55f,-0.10f,0, 0.22f,1.0f,0.22f,  RK_MESH_CUBE, STONE[0],STONE[1],STONE[2]);
+    mkchild(&ch[i++], 0.55f,-0.10f,0, 0.22f,1.0f,0.22f,  RK_MESH_CUBE, STONE[0],STONE[1],STONE[2]);
+    mkchild(&ch[i++], 0, 0.50f, 0,    1.35f,0.22f,0.26f, RK_MESH_CUBE, STONE[0]*0.9f,STONE[1]*0.9f,STONE[2]*0.9f);
+    i = model_bake(NCH(i)); if (i >= 0) { g_models[i].adv = 1; snprintf(g_models[i].name,16,"ARCH"); }
+
+    /* LAMP: post + glowing head */
+    i = 0;
+    mkchild(&ch[i++], 0,-0.20f,0,     0.10f,0.85f,0.10f, RK_MESH_CYLINDER, DARK[0],DARK[1],DARK[2]);
+    mkchild(&ch[i++], 0, 0.32f, 0,    0.30f,0.30f,0.30f, RK_MESH_SPHERE, GOLD[0],GOLD[1],GOLD[2]);
+    i = model_bake(NCH(i)); if (i >= 0) { g_models[i].adv = 1; snprintf(g_models[i].name,16,"LAMP"); }
+
+    /* FENCE: posts + rails */
+    i = 0;
+    mkchild(&ch[i++],-0.45f,-0.15f,0, 0.09f,0.7f,0.09f,  RK_MESH_CUBE, DARK[0],DARK[1],DARK[2]);
+    mkchild(&ch[i++], 0.45f,-0.15f,0, 0.09f,0.7f,0.09f,  RK_MESH_CUBE, DARK[0],DARK[1],DARK[2]);
+    mkchild(&ch[i++], 0, 0.05f, 0,    0.95f,0.09f,0.06f, RK_MESH_CUBE, WOOD[0],WOOD[1],WOOD[2]);
+    mkchild(&ch[i++], 0,-0.25f, 0,    0.95f,0.09f,0.06f, RK_MESH_CUBE, WOOD[0],WOOD[1],WOOD[2]);
+    i = model_bake(NCH(i)); if (i >= 0) { g_models[i].adv = 1; snprintf(g_models[i].name,16,"FENCE"); }
+
+    /* PILLAR: base + shaft + capital */
+    i = 0;
+    mkchild(&ch[i++], 0,-0.42f,0,     0.4f, 0.14f,0.4f,  RK_MESH_CUBE, STONE[0],STONE[1],STONE[2]);
+    mkchild(&ch[i++], 0,-0.02f,0,     0.26f,0.7f, 0.26f, RK_MESH_CYLINDER, CREAM[0],CREAM[1],CREAM[2]);
+    mkchild(&ch[i++], 0, 0.40f, 0,    0.4f, 0.14f,0.4f,  RK_MESH_CUBE, STONE[0],STONE[1],STONE[2]);
+    i = model_bake(NCH(i)); if (i >= 0) { g_models[i].adv = 1; snprintf(g_models[i].name,16,"PILLAR"); }
+#undef NCH
+    rk_models_commit();
+}
+
+void models_init(void) {
+    models_load(NULL);
+    /* stock the PROPS tab: fresh install, or a pre-v7 save upgrading once
+       (v7 saves with deleted premades stay deleted) */
+    if (s_lastver < 7) {
+        models_bake_builtins();
+        models_save(NULL);
+    }
+}

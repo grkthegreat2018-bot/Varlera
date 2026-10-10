@@ -14,6 +14,8 @@ layout(set = 0, binding = 0) uniform UBO {
     vec4 lightDir;
     vec4 fogColor;
     vec4 fogParams;
+    vec4 texRect[64];      /* unused here - keeps groundCol offset aligned */
+    vec4 groundCol;
 } u;
 
 layout(set = 1, binding = 0) uniform sampler2DShadow shadowMap;
@@ -40,7 +42,7 @@ void main() {
     float major = gridLine(vWorld.xz, 8.0) * 0.38;
     float line = max(minor, major);
     /* light ground, slightly darker grid lines (Blocksworld-ish) */
-    vec3 base = vec3(0.58, 0.60, 0.64);
+    vec3 base = u.groundCol.rgb;
     vec3 col = mix(base, vec3(0.36, 0.38, 0.44), line);
     /* skip shadow lookup when viewing the underside (shadows would bleed through) */
     float sh = u.camPos.y > vWorld.y ? shadowFactor(vWorld) : 1.0;

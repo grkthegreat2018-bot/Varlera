@@ -20,6 +20,7 @@ void sculpt_release(void);
 void sculpt_move(int mx, int my);
 void sculpt_wheel(double dy);
 int  sculpt_key(int k);            /* always consumes while modal */
+void sculpt_char(unsigned cp);     /* name-field typing */
 
 /* legacy field <-> persisted voxel payloads (models.bw <= v5) */
 void sculpt_vox_unpack(const uint8_t (*vox4)[4], float *den, uint8_t (*col)[3]);

@@ -4,15 +4,22 @@ project(Varlera C)
 set(CMAKE_C_STANDARD 17)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 
-# --- vcpkg-provided Vulkan (headers + loader) ---
-set(_VCPKG_INC "${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/include")
-set(_VCPKG_LIB "${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/lib")
-find_path(VULKAN_INCLUDE_DIR vulkan/vulkan.h PATHS "${_VCPKG_INC}" NO_DEFAULT_PATH REQUIRED)
-find_library(VULKAN_LIBRARY NAMES vulkan-1 PATHS "${_VCPKG_LIB}" NO_DEFAULT_PATH REQUIRED)
-find_package(glfw3 CONFIG REQUIRED)
+# --- Vulkan: vcpkg first (Windows), system SDK/distro package otherwise ---
+if(DEFINED VCPKG_INSTALLED_DIR)
+  set(_VCPKG_INC "${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/include")
+  set(_VCPKG_LIB "${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/lib")
+  find_path(VULKAN_INCLUDE_DIR vulkan/vulkan.h PATHS "${_VCPKG_INC}" NO_DEFAULT_PATH)
+  find_library(VULKAN_LIBRARY NAMES vulkan-1 vulkan PATHS "${_VCPKG_LIB}" NO_DEFAULT_PATH)
+endif()
+if(NOT VULKAN_INCLUDE_DIR OR NOT VULKAN_LIBRARY)
+  find_package(Vulkan REQUIRED)          # Linux: libvulkan-dev / vulkan-headers
+  set(VULKAN_INCLUDE_DIR ${Vulkan_INCLUDE_DIRS})
+  set(VULKAN_LIBRARY ${Vulkan_LIBRARIES})
+endif()
+find_package(glfw3 CONFIG REQUIRED)      # Linux: libglfw3-dev ships glfw3Config.cmake
 
 # --- shaders ---
-find_program(GLSLC glslc HINTS "$ENV{VULKAN_SDK}/Bin" REQUIRED)
+find_program(GLSLC glslc HINTS "$ENV{VULKAN_SDK}/Bin" "$ENV{VULKAN_SDK}/bin" REQUIRED)
 set(SHADER_SRC_DIR ${CMAKE_SOURCE_DIR}/shaders)
 set(SHADER_BIN_DIR ${CMAKE_BINARY_DIR}/shaders)
 file(MAKE_DIRECTORY ${SHADER_BIN_DIR})
@@ -45,6 +52,9 @@ add_executable(varlera WIN32
 add_dependencies(varlera shaders)
 target_include_directories(varlera PRIVATE src ${VULKAN_INCLUDE_DIR})
 target_link_libraries(varlera PRIVATE glfw ${VULKAN_LIBRARY})
+if(UNIX AND NOT APPLE)
+  target_link_libraries(varlera PRIVATE m dl pthread)
+endif()
 target_compile_definitions(varlera PRIVATE SHADER_DIR="${SHADER_BIN_DIR}")
 
 # Copy shaders next to the exe so it runs from any cwd

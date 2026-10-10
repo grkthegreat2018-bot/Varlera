@@ -17,10 +17,13 @@ typedef struct {
     v3 size;                        /* bounding box in blocks */
     int mesh;                       /* RK_MESH_BASE_MODEL + i, or -1 */
     int vox;                        /* 1 = sculpted topo mesh (editable) */
+    int adv;                        /* 1 = premade asset (PROPS tab) */
     /* sculpted topology (verts centered on bbox center, block units) */
     int      nvert, nface;
     float    mv[MODEL_MAX_VERTS][3];
     uint8_t  mvcol[MODEL_MAX_VERTS][3];
+    int8_t   mvtex[MODEL_MAX_VERTS];  /* per-vert material id, -1 = inherit */
+    uint8_t  mvlock[MODEL_MAX_VERTS]; /* material layer locked in sculpt */
     uint16_t mf[MODEL_MAX_FACES][3];
 } Model;
 
@@ -30,7 +33,10 @@ extern int g_nmodels;
 void models_init(void);                                  /* load models.bw if present */
 int  model_bake(const Block *children, int n);           /* returns model idx or -1 */
 int  model_sculpt_topo(const float (*vx)[3], const uint8_t (*vc)[3],
-                       const uint16_t (*fc)[3], int nv, int nf);
+                       const int8_t *vt, const uint8_t *vl,
+                       const uint16_t (*fc)[3], int nv, int nf,
+                       const char *name);
+void models_bake_builtins(void);    /* premade PROPS-tab assets (first run) */
 void model_delete(int mid);   /* unfuse all world instances, then remove */
 int  models_save(const char *path);
 int  models_load(const char *path);

@@ -13,6 +13,12 @@ Deps via vcpkg manifest: `glfw3`, `vulkan-headers`, `vulkan-loader` (NOT the Vul
 for headers/lib — glslc from the SDK is used to compile shaders).
 Exe lands in `build/<config>/varlera.exe` with `shaders/*.spv` copied beside it.
 
+Linux: `sudo apt install libglfw3-dev libvulkan-dev glslc` (or vulkan-sdk), then
+`cmake -B build -S . && cmake --build build`. CMake falls back to
+`find_package(Vulkan)` + `find_package(glfw3)` when vcpkg vars are absent, and
+links m/dl/pthread. Win32-only code (file dialog, DPI awareness) is `_WIN32`
+-guarded; OBJ import on Linux uses zenity or `import.obj` beside the exe.
+
 ## Layout
 
 - `src/rk.c` / `rk.h` — renderer. Vulkan 1.3 dynamic rendering, reversed-Z main depth
@@ -27,14 +33,22 @@ Exe lands in `build/<config>/varlera.exe` with `shaders/*.spv` copied beside it.
 - `src/edit.c` — world editing: ray pick (scaled unit-AABB slabs), place ghost,
   move/resize/marquee state machine, selection outlines + 6 per-face resize
   handles (opposite face anchored, block recenters), fuse/unfuse (ctrl+B/U).
-- `src/model.c` — fused-block baking: per-child vertex colors, internal cube
-  face culling, `models.bw` persistence + `rk_model_mesh_add` upload.
-- `src/panel.c` — right panel with 3 tabs: SHAPES (collapsible categories SIMPLE/
-  SLOPES/ROUND/CUSTOM, 20 assets + baked models, scrollable, tooltips), PAINT
-  (16 presets + HSV picker + texture row: NONE/STUDS/CHECK/STRIP/DOTS/GRID),
-  WORLD (SAVE/LOAD/UNDO/REDO/CLEAR + block count). Asset geometry, paint color
-  and texture are fully decoupled. Script menu docks left of panel on select:
-  GRAVITY/COLLIDE/LOCKED toggles + TRIG/ACT cycle rows (BW scripting) + UNFUSE.
+- `src/model.c` — fused-block baking: per-child vertex colors + texture layers
+  (`Vert.tex` float, -1 = inherit), internal cube face culling, `models.bw`
+  persistence + `rk_model_mesh_add` upload. v7 stores per-vert material id
+  (`mvtex`, int8 -1 = inherit) + layer lock (`mvlock`) + `adv` flag; v6 and
+  older migrate. `models_bake_builtins()` seeds the 10 premade PROPS assets
+  (CRATE/TABLE/CHAIR/PERSON/TREE/FLOWER/ARCH/LAMP/FENCE/PILLAR) on first run
+  or after loading a pre-v7 file.
+- `src/panel.c` — right panel with 5 tabs: SHAPES (categories BASIC/RAMPS/
+  SPECIAL/SCULPTED, 19 assets + sculpted models, scrollable, tooltips), PAINT
+  (16 presets + HSV picker + texture grid + ALPHA slider -> `A.paintAlpha`
+  -> `Block.alpha`/`BF_GLASS`), WORLD (SAVE/LOAD/UNDO/REDO/CLEAR + block count
+  + ENVIRONMENT: SKY x6 / GROUND x5 preset cycler -> `rk_set_env`, saved to
+  `env.bw`), MODELS (fused block groups), PROPS (`adv` premade assets).
+  Asset geometry, paint color and texture are fully decoupled. Script menu
+  docks left of panel on select: GRAVITY/COLLIDE/LOCKED toggles + TRIG/ACT
+  cycle rows (BW scripting) + UNFUSE.
 - `src/world.c` — block store (`Block` 44B: pos/size/col/shape/rot/tex/flags/
   trig/act), undo/redo stacks, `world.bw` binary save/load (v2; reads v1),
   play-mode gravity settle + snapshot/restore.
@@ -59,8 +73,10 @@ Scripting (BW-style): select a block -> docked menu -> cycle TRIG
 (ALWAYS/SPACE/W/A/S/D/E/Q/CLICK) and ACT (NONE/SPIN/GLOW/BOOST). In play mode
 the action runs while the trigger key/button is held; BOOST is a thruster
 (velY += 30/s up to 10 u/s). Legacy BF_SPIN behaves like ALWAYS+SPIN.
-RMB on a CUSTOM cell deletes the model — placed instances auto-unfuse and
-mesh ids are re-baked dense. Eyedropper (RMB world click) picks color+texture.
+RMB on a SCULPTED/MODELS/PROPS cell opens a DELETE/KEEP confirm dialog —
+on confirm placed instances auto-unfuse and mesh ids re-bake dense; ESC or
+any non-DELETE click cancels. Eyedropper (RMB world click) picks
+color+texture.
 
 Modals (main.c routes all input by A.modal): 1 = pixel-art tool (art.c,
 PAINT tab EDIT/NEW/SHEET), 2 = sculpt mode (sculpt.c, SCULPT button top-left
@@ -76,7 +92,13 @@ verts/faces (nch=-2 record); v4/v5 voxel saves migrate through
 sculpt_bake_verts + weld_topo. Unfuse explodes a sculpted model into one
 micro-cube per vertex. Model meshes are normalized to the unit box at bake
 time (world instancing multiplies by block size — never store world-space
-extents in a baked mesh).
+extents in a baked mesh). Sculpt sidebar: MOVE/ADDV/PART tools, DEL V/
+SMOOTH/WELD, DOT DENSITY + SUBDIV, snap 0.125/0.25/0.5, MIRROR off/X/4-WAY,
+START shape picker (6 presets), PASTE/IMPORT/GRID, palette, MATERIAL row
+(TEX: cycles texture layer on the PART island or whole mesh, LOCK freezes
+that layer's color+texture - locked verts refuse later edits), per-island
+dot colors (union-find components tint dots so disconnected objects read
+apart). verts carry `s_vtex`/`s_vlock` through every split/weld/delete.
 
 Window: GUI subsystem (/ENTRY:mainCRTStartup, no console; stderr still works
 when redirected). Starts borderless fullscreen on the primary monitor;

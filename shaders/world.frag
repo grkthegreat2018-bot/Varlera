@@ -7,6 +7,7 @@ layout(location = 3) flat in uint vFlags;
 layout(location = 4) in vec3 vLocal;
 layout(location = 5) in vec3 vScale;
 layout(location = 6) flat in float vSeed;
+layout(location = 7) flat in float vTex;
 layout(location = 0) out vec4 outColor;
 
 layout(set = 0, binding = 0) uniform UBO {
@@ -81,6 +82,7 @@ void main() {
     vec3 n = normalize(vNrm);
     vec3 base = vColor.rgb;
     uint tid = (vFlags >> 5) & 63u;
+    if (vTex >= 0.0) tid = uint(vTex + 0.5);   /* per-vertex material layer */
     if (tid != 0u) {
         float cov;
         vec4 t = sampleTex(n, tid, (vFlags >> 11) & 3u, cov);

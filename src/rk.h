@@ -20,6 +20,11 @@ typedef enum {
     RK_MESH_DOME,       /* hemisphere on a base disc */
     RK_MESH_PYRAMID,    /* 4-sided cone, apex up */
     RK_MESH_CORNERW,    /* corner wedge: slopes down from one high corner */
+    RK_MESH_STAIR,      /* 3-step staircase, ascends toward -z */
+    RK_MESH_FRAME,      /* hollow cube: 12 edge beams only */
+    RK_MESH_ROUNDC,     /* rounded-edge cube (superellipsoid) */
+    RK_MESH_CAGEBALL,   /* sphere with circular holes on all 6 axis sides */
+    RK_MESH_CORSTAIR,   /* L-shaped corner staircase */
     RK_MESH_COUNT
 } RkMesh;
 
@@ -83,7 +88,10 @@ void rk_draw_icon(RkMesh m, int px, int py, int pw, int ph, float r, float g, fl
  * rk_gen_shape: emit a built-in unit mesh into caller memory (CPU bake).
  * rk_model_mesh_add: append baked verts, returns mesh id (RK_MESH_BASE_MODEL+i).
  * rk_models_commit: (re)uploads the model vertex buffer — call after adds. */
-typedef struct { float pos[3], nrm[3], col[3]; } Vert;
+/* tex: per-vertex atlas material id (-1 = use the instance/block tex).
+   verts sharing a tex id shade seamless across touching faces (box
+   projection is continuous where verts coincide). */
+typedef struct { float pos[3], nrm[3], col[3], tex; } Vert;
 int  rk_gen_shape(int shape, Vert *dst, int maxverts);
 int  rk_model_mesh_add(const Vert *v, int n);
 void rk_models_commit(void);
@@ -105,6 +113,9 @@ void rk_tex_rect(int id, float u0, float v0, float tw, float th); /* tiles */
 
 void rk_ui_rect(float px, float py, float pw, float ph, float r, float g, float b, float a);
 void rk_ui_flush(void);
+
+/* environment look: sky tints clear+fog, ground tints the grid base color */
+void rk_set_env(const float sky[3], const float ground[3]);
 
 void rk_extent(int *w, int *h);
 

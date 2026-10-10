@@ -22,5 +22,8 @@ void panel_scroll(double dy);
 void panel_draw(void);                      /* queues UI + icons (+ tooltip) */
 int  panel_script_click(double x, double y); /* block context menu; 1 if consumed */
 int  panel_rmb(double x, double y);          /* RMB: delete custom model; 1 if consumed */
+int  panel_del_pending(void);                 /* delete-confirm dialog open */
+void panel_del_cancel(void);                  /* ESC dismiss */
+void panel_apply_paint(void);                 /* commit dragged alpha to sel */
 
 #endif

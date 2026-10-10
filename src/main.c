@@ -1,6 +1,10 @@
 /* main.c - entry point, input dispatch, frame loop. */
 #include <stdio.h>
 #include <string.h>
+#ifdef _WIN32
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
+#endif
 #define GLFW_INCLUDE_NONE
 #include <GLFW/glfw3.h>
 
@@ -34,6 +38,7 @@ void app_toggle_mode(void) {
 
 static void on_char(GLFWwindow *w, unsigned int cp) {
     (void)w;
+    if (A.modal == 2) { sculpt_char(cp); return; }
     if (!A.textMode || cp < 32 || cp >= 127) return;
     if (A.textMode == 1) {
         int n = (int)strlen(A.search);
@@ -108,6 +113,7 @@ static void on_mouse(GLFWwindow *w, int button, int action, int mods) {
             if (A.app == APP_EDIT && panel_script_click(A.mx, A.my)) return;
             if (A.app == APP_EDIT) edit_lmb_press(mods);
         } else {
+            if (A.pickDrag == 3) panel_apply_paint();
             A.pickDrag = 0;
             if (A.app == APP_EDIT) edit_lmb_release(mods);
             else A.drag = M_IDLE;
@@ -162,6 +168,7 @@ static void on_key(GLFWwindow *w, int key, int sc, int action, int mods) {
     }
     if (key == GLFW_KEY_F11 && action == GLFW_PRESS) { toggle_fullscreen(); return; }
     if (key == GLFW_KEY_TAB && (action == GLFW_PRESS)) { app_toggle_mode(); return; }
+    if (key == GLFW_KEY_ESCAPE && panel_del_pending()) { panel_del_cancel(); return; }
     if (key == GLFW_KEY_ESCAPE && A.app == APP_PLAY) { app_toggle_mode(); return; }
     if (A.app == APP_EDIT) edit_key(key, mods);
 }
@@ -175,6 +182,11 @@ static void on_resize(GLFWwindow *w, int width, int height) {
 
 int main(void) {
     memset(&A, 0, sizeof A);
+#ifdef _WIN32
+    /* render at real monitor pixels, not Windows-scaled logical size -
+       without this the whole UI is blurry upscaled text */
+    SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
+#endif
     if (!glfwInit()) { fputs("glfwInit failed\n", stderr); return 1; }
     glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
     A.win = glfwCreateWindow(1280, 720, "Varlera", NULL, NULL);
@@ -250,8 +262,10 @@ int main(void) {
         v3 focus = v3_add(A.camPos, v3_scale(cam_basis().f, 30.0f));
         rk_set_camera(A.viewProj, eye.e, focus.e);
 
-        rk_draw_grid();
-        edit_draw_world();
+        if (A.modal != 2) {                    /* sculpt = own mini-world */
+            rk_draw_grid();
+            edit_draw_world();
+        }
         if (A.modal == 1) art_draw();
         else if (A.modal == 2) sculpt_draw();
         else panel_draw();                               /* modal overlays editor */

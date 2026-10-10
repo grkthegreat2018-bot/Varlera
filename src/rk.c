@@ -34,6 +34,7 @@ typedef struct {
     m4 viewProj, iconVP, shadowVP;
     float camPos[4], lightDir[4], fogColor[4], fogParams[4];
     float texRect[RK_TEX_MAX][4];   /* u0,v0,tileW,tileH per texture id */
+    float groundCol[4];             /* grid base color (world-settings tint) */
 } UBO;
 
 typedef struct { float x, y, w, h, r, g, b, a; } UIRect;
@@ -144,6 +145,7 @@ static void mv3(float x, float y, float z, float nx, float ny, float nz) {
     v->pos[0]=x; v->pos[1]=y; v->pos[2]=z;
     v->nrm[0]=nx; v->nrm[1]=ny; v->nrm[2]=nz;
     v->col[0]=v->col[1]=v->col[2]=1.0f;
+    v->tex=-1.0f;
 }
 static void tri(v3 a, v3 b, v3 c, v3 n) {
     mv3(a.x,a.y,a.z,n.x,n.y,n.z);
@@ -322,6 +324,141 @@ static int gen_pyramid(void) { /* square pyramid, unit box */
     return s;
 }
 
+/* 3-step staircase ascending toward -z (sits in the unit box) */
+static int gen_stair(void) {
+    int s = g_nv;
+    float h = 0.5f;
+    for (int i = 0; i < 3; i++) {
+        float z0 = 0.5f - i / 3.0f, z1 = z0 - 1.0f / 3.0f;
+        float y1 = -0.5f + (i + 1) / 3.0f;
+        v3 f0={-h,-h,z0}, f1={h,-h,z0}, f2={h,y1,z0}, f3={-h,y1,z0};
+        quad(f0,f1,f2,f3, v3_make(0,0,1));                    /* riser   */
+        v3 t0={-h,y1,z1}, t1={h,y1,z1}, t2={h,y1,z0}, t3={-h,y1,z0};
+        quad(t0,t1,t2,t3, v3_make(0,1,0));                    /* tread   */
+        v3 l0={-h,-h,z0}, l1={-h,-h,z1}, l2={-h,y1,z1}, l3={-h,y1,z0};
+        quad(l0,l1,l2,l3, v3_make(-1,0,0));                   /* -x side */
+        v3 r0={h,-h,z1}, r1={h,-h,z0}, r2={h,y1,z0}, r3={h,y1,z1};
+        quad(r0,r1,r2,r3, v3_make(1,0,0));                    /* +x side */
+    }
+    v3 d0={-h,-h,-h}, d1={h,-h,-h}, d2={h,h,-h}, d3={-h,h,-h};
+    quad(d1,d0,d3,d2, v3_make(0,0,-1));                       /* back    */
+    v3 g0={-h,-h,0.5f}, g1={h,-h,0.5f};
+    quad(g0,g1,d1,d0, v3_make(0,-1,0));                       /* bottom  */
+    return s;
+}
+
+/* axis-aligned box helper for FRAME/CORSTAIR builders */
+static void beam(v3 lo, v3 hi) {
+    v3 c[8] = {
+        {lo.x,lo.y,lo.z},{hi.x,lo.y,lo.z},{hi.x,hi.y,lo.z},{lo.x,hi.y,lo.z},
+        {lo.x,lo.y,hi.z},{hi.x,lo.y,hi.z},{hi.x,hi.y,hi.z},{lo.x,hi.y,hi.z}
+    };
+    quad(c[4],c[5],c[6],c[7], v3_make(0,0,1));
+    quad(c[1],c[0],c[3],c[2], v3_make(0,0,-1));
+    quad(c[5],c[1],c[2],c[6], v3_make(1,0,0));
+    quad(c[0],c[4],c[7],c[3], v3_make(-1,0,0));
+    quad(c[7],c[6],c[2],c[3], v3_make(0,1,0));
+    quad(c[0],c[1],c[5],c[4], v3_make(0,-1,0));
+}
+
+/* hollow cube: 12 edge beams -> see-through frame */
+static int gen_frame(void) {
+    int s = g_nv;
+    float h = 0.5f, t = 0.14f;
+    for (int a = 0; a < 3; a++)            /* 4 beams per axis */
+        for (int u = -1; u <= 1; u += 2)
+            for (int v = -1; v <= 1; v += 2) {
+                v3 lo = {-h,-h,-h}, hi = {h,h,h};
+                lo.e[a] = -h; hi.e[a] = h;
+                int b1 = (a + 1) % 3, b2 = (a + 2) % 3;
+                lo.e[b1] = u > 0 ? h - t : -h;
+                hi.e[b1] = u > 0 ? h : -h + t;
+                lo.e[b2] = v > 0 ? h - t : -h;
+                hi.e[b2] = v > 0 ? h : -h + t;
+                beam(lo, hi);
+            }
+    return s;
+}
+
+/* rounded-edge cube: superellipsoid (exponent ~0.35 reads as a soft box) */
+static int gen_roundc(int n) {
+    int s = g_nv;
+    const float e = 0.35f, r = 0.5f;
+    for (int i = 0; i < n; i++) {
+        float u0 = -1.5707963f + (float)i / n * 3.14159265f;
+        float u1 = -1.5707963f + (float)(i + 1) / n * 3.14159265f;
+        for (int j = 0; j < 2 * n; j++) {
+            float v0 = (float)j / (2 * n) * 6.2831853f;
+            float v1 = (float)(j + 1) / (2 * n) * 6.2831853f;
+            v3 p[4], nm[4]; float us[4]={u0,u0,u1,u1}, vs[4]={v0,v1,v1,v0};
+            for (int k = 0; k < 4; k++) {
+                float cu = cosf(us[k]), su = sinf(us[k]);
+                float cv = cosf(vs[k]), sv = sinf(vs[k]);
+                float pu = fabsf(cu) < 1e-6f ? 0 : powf(fabsf(cu), e);
+                float pv = fabsf(cv) < 1e-6f ? 0 : powf(fabsf(cv), e);
+                float qw = fabsf(su) < 1e-6f ? 0 : powf(fabsf(su), e);
+                float rv = fabsf(sv) < 1e-6f ? 0 : powf(fabsf(sv), e);
+                float x = r * pu * (cu < 0 ? -1 : 1) * pv * (cv < 0 ? -1 : 1);
+                float y = r * qw * (su < 0 ? -1 : 1);
+                float z = r * pu * (cu < 0 ? -1 : 1) * rv * (sv < 0 ? -1 : 1);
+                p[k] = v3_make(x, y, z);
+                /* superellipsoid normal ~ (x^(2-e), y^(2-e), z^(2-e)) */
+                float ne = 2.0f - e;
+                v3 nn = v3_make(fabsf(x) < 1e-6f ? 0 : (x < 0 ? -1 : 1) * powf(fabsf(x) / r, ne),
+                                fabsf(y) < 1e-6f ? 0 : (y < 0 ? -1 : 1) * powf(fabsf(y) / r, ne),
+                                fabsf(z) < 1e-6f ? 0 : (z < 0 ? -1 : 1) * powf(fabsf(z) / r, ne));
+                nm[k] = v3_len(nn) < 1e-5f ? v3_make(0,1,0) : v3_norm(nn);
+            }
+            triN(p[0],p[2],p[3], nm[0],nm[2],nm[3]);
+            triN(p[0],p[1],p[2], nm[0],nm[1],nm[2]);
+        }
+    }
+    return s;
+}
+
+/* sphere with circular holes on all 6 axis sides */
+static int gen_cageball(int lat, int lon) {
+    int s = g_nv;
+    const float r = 0.5f, hole = 0.62f;   /* hole half-angle cosine */
+    for (int i = 0; i < lat; i++) {
+        float t0 = (float)i/lat*3.14159265f, t1 = (float)(i+1)/lat*3.14159265f;
+        for (int j = 0; j < lon; j++) {
+            float p0 = (float)j/lon*6.2831853f, p1 = (float)(j+1)/lon*6.2831853f;
+            v3 q[4];
+            float ts[4]={t0,t1,t1,t0}, ps[4]={p0,p0,p1,p1};
+            for (int k = 0; k < 4; k++)
+                q[k] = v3_make(r*sinf(ts[k])*cosf(ps[k]), r*cosf(ts[k]),
+                               r*sinf(ts[k])*sinf(ps[k]));
+            v3 c = v3_norm(v3_add(v3_add(q[0],q[1]),v3_add(q[2],q[3])));
+            if (fabsf(c.x) > hole || fabsf(c.y) > hole || fabsf(c.z) > hole)
+                continue;                  /* inside a hole opening */
+            triN(q[0],q[1],q[2], v3_norm(q[0]),v3_norm(q[1]),v3_norm(q[2]));
+            triN(q[0],q[2],q[3], v3_norm(q[0]),v3_norm(q[2]),v3_norm(q[3]));
+        }
+    }
+    return s;
+}
+
+/* L-shaped corner staircase: two 3-step runs meeting at a mid landing */
+static int gen_corstair(void) {
+    int s = g_nv;
+    /* landing block in the +x,-z corner at mid height */
+    beam(v3_make(0.0f,-0.5f,-0.5f), v3_make(0.5f,-0.1666f,0.0f));
+    /* run A: 3 steps climbing -z -> landing (along -x half) */
+    for (int i = 0; i < 3; i++) {
+        float z0 = 0.5f - i / 3.0f, z1 = z0 - 1.0f / 3.0f;
+        float y1 = -0.5f + (i + 1) * (1.0f / 3.0f) * 0.5f;
+        beam(v3_make(-0.5f,-0.5f,z1), v3_make(0.0f,y1,z0));
+    }
+    /* run B: 3 steps climbing -x -> landing top (along -z half) */
+    for (int i = 0; i < 3; i++) {
+        float x0 = 0.5f - i / 3.0f, x1 = x0 - 1.0f / 3.0f;
+        float y1 = -0.1666f + (i + 1) * (1.0f / 3.0f) * 0.5f;
+        beam(v3_make(x1,-0.5f,-0.5f), v3_make(x0,y1,0.0f));
+    }
+    return s;
+}
+
 static int gen_line_box(void) {
     int s = g_nv;
     float h = 0.5f;
@@ -357,6 +494,11 @@ static int gen_by_index(int shape) {
     case RK_MESH_DOME:     return gen_dome(7, 16);
     case RK_MESH_PYRAMID:  return gen_pyramid();
     case RK_MESH_CORNERW:  return gen_cornerw();
+    case RK_MESH_STAIR:    return gen_stair();
+    case RK_MESH_FRAME:    return gen_frame();
+    case RK_MESH_ROUNDC:   return gen_roundc(14);
+    case RK_MESH_CAGEBALL: return gen_cageball(12, 18);
+    case RK_MESH_CORSTAIR: return gen_corstair();
     }
     return g_nv;
 }
@@ -381,6 +523,11 @@ static void build_mesh_data(void) {
     G.meshOff[RK_MESH_DOME]     = gen_dome(7, 16);
     G.meshOff[RK_MESH_PYRAMID]  = gen_pyramid();
     G.meshOff[RK_MESH_CORNERW]  = gen_cornerw();
+    G.meshOff[RK_MESH_STAIR]    = gen_stair();
+    G.meshOff[RK_MESH_FRAME]    = gen_frame();
+    G.meshOff[RK_MESH_ROUNDC]   = gen_roundc(14);
+    G.meshOff[RK_MESH_CAGEBALL] = gen_cageball(12, 18);
+    G.meshOff[RK_MESH_CORSTAIR] = gen_corstair();
     G.meshOff[MESH_PLANE]       = gen_plane();
     G.lineOff = gen_line_box();
     for (int i = 0; i < MESH_TOTAL; i++) {
@@ -669,17 +816,18 @@ static void fill_mesh_vertex_input(PipeDesc *d) {
     d->attrs[0] = (VkVertexInputAttributeDescription){0, 0, VK_FORMAT_R32G32B32_SFLOAT, 0};
     d->attrs[1] = (VkVertexInputAttributeDescription){1, 0, VK_FORMAT_R32G32B32_SFLOAT, 12};
     d->attrs[2] = (VkVertexInputAttributeDescription){6, 0, VK_FORMAT_R32G32B32_SFLOAT, 24};
-    d->attrCount = 3; d->bindCount = 1;
+    d->attrs[3] = (VkVertexInputAttributeDescription){7, 0, VK_FORMAT_R32_SFLOAT, 36};
+    d->attrCount = 4; d->bindCount = 1;
 }
 
 static void fill_inst_vertex_input(PipeDesc *d) {
     fill_mesh_vertex_input(d);
     d->binds[1] = (VkVertexInputBindingDescription){1, sizeof(RkInst), VK_VERTEX_INPUT_RATE_INSTANCE};
-    d->attrs[3] = (VkVertexInputAttributeDescription){2, 1, VK_FORMAT_R32G32B32_SFLOAT, offsetof(RkInst,pos)};
-    d->attrs[4] = (VkVertexInputAttributeDescription){3, 1, VK_FORMAT_R32G32B32_SFLOAT, offsetof(RkInst,scale)};
-    d->attrs[5] = (VkVertexInputAttributeDescription){4, 1, VK_FORMAT_R8G8B8A8_UNORM, offsetof(RkInst,color)};
-    d->attrs[6] = (VkVertexInputAttributeDescription){5, 1, VK_FORMAT_R32_UINT, offsetof(RkInst,flags)};
-    d->attrCount = 7; d->bindCount = 2;
+    d->attrs[4] = (VkVertexInputAttributeDescription){2, 1, VK_FORMAT_R32G32B32_SFLOAT, offsetof(RkInst,pos)};
+    d->attrs[5] = (VkVertexInputAttributeDescription){3, 1, VK_FORMAT_R32G32B32_SFLOAT, offsetof(RkInst,scale)};
+    d->attrs[6] = (VkVertexInputAttributeDescription){4, 1, VK_FORMAT_R8G8B8A8_UNORM, offsetof(RkInst,color)};
+    d->attrs[7] = (VkVertexInputAttributeDescription){5, 1, VK_FORMAT_R32_UINT, offsetof(RkInst,flags)};
+    d->attrCount = 8; d->bindCount = 2;
 }
 
 static void make_pipelines(void) {
@@ -1081,7 +1229,14 @@ int rk_init(GLFWwindow *win) {
     { v3 l = light_dir(); memcpy(G.ubo.lightDir, l.e, sizeof l); }
     G.ubo.fogColor[0]=0.56f; G.ubo.fogColor[1]=0.66f; G.ubo.fogColor[2]=0.82f; G.ubo.fogColor[3]=1;
     G.ubo.fogParams[0]=60.0f; G.ubo.fogParams[1]=170.0f;
+    G.ubo.groundCol[0]=0.58f; G.ubo.groundCol[1]=0.60f;
+    G.ubo.groundCol[2]=0.64f; G.ubo.groundCol[3]=1;
     return 1;
+}
+
+void rk_set_env(const float sky[3], const float ground[3]) {
+    if (sky) memcpy(G.ubo.fogColor, sky, 12);
+    if (ground) memcpy(G.ubo.groundCol, ground, 12);
 }
 
 void rk_shutdown(void) {
@@ -1436,7 +1591,8 @@ void rk_end_frame(void) {
             vkCmdBindPipeline(G.cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, G.pWorld);
             bind_sets_and_mesh();
             vkCmdBindVertexBuffers(G.cmd, 0, 1, &G.fr[G.fi].mesh, &(VkDeviceSize){0});
-            {   float c[4] = {1,1,1,1}; push_pc(e->mm, c, RKIF_VCOL); }
+            {   float c[4] = {1,1,1,1};
+    push_pc(e->mm, c, RKIF_VCOL | RKIF_TEXM(1)); }
             vkCmdDraw(G.cmd, e->count, 1, e->first, 0);
             break;
         case K_MLINES:

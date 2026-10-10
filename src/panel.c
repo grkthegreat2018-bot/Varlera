@@ -13,7 +13,7 @@
 #include <math.h>
 #include <ctype.h>
 
-#define PW      216.0f    /* panel width */
+#define PW      236.0f    /* panel width */
 #define STRIPW  26.0f     /* collapsed strip width */
 #define HDRH    24.0f     /* category header height */
 #define CELL    64.0f     /* item cell size */
@@ -32,37 +32,84 @@ static const float PALETTE[][3] = {
 };
 #define N_COLORS ((int)(sizeof PALETTE / sizeof PALETTE[0]))
 
-/* ---- assets: only shapes you can't make by resizing others ---- */
+/* ---- assets: built-in shapes + size variants ---- */
 static const Asset ASSETS[] = {
-    /* PRIMITIVES */
+    /* BASIC */
     {"Block",      "Basic cube.",                           RK_MESH_CUBE,     {1,1,1}},
+    {"Mini Block", "Quarter-size cube.",                    RK_MESH_CUBE,     {0.25f,0.25f,0.25f}},
+    {"Wall",       "Thin wall panel.",                      RK_MESH_CUBE,     {1,1,0.15f}},
+    {"Plate",      "Flat floor tile.",                      RK_MESH_CUBE,     {1,0.15f,1}},
+    {"Pole",       "Thin round post.",                      RK_MESH_CYLINDER, {0.22f,1,0.22f}},
     {"Sphere",     "Ball.",                                 RK_MESH_SPHERE,   {1,1,1}},
     {"Cylinder",   "Round column.",                         RK_MESH_CYLINDER, {1,1,1}},
     {"Cone",       "Pointy top.",                           RK_MESH_CONE,     {1,1,1}},
     {"Dome",       "Half sphere.",                          RK_MESH_DOME,     {1,0.55f,1}},
     {"Pyramid",    "Square pyramid.",                       RK_MESH_PYRAMID,  {1,1,1}},
-    /* SLOPES */
+    /* RAMPS */
     {"Wedge",      "45 deg ramp.",                          RK_MESH_WEDGE,    {1,1,1}},
     {"Corner",     "Corner wedge - slopes from one corner.",RK_MESH_CORNERW,  {1,1,1}},
-    /* PARTS */
+    {"Stairs",     "3-step staircase.",                     RK_MESH_STAIR,    {1,1,1}},
+    {"L-Stairs",   "Corner staircase.",                     RK_MESH_CORSTAIR, {1,1,1}},
+    /* SPECIAL */
     {"Wheel",      "Rolls sideways.",                       RK_MESH_WHEEL,    {1,1,1}},
     {"Torus",      "Donut ring / tire.",                    RK_MESH_TORUS,    {1,1,1}},
+    {"Round Cube", "Cube with rounded edges.",              RK_MESH_ROUNDC,   {1,1,1}},
+    {"Frame",      "Hollow cube - edges only.",             RK_MESH_FRAME,    {1,1,1}},
+    {"Cage Ball",  "Sphere with holes on all sides.",       RK_MESH_CAGEBALL, {1,1,1}},
 };
 #define N_ASSETS ((int)(sizeof ASSETS / sizeof ASSETS[0]))
 
 typedef struct { const char *name; int first, count; } Cat;
 static const Cat CATS[] = {
-    {"PRIMITIVES", 0, 6},
-    {"SLOPES",     6, 2},
-    {"PARTS",      8, 2},
-    {"CUSTOM",     0, 0},       /* dynamic: fused models + sculpted shapes */
+    {"BASIC",    0, 10},
+    {"RAMPS",   10, 4},
+    {"SPECIAL", 14, 5},
+    {"SCULPTED", 0, 0},       /* dynamic: sculpted topology models only */
 };
 #define N_CATS ((int)(sizeof CATS / sizeof CATS[0]))
 
-static int          cat_count(int c) { return c < 3 ? CATS[c].count : g_nmodels; }
-static int          cat_ai(int c, int i) { return c < 3 ? CATS[c].first + i : N_ASSETS + i; }
+/* model lists: sculpted (vox) fill CUSTOM; fused (!vox) fill the MODELS tab */
+static int n_vox_models(void) {
+    int n = 0;
+    for (int m = 0; m < g_nmodels; m++) if (g_models[m].vox) n++;
+    return n;
+}
+static int vox_model_idx(int i) {
+    for (int m = 0; m < g_nmodels; m++)
+        if (g_models[m].vox && !i--) return m;
+    return -1;
+}
+static int n_fused_models(void) {
+    int n = 0;
+    for (int m = 0; m < g_nmodels; m++)
+        if (!g_models[m].vox && !g_models[m].adv) n++;
+    return n;
+}
+static int fused_model_idx(int i) {
+    for (int m = 0; m < g_nmodels; m++)
+        if (!g_models[m].vox && !g_models[m].adv && !i--) return m;
+    return -1;
+}
+static int n_adv_models(void) {
+    int n = 0;
+    for (int m = 0; m < g_nmodels; m++) if (g_models[m].adv) n++;
+    return n;
+}
+static int adv_model_idx(int i) {
+    for (int m = 0; m < g_nmodels; m++)
+        if (g_models[m].adv && !i--) return m;
+    return -1;
+}
 
-static const char *TABS[] = {"SHAPES", "PAINT", "WORLD"};
+static int          cat_count(int c) { return c < 3 ? CATS[c].count : n_vox_models(); }
+static int          cat_ai(int c, int i) {
+    return c < 3 ? CATS[c].first + i : N_ASSETS + vox_model_idx(i);
+}
+
+static const char *TABS[] = {"SHAPES", "PAINT", "WORLD", "MODELS", "PROPS"};
+#define N_TABS 5
+
+static void env_load(void);
 
 const Asset *panel_asset(int i) {
     if (i >= 0 && i < N_ASSETS) return &ASSETS[i];
@@ -70,7 +117,9 @@ const Asset *panel_asset(int i) {
     if (m >= 0 && m < g_nmodels) {
         static Asset a;                      /* synthetic asset for a model */
         a.name = g_models[m].name;
-        a.tip  = "Fused custom block.";
+        a.tip  = g_models[m].vox ? "Sculpted block. RMB deletes."
+               : g_models[m].adv ? "Premade asset. RMB deletes."
+                                 : "Fused block. RMB deletes.";
         a.mesh = g_models[m].mesh;
         a.size = g_models[m].size;
         return &a;
@@ -88,11 +137,51 @@ void panel_init(void) {
     A.nCustoms = 0;
     A.armedAsset = -1;
     A.paintTex = 0; A.paintTexM = TEXM_LOOP; A.paintAlpha = 1.0f;
+    env_load();
 }
 
 /* ---- helpers ---- */
 
 static float panel_x(void) { return (float)A.fbw - (A.panelOpen ? PW : STRIPW); }
+
+/* pending model deletion (confirm dialog), -1 = none */
+static int s_delModel = -1;
+int panel_del_pending(void) { return s_delModel >= 0; }
+void panel_del_cancel(void) { s_delModel = -1; }
+
+/* ---- environment: sky + ground presets (world.bw-independent env.bw) ---- */
+static const float ENV_SKY[][3] = {
+    {0.56f,0.66f,0.82f}, {0.94f,0.60f,0.40f}, {0.36f,0.32f,0.56f},
+    {0.05f,0.07f,0.16f}, {0.52f,0.82f,0.72f}, {0.02f,0.02f,0.04f},
+};
+static const char *ENV_SKY_N[] = {"DAY","SUNSET","DUSK","NIGHT","MINT","VOID"};
+#define ENV_NSKY 6
+static const float ENV_GROUND[][3] = {
+    {0.58f,0.60f,0.64f}, {0.36f,0.60f,0.30f}, {0.80f,0.70f,0.48f},
+    {0.88f,0.90f,0.95f}, {0.17f,0.18f,0.22f},
+};
+static const char *ENV_GROUND_N[] = {"CONCRETE","GRASS","SAND","SNOW","DARK"};
+#define ENV_NGROUND 5
+static int s_sky = 0, s_ground = 0;
+
+static void env_apply(void) {
+    rk_set_env(ENV_SKY[s_sky], ENV_GROUND[s_ground]);
+}
+static void env_save(void) {
+    FILE *f = fopen("env.bw", "wb");
+    if (f) { int v[2] = {s_sky, s_ground}; fwrite(v, 4, 2, f); fclose(f); }
+}
+static void env_load(void) {
+    FILE *f = fopen("env.bw", "rb");
+    if (!f) return;
+    int v[2] = {0, 0};
+    if (fread(v, 4, 2, f) == 2) {
+        if (v[0] >= 0 && v[0] < ENV_NSKY) s_sky = v[0];
+        if (v[1] >= 0 && v[1] < ENV_NGROUND) s_ground = v[1];
+    }
+    fclose(f);
+    env_apply();
+}
 
 static int in_rect(float x, float y, float rx, float ry, float rw, float rh) {
     return x >= rx && x < rx+rw && y >= ry && y < ry+rh;
@@ -148,6 +237,29 @@ static float shapes_h(void) {
 }
 
 static float cy(float contentY) { return SHAPES_TOP + contentY - A.panelScroll; }
+
+/* MODELS tab (kind 0 = fused) / PROPS tab (kind 1 = premade) */
+static int model_list_n(int kind) {
+    return kind ? n_adv_models() : n_fused_models();
+}
+static int model_list_idx(int kind, int i) {
+    return kind ? adv_model_idx(i) : fused_model_idx(i);
+}
+static float models_h(int kind) {
+    return HDRH + ((model_list_n(kind) + COLS - 1) / COLS) * CELL + 6.0f;
+}
+static int model_at(int kind, float x, float y) {  /* -> g_models idx or -1 */
+    float px = panel_x();
+    float yy = HDRH;
+    int n = model_list_n(kind);
+    for (int i = 0; i < n; i++) {
+        float cx0 = px + 8 + (i % COLS) * CELL;
+        float cy0 = cy(yy + (i / COLS) * CELL);
+        if (in_rect(x, y, cx0, cy0, CELL-4, CELL-4))
+            return model_list_idx(kind, i);
+    }
+    return -1;
+}
 
 /* asset at screen pos (SHAPES tab), -1 none */
 static int asset_at(float x, float y) {
@@ -249,6 +361,15 @@ int panel_press(double x, double y) {
     if (in_rect((float)x,(float)y, 10, 10, 110, 34)) { app_toggle_mode(); return 1; }
     if (A.app == APP_EDIT &&
         in_rect((float)x,(float)y, 128, 10, 110, 34)) { sculpt_open(); return 1; }
+    /* delete-confirm dialog captures clicks while open (screen-centered) */
+    if (s_delModel >= 0) {
+        float cx = ((float)A.fbw - 300.0f) * 0.5f;
+        float cy2 = (float)A.fbh * 0.5f - 40.0f;
+        if (in_rect((float)x,(float)y, cx + 30, cy2 + 62, 100, 26))
+            model_delete(s_delModel);
+        s_delModel = -1;                    /* any click dismisses */
+        return 1;
+    }
     if (x < px) { A.textMode = 0; return 0; }
     /* clicks anywhere but the search box defocus text input */
     if (!in_rect((float)x,(float)y, px + 8, SRCHY, PW - 16, SRCHH)) A.textMode = 0;
@@ -256,8 +377,8 @@ int panel_press(double x, double y) {
     if (in_rect((float)x,(float)y, px + PW - 26, 4, 24, 22)) { A.panelOpen = 0; return 1; }
 
     /* tabs */
-    for (int t = 0; t < 3; t++)
-        if (in_rect((float)x,(float)y, px + 6 + t*66, 30, 62, 22)) { A.panelTab = t; return 1; }
+    for (int t = 0; t < N_TABS; t++)
+        if (in_rect((float)x,(float)y, px + 4 + t*46, 30, 44, 22)) { A.panelTab = t; return 1; }
 
     float fx = (float)x, fy = (float)y;
 
@@ -339,16 +460,12 @@ int panel_press(double x, double y) {
                 return 1;
             }
         }
-        /* alpha row */
+        /* alpha slider (drag, applied to selection on release) */
         float ay = tgy + TEXROWS * 28.0f + 4.0f;
-        static const float AL[] = {1.0f, 0.75f, 0.5f, 0.25f};
-        for (int i = 0; i < 4; i++) {
-            float ax = px + 10 + i * 50.0f;
-            if (in_rect(fx, fy, ax, ay, 46, 20)) {
-                A.paintAlpha = AL[i];
-                apply_tex_sel();
-                return 1;
-            }
+        if (in_rect(fx, fy, sx, ay, PV_W, 20)) {
+            A.paintAlpha = clampf((fx - sx) / PV_W, 0.05f, 1.0f);
+            A.pickDrag = 3;
+            return 1;
         }
         /* art tool: EDIT selected / NEW tex / NEW SHEET */
         float ny = ay + 30.0f;
@@ -371,7 +488,15 @@ int panel_press(double x, double y) {
         return 1;
     }
 
+    if (A.panelTab == 3 || A.panelTab == 4) {  /* MODELS / PROPS grids */
+        int kind = A.panelTab - 3;
+        int m = model_at(kind, fx, fy);
+        if (m >= 0) { A.armedAsset = N_ASSETS + m; A.drag = M_PLACE; }
+        return 1;
+    }
+
     /* WORLD tab */
+    if (A.panelTab != 2) return 1;
     float by = 80;
     struct { float x; const char *n; } btns[] = {
         {px+8, "SAVE"}, {px+76, "LOAD"}, {px+144, "UNDO"},
@@ -390,6 +515,16 @@ int panel_press(double x, double y) {
             return 1;
         }
     }
+    /* environment pickers: SKY / GROUND cycle */
+    for (int i = 0; i < 2; i++) {
+        float ey = 196.0f + i * 34.0f;
+        if (in_rect(fx, fy, px + 8, ey, PW - 16, 26)) {
+            if (i == 0) s_sky = (s_sky + 1) % ENV_NSKY;
+            else        s_ground = (s_ground + 1) % ENV_NGROUND;
+            env_apply(); env_save();
+            return 1;
+        }
+    }
     return 1;
 }
 
@@ -400,17 +535,27 @@ void panel_drag_update(void) {
     if (A.pickDrag == 1) {
         A.hsv[1] = clampf(((float)A.mx - sx) / PV_W, 0, 1);
         A.hsv[2] = clampf(1.0f - ((float)A.my - PV_Y) / PV_H, 0, 1);
-    } else {
+        hsv2rgb(A.hsv[0], A.hsv[1], A.hsv[2], A.paintCol);
+    } else if (A.pickDrag == 2) {
         A.hsv[0] = clampf(((float)A.mx - sx) / PV_W, 0, 0.999f);
+        hsv2rgb(A.hsv[0], A.hsv[1], A.hsv[2], A.paintCol);
+    } else if (A.pickDrag == 3) {
+        /* alpha slider: continuous, applied on release */
+        A.paintAlpha = clampf(((float)A.mx - sx) / PV_W, 0.05f, 1.0f);
     }
-    hsv2rgb(A.hsv[0], A.hsv[1], A.hsv[2], A.paintCol);
 }
+
+/* called on LMB release: commit the dragged paint alpha to the selection */
+void panel_apply_paint(void) { apply_tex_sel(); }
 
 void panel_scroll(double dy) {
     if (!A.panelOpen) return;
     if (A.panelTab == 0) {
         A.panelScroll = clampf(A.panelScroll - (float)dy * 42.0f,
                                0, fmaxf(0.0f, shapes_h() - (A.fbh - SHAPES_TOP)));
+    } else if (A.panelTab == 3 || A.panelTab == 4) {
+        A.panelScroll = clampf(A.panelScroll - (float)dy * 42.0f,
+                               0, fmaxf(0.0f, models_h(A.panelTab - 3) - (A.fbh - SHAPES_TOP)));
     } else if (A.panelTab == 1) {
         /* scroll the texture grid when hovering its area */
         float ty = tex_row_y() + 6;
@@ -529,6 +674,35 @@ static void draw_shapes(float px) {
     }
 }
 
+/* MODELS (kind 0, fused) / PROPS (kind 1, premade) tab body */
+static void draw_models(float px, int kind) {
+    float cy0 = SHAPES_TOP, cy1 = (float)A.fbh;
+    float yy = 0;
+    A.hoverAsset = -1;
+    int n = model_list_n(kind);
+    char hdr[40];
+    snprintf(hdr, sizeof hdr, "%s %d",
+             kind ? "PREMADE ASSETS" : "FUSED MODELS", n);
+    ui_text_clip(px + 12, cy(yy) + 5, hdr, 2, 0.85f,0.87f,0.95f,1, cy0, cy1);
+    if (!n)
+        ui_text_clip(px + 12, cy(yy) + 30,
+                     kind ? "NONE" : "CTRL+B FUSES SELECTION", 1,
+                     0.55f,0.6f,0.7f,1, cy0, cy1);
+    yy += HDRH;
+    float cellsY = yy;
+    for (int i = 0; i < n; i++)
+        draw_cell_row(px, cellsY, i, N_ASSETS + model_list_idx(kind, i), cy0, cy1);
+    float ch = models_h(kind), vh = cy1 - cy0;
+    if (ch > vh) {
+        float sh = fmaxf(24.0f, vh * vh / ch);
+        float sy = cy0 + (vh - sh) * (A.panelScroll / (ch - vh));
+        rk_ui_rect(px + PW - 6, sy, 4, sh, 0.5f,0.55f,0.65f, 0.8f);
+    }
+    rk_ui_flush();
+    for (int i = 0; i < n; i++)
+        draw_icon_cell(px, cellsY, i, N_ASSETS + model_list_idx(kind, i), cy0, cy1);
+}
+
 static void draw_paint(float px) {
     ui_text(px+12, 62, "PRESETS", 1, 0.7f,0.72f,0.8f, 1);
     for (int i = 0; i < N_COLORS; i++) {
@@ -603,18 +777,14 @@ static void draw_paint(float px) {
         ui_text(tx0 + (62 - ui_text_w(g_tex[i].name,1))/2, ty0 + 7, g_tex[i].name, 1,
                 sel?1.0f:0.8f, sel?1.0f:0.8f, sel?1.0f:0.9f, 1);
     }
-    /* alpha presets */
+    /* alpha slider: track + handle + % readout */
     float ay = tgy + TEXROWS * 28.0f + 4.0f;
-    static const float AL[] = {1.0f, 0.75f, 0.5f, 0.25f};
-    static const char *ALN[] = {"100%", "75%", "50%", "25%"};
-    ui_text(px + 12, ay + 24, "ALPHA", 1, 0.7f,0.72f,0.8f, 1);
-    for (int i = 0; i < 4; i++) {
-        float ax = px + 10 + i * 50.0f;
-        int sel = fabsf(A.paintAlpha - AL[i]) < 0.01f;
-        rk_ui_rect(ax, ay, 46, 20,
-                   sel ? 0.30f : 0.19f, sel ? 0.36f : 0.20f, sel ? 0.48f : 0.26f, AL[i]);
-        ui_text(ax + (46 - ui_text_w(ALN[i],1))/2, ay + 6, ALN[i], 1, 1,1,1, 1);
-    }
+    char albuf[16]; snprintf(albuf, sizeof albuf, "ALPHA %d%%", (int)(A.paintAlpha * 100.0f + 0.5f));
+    rk_ui_rect(sx, ay + 8, PV_W, 5, 0.10f,0.11f,0.14f, 1);
+    rk_ui_rect(sx, ay + 8, PV_W * A.paintAlpha, 5, 0.35f,0.60f,0.90f, 1);
+    float hx2 = sx + PV_W * A.paintAlpha;
+    rk_ui_rect(hx2 - 3, ay + 2, 6, 17, 0.95f,0.96f,1.0f, 1);
+    ui_text(px + 12, ay + 24, albuf, 1, 0.7f,0.72f,0.8f, 1);
     /* art tool entry: EDIT / NEW / SHEET */
     float ny = ay + 30.0f;
     const char *nbn[] = {"EDIT", "NEW", "SHEET"};
@@ -639,6 +809,22 @@ static void draw_world(float px) {
     snprintf(buf, sizeof buf, "BLOCKS %d / %d", g_nb, MAX_BLOCKS);
     ui_text(px+12, 150, buf, 1, 0.75f,0.78f,0.85f, 1);
     ui_text(px+12, 170, "UNDO STACK OK", 1, 0.55f,0.6f,0.68f, 1);
+
+    /* environment: sky + ground presets */
+    ui_text(px + 12, 184, "ENVIRONMENT", 1, 0.7f,0.72f,0.8f, 1);
+    const char *envN[2] = {ENV_SKY_N[s_sky], ENV_GROUND_N[s_ground]};
+    const char *envL[2] = {"SKY:", "GROUND:"};
+    for (int i = 0; i < 2; i++) {
+        float ey = 196.0f + i * 34.0f;
+        int hov = in_rect((float)A.mx,(float)A.my, px + 8, ey, PW - 16, 26);
+        rk_ui_rect(px + 8, ey, PW - 16, 26,
+                   0.22f + hov*0.08f, 0.28f + hov*0.08f, 0.38f + hov*0.08f, 1);
+        char eb[32]; snprintf(eb, sizeof eb, "%s %s", envL[i], envN[i]);
+        ui_text(px + 16, ey + 9, eb, 1, 1,1,1, 1);
+        /* color swatch on the right edge */
+        const float *ec = i == 0 ? ENV_SKY[s_sky] : ENV_GROUND[s_ground];
+        rk_ui_rect(px + PW - 32, ey + 5, 18, 16, ec[0],ec[1],ec[2], 1);
+    }
     rk_ui_flush();
 }
 
@@ -683,11 +869,11 @@ void panel_draw(void) {
     ui_text(px + PW - 22, 8, "<", 2, 0.85f,0.87f,0.95f, 1);
 
     /* tab buttons */
-    for (int t = 0; t < 3; t++) {
-        float tx = px + 6 + t*66;
+    for (int t = 0; t < N_TABS; t++) {
+        float tx = px + 4 + t*46;
         int selT = (A.panelTab == t);
-        rk_ui_rect(tx, 30, 62, 22, selT?0.30f:0.17f, selT?0.34f:0.18f, selT?0.42f:0.22f, 1);
-        ui_text(tx + (62 - ui_text_w(TABS[t],1))/2, 37, TABS[t], 1,
+        rk_ui_rect(tx, 30, 44, 22, selT?0.30f:0.17f, selT?0.34f:0.18f, selT?0.42f:0.22f, 1);
+        ui_text(tx + (44 - ui_text_w(TABS[t],1))/2, 37, TABS[t], 1,
                 selT?1.0f:0.65f, selT?1.0f:0.65f, selT?1.0f:0.7f, 1);
     }
 
@@ -713,6 +899,7 @@ void panel_draw(void) {
                 "SCULPT", 1, 1, 1, 1, 1);
     }
     else if (A.panelTab == 1) draw_paint(px);
+    else if (A.panelTab == 3 || A.panelTab == 4) draw_models(px, A.panelTab - 3);
     else                      draw_world(px);
     rk_ui_flush();
 
@@ -746,6 +933,31 @@ void panel_draw(void) {
 
     /* block script menu (BW-style) */
     draw_script_menu();
+
+    /* delete-confirm dialog (screen centered, on top of everything) */
+    if (s_delModel >= 0 && s_delModel < g_nmodels) {
+        float cx = ((float)A.fbw - 300.0f) * 0.5f;
+        float cy2 = (float)A.fbh * 0.5f - 40.0f;
+        rk_ui_rect(0, 0, (float)A.fbw, (float)A.fbh, 0,0,0, 0.45f);
+        rk_ui_rect(cx, cy2, 300, 100, 0.13f,0.14f,0.17f, 1);
+        rk_ui_rect(cx, cy2, 300, 2, 0.9f,0.35f,0.25f, 1);
+        char db[48];
+        snprintf(db, sizeof db, "DELETE %.11s?", g_models[s_delModel].name);
+        ui_text(cx + (300 - ui_text_w(db,2)) * 0.5f, cy2 + 14, db, 2, 1,1,1, 1);
+        ui_text(cx + (300 - ui_text_w("INSTANCES WILL UNFUSE",1)) * 0.5f, cy2 + 40,
+                "INSTANCES WILL UNFUSE", 1, 0.6f,0.65f,0.75f, 1);
+        int hovY = in_rect((float)A.mx,(float)A.my, cx + 30, cy2 + 62, 100, 26);
+        rk_ui_rect(cx + 30, cy2 + 62, 100, 26,
+                   0.65f + hovY*0.15f, 0.22f, 0.20f, 1);
+        ui_text(cx + 30 + (100 - ui_text_w("DELETE",1)) * 0.5f, cy2 + 70,
+                "DELETE", 1, 1,1,1, 1);
+        int hovN = in_rect((float)A.mx,(float)A.my, cx + 170, cy2 + 62, 100, 26);
+        rk_ui_rect(cx + 170, cy2 + 62, 100, 26,
+                   0.22f + hovN*0.08f, 0.26f + hovN*0.08f, 0.34f + hovN*0.08f, 1);
+        ui_text(cx + 170 + (100 - ui_text_w("KEEP",1)) * 0.5f, cy2 + 70,
+                "KEEP", 1, 1,1,1, 1);
+        rk_ui_flush();
+    }
 }
 
 /* ---- block script menu: floats above the selection ---- */
@@ -822,12 +1034,19 @@ static void draw_script_menu(void) {
     rk_ui_flush();
 }
 
-/* RMB on a CUSTOM cell deletes that model (its world instances get unfused) */
+/* RMB on a SCULPTED/MODELS/PROPS cell asks to delete that model */
 int panel_rmb(double x, double y) {
-    if (A.panelTab != 0 || !A.panelOpen || x < panel_x()) return 0;
-    int ai = asset_at((float)x, (float)y);
-    if (ai < N_ASSETS) return 0;
-    model_delete(ai - N_ASSETS);
+    if (!A.panelOpen || x < panel_x()) return 0;
+    int ai = -1;
+    if (A.panelTab == 0) {
+        ai = asset_at((float)x, (float)y);
+        if (ai < N_ASSETS) return 0;
+    } else if (A.panelTab == 3 || A.panelTab == 4) {
+        int m = model_at(A.panelTab - 3, (float)x, (float)y);
+        if (m < 0) return 0;
+        ai = N_ASSETS + m;
+    } else return 0;
+    s_delModel = ai - N_ASSETS;             /* popup confirms */
     if (A.armedAsset == ai) { A.armedAsset = -1; A.drag = M_IDLE; }
     if (A.hoverAsset >= ai) A.hoverAsset = -1;
     return 1;

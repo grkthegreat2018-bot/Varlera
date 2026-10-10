@@ -4,6 +4,7 @@
 layout(location = 0) in vec3 inPos;
 layout(location = 1) in vec3 inNrm;
 layout(location = 6) in vec3 inCol;     /* baked vertex color (VCOL models) */
+layout(location = 7) in float inTex;    /* per-vertex material id (-1 = instance tex) */
 layout(location = 2) in vec3 iPos;
 layout(location = 3) in vec3 iScale;
 layout(location = 4) in vec4 iCol;      /* RGBA8 UNORM */
@@ -26,6 +27,7 @@ layout(location = 3) flat out uint vFlags;
 layout(location = 4) out vec3 vLocal;   /* world-space offset from block center */
 layout(location = 5) out vec3 vScale;   /* block size (texture stretch normalizer) */
 layout(location = 6) flat out float vSeed;  /* per-instance hash seed (proc tex) */
+layout(location = 7) flat out float vTex;   /* per-vertex material id */
 
 vec2 rotY(vec2 p, uint k) {
     if (k == 1u) return vec2(p.y, -p.x);
@@ -56,6 +58,7 @@ void main() {
     vNrm = n;
     vScale = iScale;
     vSeed = fract(sin(dot(iPos, vec3(12.9898, 78.233, 37.719))) * 43758.5453);
+    vTex = inTex;
     vColor = (iFlags & 16384u) != 0u ? vec4(inCol, iCol.a) : iCol;
     vFlags = iFlags;
     gl_Position = u.viewProj * w;
