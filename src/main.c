@@ -123,7 +123,10 @@ static void on_mouse(GLFWwindow *w, int button, int action, int mods) {
             if (A.app == APP_EDIT && panel_rmb(A.mx, A.my)) return;
             A.drag = M_LOOK; A.rmbX = A.mx; A.rmbY = A.my;
         }
-        else { edit_rmb_up((float)(A.mx - A.rmbX), (float)(A.my - A.rmbY)); A.drag = M_IDLE; }
+        else {
+            edit_rmb_up((float)(A.mx - A.rmbX), (float)(A.my - A.rmbY));
+            A.drag = (A.app == APP_EDIT && A.armedAsset >= 0) ? M_ARMED : M_IDLE;
+        }
     } else if (button == GLFW_MOUSE_BUTTON_MIDDLE) {
         A.drag = (action == GLFW_PRESS) ? M_PAN : M_IDLE;
     }

@@ -183,6 +183,26 @@ static int pick_handle(v3 ro, v3 rd, int *axisOut, int *signOut) {
 
 /* ---------------- ghost / place / move / resize ---------------- */
 
+/* lift a candidate placement above every block it would intersect -
+   stacks "onto", never phases "into" */
+static void resolve_ghost_overlap(v3 *p, v3 gs) {
+    for (int it = 0; it < 64; it++) {
+        float top = -1e30f;
+        for (int i = 0; i < g_nb; i++) {
+            Block *b = &g_blocks[i];
+            v3 es = block_eff_size(b);
+            if (fabsf(p->x - b->pos.x) < (gs.x + es.x)*0.5f - 1e-3f &&
+                fabsf(p->y - b->pos.y) < (gs.y + es.y)*0.5f - 1e-3f &&
+                fabsf(p->z - b->pos.z) < (gs.z + es.z)*0.5f - 1e-3f) {
+                float bt = b->pos.y + es.y*0.5f;
+                if (bt > top) top = bt;
+            }
+        }
+        if (top < -1e29f) break;
+        p->y = top + gs.y*0.5f;
+    }
+}
+
 static void ghost_update(v3 ro, v3 rd) {
     const Asset *a = panel_asset(A.armedAsset);
     if (!a) return;
@@ -191,22 +211,29 @@ static void ghost_update(v3 ro, v3 rd) {
     v3 gs = (A.placeRot & 1) ? v3_make(a->size.z, a->size.y, a->size.x) : a->size;
     int idx, axis; float t, sign;
     if (pick_block(ro, rd, &idx, &t, &axis, &sign) && axis >= 0) {
-        /* attach to face; other axes corner-snap to the hit point */
+        /* attach to the hit face: snap to the target's own face lattice and
+           clamp inside the face, so same-size blocks stack flush and edge
+           grazes can't hang the ghost half-off (clipping neighbors) */
         Block *b = &g_blocks[idx];
         v3 es = block_eff_size(b);
         v3 hp = v3_make(ro.x+rd.x*t, ro.y+rd.y*t, ro.z+rd.z*t);
         v3 p = b->pos;
         for (int i = 0; i < 3; i++) {
             if (i == axis) continue;
-            p.e[i] = snap_corner(hp.e[i], gs.e[i]);
+            if (gs.e[i] >= es.e[i] - 1e-4f) { p.e[i] = b->pos.e[i]; continue; }
+            float org = b->pos.e[i] - es.e[i]*0.5f;
+            float c = org + snap_corner(hp.e[i] - org, gs.e[i]);
+            p.e[i] = clampf(c, org + gs.e[i]*0.5f,
+                            b->pos.e[i] + es.e[i]*0.5f - gs.e[i]*0.5f);
         }
-        p.e[axis] += sign * (es.e[axis]*0.5f + gs.e[axis]*0.5f);
+        p.e[axis] = b->pos.e[axis] + sign * (es.e[axis]*0.5f + gs.e[axis]*0.5f);
         A.ghostPos = p;
     } else {
         v3 g;
         if (!ray_ground(ro, rd, &g)) return;
         A.ghostPos = v3_make(snap_corner(g.x, gs.x), gs.y*0.5f, snap_corner(g.z, gs.z));
     }
+    resolve_ghost_overlap(&A.ghostPos, gs);
 }
 
 static void place_commit(void) {
@@ -333,6 +360,27 @@ static void paste_clip(v3 at) {
     if (!A.nClip) return;
     world_push_undo();
     sel_clear();
+    /* lift the whole formation above any existing blocks it would overlap -
+       relative offsets stay exact, nothing embeds into what's already there */
+    for (int pass = 0; pass < 8; pass++) {
+        float lift = 0;
+        for (int i = 0; i < A.nClip; i++) {
+            v3 p = v3_add(A.clip[i].pos, at);
+            v3 es = block_eff_size(&A.clip[i]);
+            for (int j = 0; j < g_nb; j++) {
+                v3 bs = block_eff_size(&g_blocks[j]);
+                if (fabsf(p.x-g_blocks[j].pos.x) < (es.x+bs.x)*0.5f-1e-3f &&
+                    fabsf(p.z-g_blocks[j].pos.z) < (es.z+bs.z)*0.5f-1e-3f &&
+                    p.y-es.y*0.5f < g_blocks[j].pos.y+bs.y*0.5f-1e-3f &&
+                    p.y+es.y*0.5f > g_blocks[j].pos.y-bs.y*0.5f+1e-3f) {
+                    float need = g_blocks[j].pos.y+bs.y*0.5f - (p.y-es.y*0.5f);
+                    if (need > lift) lift = need;
+                }
+            }
+        }
+        if (lift <= 0) break;
+        at.y += lift;
+    }
     for (int i = 0; i < A.nClip; i++) {
         Block b = A.clip[i];
         /* `at` is already grid-snapped by the caller; adding the exact
@@ -350,10 +398,10 @@ static void paste_clip(v3 at) {
 
 void edit_lmb_press(int mods) {
     v3 ro, rd; cam_ray(A.mx, A.my, &ro, &rd);
-    if (A.drag == M_ARMED) {            /* armed placement click */
+    if (A.drag == M_ARMED) {            /* armed placement click: place and
+                                           stay armed for the next one */
         ghost_update(ro, rd);
         place_commit();
-        A.drag = M_IDLE;
         return;
     }
     int axis, hsign;
@@ -396,9 +444,11 @@ void edit_lmb_press(int mods) {
     A.marqX0 = A.marqX1 = (float)A.mx; A.marqY0 = A.marqY1 = (float)A.my;
 }
 
-/* RMB release with no drag = eyedropper (pick block color) */
+/* RMB release with no drag = eyedropper (pick block color);
+   while an asset is armed a short RMB click cancels placement instead */
 void edit_rmb_up(float totalDx, float totalDy) {
     if (fabsf(totalDx) + fabsf(totalDy) > 8.0f) return;
+    if (A.armedAsset >= 0) { A.armedAsset = -1; A.drag = M_IDLE; return; }
     v3 ro, rd; cam_ray(A.mx, A.my, &ro, &rd);
     int idx, ax; float t, sg;
     if (pick_block(ro, rd, &idx, &t, &ax, &sg)) {

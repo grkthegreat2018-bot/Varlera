@@ -60,7 +60,12 @@ links m/dl/pthread. Win32-only code (file dialog, DPI awareness) is `_WIN32`
 
 Cam: RMB look | WASD+QE fly (smoothed velocity) | Space/Shift up/down |
 wheel=zoom to cursor | ctrl+wheel=speed | MMB pan | F focus. Build: drag asset
-to place (release on panel = arm; wheel rotates ghost) | LMB select, drag past
+to place (release on panel = arm; wheel rotates ghost). While armed each LMB
+click places and stays armed; RMB click or Esc disarms. Placement attaches to
+the hit block's face snapped to that block's own lattice (clamped inside the
+face), and any ghost that would overlap an existing block lifts on top of it -
+placements can never embed. Paste lifts the whole formation the same way |
+LMB select, drag past
 6px = move | alt+drag = clone-drag | RMB click = eyedropper color pick |
 double-click = select same color | shift multi | marquee | axis handles resize |
 R/T rotate +-90 | arrows nudge 0.5 view-relative | PgUp/PgDn nudge Y |
