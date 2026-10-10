@@ -82,7 +82,8 @@ void rk_overlay(RkMesh m, const RkInst *inst, uint32_t n);  /* no shadow cast   
 void rk_ghost(RkMesh m, const RkInst *inst, uint32_t n);    /* alpha blended      */
 void rk_lines(const RkInst *inst, uint32_t n);              /* unit-edge boxes    */
 
-void rk_draw_icon(RkMesh m, int px, int py, int pw, int ph, float r, float g, float b);
+void rk_draw_icon(RkMesh m, int px, int py, int pw, int ph,
+                  float r, float g, float b, const float size[3]);
 
 /* --- baked custom-model meshes (fused blocks) ---
  * rk_gen_shape: emit a built-in unit mesh into caller memory (CPU bake).

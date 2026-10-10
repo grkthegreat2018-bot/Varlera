@@ -36,10 +36,6 @@ static const float PALETTE[][3] = {
 static const Asset ASSETS[] = {
     /* BASIC */
     {"Block",      "Basic cube.",                           RK_MESH_CUBE,     {1,1,1}},
-    {"Mini Block", "Quarter-size cube.",                    RK_MESH_CUBE,     {0.25f,0.25f,0.25f}},
-    {"Wall",       "Thin wall panel.",                      RK_MESH_CUBE,     {1,1,0.15f}},
-    {"Plate",      "Flat floor tile.",                      RK_MESH_CUBE,     {1,0.15f,1}},
-    {"Pole",       "Thin round post.",                      RK_MESH_CYLINDER, {0.22f,1,0.22f}},
     {"Sphere",     "Ball.",                                 RK_MESH_SPHERE,   {1,1,1}},
     {"Cylinder",   "Round column.",                         RK_MESH_CYLINDER, {1,1,1}},
     {"Cone",       "Pointy top.",                           RK_MESH_CONE,     {1,1,1}},
@@ -61,9 +57,9 @@ static const Asset ASSETS[] = {
 
 typedef struct { const char *name; int first, count; } Cat;
 static const Cat CATS[] = {
-    {"BASIC",    0, 10},
-    {"RAMPS",   10, 4},
-    {"SPECIAL", 14, 5},
+    {"BASIC",    0, 6},
+    {"RAMPS",    6, 4},
+    {"SPECIAL", 10, 5},
     {"SCULPTED", 0, 0},       /* dynamic: sculpted topology models only */
 };
 #define N_CATS ((int)(sizeof CATS / sizeof CATS[0]))
@@ -596,7 +592,7 @@ static void draw_icon_cell(float px, float yy, int i, int ai, float cy0, float c
     if (b - t > 4 && a)
         rk_draw_icon(a->mesh, (int)ix, (int)t,
                      (int)(CELL-4), (int)(b-t),
-                     A.paintCol[0], A.paintCol[1], A.paintCol[2]);
+                     A.paintCol[0], A.paintCol[1], A.paintCol[2], a->size.e);
 }
 
 static void draw_shapes(float px) {
@@ -667,7 +663,7 @@ static void draw_shapes(float px) {
                 if (b - t > 4 && a)
                     rk_draw_icon(a->mesh, (int)ix, (int)t,
                                  (int)(CELL-4), (int)(b-t),
-                                 A.paintCol[0], A.paintCol[1], A.paintCol[2]);
+                                 A.paintCol[0], A.paintCol[1], A.paintCol[2], a->size.e);
             }
             yy += ((cat_count(c) + COLS-1)/COLS) * CELL + 6.0f;
         }

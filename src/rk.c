@@ -416,22 +416,26 @@ static int gen_roundc(int n) {
     return s;
 }
 
-/* sphere with circular holes on all 6 axis sides */
+/* sphere with circular holes on all 6 axis sides (whiffle ball) */
 static int gen_cageball(int lat, int lon) {
     int s = g_nv;
-    const float r = 0.5f, hole = 0.62f;   /* hole half-angle cosine */
+    const float r = 0.5f, hc = 0.85f;   /* hole half-angle cosine ~32 deg */
     for (int i = 0; i < lat; i++) {
         float t0 = (float)i/lat*3.14159265f, t1 = (float)(i+1)/lat*3.14159265f;
         for (int j = 0; j < lon; j++) {
             float p0 = (float)j/lon*6.2831853f, p1 = (float)(j+1)/lon*6.2831853f;
             v3 q[4];
             float ts[4]={t0,t1,t1,t0}, ps[4]={p0,p0,p1,p1};
-            for (int k = 0; k < 4; k++)
+            int in = 0;
+            for (int k = 0; k < 4; k++) {
                 q[k] = v3_make(r*sinf(ts[k])*cosf(ps[k]), r*cosf(ts[k]),
                                r*sinf(ts[k])*sinf(ps[k]));
-            v3 c = v3_norm(v3_add(v3_add(q[0],q[1]),v3_add(q[2],q[3])));
-            if (fabsf(c.x) > hole || fabsf(c.y) > hole || fabsf(c.z) > hole)
-                continue;                  /* inside a hole opening */
+                v3 d = v3_norm(q[k]);
+                if (fabsf(d.x) > hc || fabsf(d.y) > hc || fabsf(d.z) > hc) in++;
+            }
+            /* drop only cells fully inside a hole - boundary cells keep the
+               shell connected around the openings */
+            if (in == 4) continue;
             triN(q[0],q[1],q[2], v3_norm(q[0]),v3_norm(q[1]),v3_norm(q[2]));
             triN(q[0],q[2],q[3], v3_norm(q[0]),v3_norm(q[2]),v3_norm(q[3]));
         }
@@ -497,7 +501,7 @@ static int gen_by_index(int shape) {
     case RK_MESH_STAIR:    return gen_stair();
     case RK_MESH_FRAME:    return gen_frame();
     case RK_MESH_ROUNDC:   return gen_roundc(14);
-    case RK_MESH_CAGEBALL: return gen_cageball(12, 18);
+    case RK_MESH_CAGEBALL: return gen_cageball(18, 36);
     case RK_MESH_CORSTAIR: return gen_corstair();
     }
     return g_nv;
@@ -1344,11 +1348,18 @@ void rk_meshlines(const Vert *v, uint32_t n, const float model[16],
         e->pw = (int)(a * 1000.0f);      /* alpha rides in pw */
     }
 }
-void rk_draw_icon(RkMesh m, int px, int py, int pw, int ph, float r, float g, float b) {
-    if (G.qn < MAX_Q) {
-        QEnt *e = &G.q[G.qn++];
-        *e = (QEnt){K_ICON, m, 0, 0, px, py, pw, ph, r, g, b};
-    }
+/* panel icon: fixed readable angle, scaled to the asset's real proportions
+   (largest dimension fills the cell). size=NULL -> unit cube. */
+void rk_draw_icon(RkMesh m, int px, int py, int pw, int ph,
+                  float r, float g, float b, const float size[3]) {
+    if (G.qn >= MAX_Q) return;
+    QEnt *e = &G.q[G.qn++];
+    *e = (QEnt){K_ICON, m, 0, 0, px, py, pw, ph, r, g, b, {0}};
+    float mx = size ? fmaxf(size[0], fmaxf(size[1], size[2])) : 1.0f;
+    float k = mx > 1e-5f ? 0.62f / mx : 0.62f;
+    v3 sc = size ? v3_make(size[0]*k, size[1]*k, size[2]*k)
+               : v3_make(0.62f, 0.62f, 0.62f);
+    m4_trs(e->mm, v3_make(0,0,0), sc, -0.55f, 0.75f, 0);
 }
 
 void rk_ui_rect(float px, float py, float pw, float ph, float r, float g, float b, float a) {
@@ -1621,14 +1632,12 @@ void rk_end_frame(void) {
             vkCmdSetViewport(G.cmd, 0, 1, &vp);
             VkRect2D sc = {{e->px, e->py}, {(uint32_t)e->pw, (uint32_t)e->ph}};
             vkCmdSetScissor(G.cmd, 0, 1, &sc);
-            m4 m;
-            m4_trs(m, v3_make(0,0,0), v3_make(0.62f,0.62f,0.62f), -0.55f, (float)G.t*0.6f, 0);
             vkCmdBindPipeline(G.cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, G.pWorld);
             bind_sets_and_mesh();
             bind_mesh_buf(e->mesh);
             float c[4] = {e->cr, e->cg, e->cb, 1};
             uint32_t icol = e->mesh >= RK_MESH_BASE_MODEL ? RKF_ICON|RKIF_VCOL : RKF_ICON;
-            push_pc(m, c, icol);
+            push_pc(e->mm, c, icol);
             VkDeviceSize io; uint32_t ic;
             if (mesh_span(e->mesh, &io, &ic)) vkCmdDraw(G.cmd, ic, 1, (uint32_t)io, 0);
             vkCmdSetViewport(G.cmd, 0, 1, &fullvp);

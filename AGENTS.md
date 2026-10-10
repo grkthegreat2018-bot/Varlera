@@ -41,7 +41,7 @@ links m/dl/pthread. Win32-only code (file dialog, DPI awareness) is `_WIN32`
   (CRATE/TABLE/CHAIR/PERSON/TREE/FLOWER/ARCH/LAMP/FENCE/PILLAR) on first run
   or after loading a pre-v7 file.
 - `src/panel.c` — right panel with 5 tabs: SHAPES (categories BASIC/RAMPS/
-  SPECIAL/SCULPTED, 19 assets + sculpted models, scrollable, tooltips), PAINT
+  SPECIAL/SCULPTED, 15 assets + sculpted models, scrollable, tooltips), PAINT
   (16 presets + HSV picker + texture grid + ALPHA slider -> `A.paintAlpha`
   -> `Block.alpha`/`BF_GLASS`), WORLD (SAVE/LOAD/UNDO/REDO/CLEAR + block count
   + ENVIRONMENT: SKY x6 / GROUND x5 preset cycler -> `rk_set_env`, saved to

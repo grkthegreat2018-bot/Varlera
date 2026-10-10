@@ -1692,7 +1692,7 @@ void sculpt_draw(void) {
         for (int i = 0; i < 6; i++) {
             float px, py; picker_cell(i, &px, &py);
             rk_draw_icon(PM[i], (int)px + 14, (int)py + 6, 82, 72,
-                         0.55f, 0.75f, 1.0f);
+                         0.55f, 0.75f, 1.0f, NULL);
         }
     }
 
