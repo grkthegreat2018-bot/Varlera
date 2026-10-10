@@ -20,6 +20,7 @@
 #define MAX_IMAGES   8
 #define MAX_UI_QUADS 16384
 #define MAX_VERTS    24576
+#define MAX_DYN_VERTS (256*1024)
 #define MAX_INST     8192
 #define MAX_Q        1024
 #define SHADOW_SIZE  2048
@@ -39,12 +40,13 @@ typedef struct { float x, y, w, h, r, g, b, a; } UIRect;
 
 static v3 light_dir(void);
 
-enum { K_GRID, K_WORLD, K_OVERLAY, K_GHOST, K_LINES, K_UI, K_ICON };
+enum { K_GRID, K_WORLD, K_OVERLAY, K_GHOST, K_MESH, K_MLINES, K_LINES, K_UI, K_ICON };
 typedef struct {
     int kind, mesh;
     uint32_t first, count;
     int px, py, pw, ph;
     float cr, cg, cb;
+    float mm[16];                /* K_MESH model matrix */
 } QEnt;
 
 static struct {
@@ -85,6 +87,7 @@ static struct {
     VkDescriptorSet set1;
     VkPipelineLayout pipeLayout;
     VkPipeline pGrid, pWorld, pWorldInst, pGhostInst, pLinesInst, pShadow, pUI;
+    VkPipeline pMeshLine;            /* non-instanced LINE_LIST (wireframe) */
     VkCommandPool cmdPool;
 
     struct {
@@ -94,6 +97,7 @@ static struct {
         VkBuffer ubo;    VkDeviceMemory uboMem;  void *uboMap;
         VkBuffer inst;   VkDeviceMemory instMem; void *instMap;
         VkBuffer uib;    VkDeviceMemory uibMem;  void *uiMap;
+        VkBuffer mesh;   VkDeviceMemory meshMem; void *meshMap;
         VkDescriptorSet set0;
     } fr[MAX_FRAMES];
     VkSemaphore renderDone[MAX_IMAGES];
@@ -106,7 +110,7 @@ static struct {
 
     /* baked custom-model meshes: CPU store + rebuilt GPU buffer */
     VkBuffer mbuf; VkDeviceMemory mbufMem;
-    Vert mverts[96 * 1024]; int mvn;      /* model vert pool */
+    Vert mverts[256 * 1024]; int mvn;     /* model vert pool */
     VkDeviceSize modelOff[RK_MAX_MODELS];
     uint32_t modelCount[RK_MAX_MODELS];
     int nmodels;
@@ -116,6 +120,7 @@ static struct {
     RkInst instStage[MAX_INST]; int instN;
     UIRect uiQ[MAX_UI_QUADS];   int uiN;
     UIVert uiStage[MAX_UI_QUADS * 6]; int uiVn;
+    Vert meshStage[MAX_DYN_VERTS]; int meshVn;   /* K_MESH streamed verts */
 
     UBO ubo;
     v3 focus;
@@ -712,6 +717,10 @@ static void make_pipelines(void) {
     d.topo=VK_PRIMITIVE_TOPOLOGY_LINE_LIST; d.blend=1; d.depthWrite=0; d.cull=VK_CULL_MODE_NONE;
     G.pLinesInst = make_pipeline(&d);
 
+    /* non-instanced dynamic lines (sculpt wireframe) */
+    d.vs=wv; fill_mesh_vertex_input(&d);
+    G.pMeshLine = make_pipeline(&d);
+
     /* shadow: depth-only, instanced, front-cull + depth bias, 1x samples */
     memset(&d, 0, sizeof d);
     d.vs=sv; d.fs=VK_NULL_HANDLE; d.topo=VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
@@ -1042,6 +1051,8 @@ int rk_init(GLFWwindow *win) {
             &G.fr[i].instMem, &G.fr[i].instMap);
         G.fr[i].uib = buf_create(MAX_UI_QUADS * 6 * sizeof(UIVert), VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, HOST_MEM,
             &G.fr[i].uibMem, &G.fr[i].uiMap);
+        G.fr[i].mesh = buf_create(MAX_DYN_VERTS * sizeof(Vert), VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, HOST_MEM,
+            &G.fr[i].meshMem, &G.fr[i].meshMap);
         VkDescriptorSetAllocateInfo dai = {VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO};
         dai.descriptorPool = G.pool; dai.descriptorSetCount = 1; dai.pSetLayouts = &G.setLayout0;
         VKC(vkAllocateDescriptorSets(G.dev, &dai, &G.fr[i].set0));
@@ -1085,6 +1096,9 @@ void rk_shutdown(void) {
         vkFreeMemory(G.dev, G.fr[i].uboMem, NULL);
         vkFreeMemory(G.dev, G.fr[i].instMem, NULL);
         vkFreeMemory(G.dev, G.fr[i].uibMem, NULL);
+        vkUnmapMemory(G.dev, G.fr[i].meshMem);
+        vkDestroyBuffer(G.dev, G.fr[i].mesh, NULL);
+        vkFreeMemory(G.dev, G.fr[i].meshMem, NULL);
         vkDestroyFence(G.dev, G.fr[i].fence, NULL);
         vkDestroySemaphore(G.dev, G.fr[i].acq, NULL);
     }
@@ -1105,6 +1119,7 @@ void rk_shutdown(void) {
     vkDestroyPipeline(G.dev, G.pWorldInst, NULL);
     vkDestroyPipeline(G.dev, G.pGhostInst, NULL);
     vkDestroyPipeline(G.dev, G.pLinesInst, NULL);
+    vkDestroyPipeline(G.dev, G.pMeshLine, NULL);
     vkDestroyPipeline(G.dev, G.pShadow, NULL);
     vkDestroyPipeline(G.dev, G.pUI, NULL);
     vkDestroyPipelineLayout(G.dev, G.pipeLayout, NULL);
@@ -1145,6 +1160,34 @@ void rk_ghost(RkMesh m, const RkInst *inst, uint32_t n) {
 }
 void rk_lines(const RkInst *inst, uint32_t n) {
     qu(K_LINES, 0, push_insts(inst, n), n);
+}
+void rk_mesh(const Vert *v, uint32_t n, const float model[16]) {
+    uint32_t first = (uint32_t)G.meshVn;
+    uint32_t room = MAX_DYN_VERTS - (uint32_t)G.meshVn;
+    if (n > room) n = room;
+    if (!n) return;
+    memcpy(G.meshStage + G.meshVn, v, (size_t)n * sizeof(Vert));
+    G.meshVn += (int)n;
+    if (G.qn < MAX_Q) {
+        QEnt *e = &G.q[G.qn++];
+        *e = (QEnt){K_MESH, 0, first, n, 0,0,0,0, 0,0,0};
+        memcpy(e->mm, model, sizeof e->mm);
+    }
+}
+void rk_meshlines(const Vert *v, uint32_t n, const float model[16],
+                  float r, float g, float b, float a) {
+    uint32_t first = (uint32_t)G.meshVn;
+    uint32_t room = MAX_DYN_VERTS - (uint32_t)G.meshVn;
+    if (n > room) n = room;
+    if (!n) return;
+    memcpy(G.meshStage + G.meshVn, v, (size_t)n * sizeof(Vert));
+    G.meshVn += (int)n;
+    if (G.qn < MAX_Q) {
+        QEnt *e = &G.q[G.qn++];
+        *e = (QEnt){K_MLINES, 0, first, n, 0,0,0,0, r,g,b};
+        memcpy(e->mm, model, sizeof e->mm);
+        e->pw = (int)(a * 1000.0f);      /* alpha rides in pw */
+    }
 }
 void rk_draw_icon(RkMesh m, int px, int py, int pw, int ph, float r, float g, float b) {
     if (G.qn < MAX_Q) {
@@ -1221,7 +1264,7 @@ int rk_begin_frame(void) {
     bbi.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
     VKC(vkBeginCommandBuffer(G.cmd, &bbi));
 
-    G.qn = 0; G.instN = 0; G.uiN = 0; G.uiVn = 0;
+    G.qn = 0; G.instN = 0; G.uiN = 0; G.uiVn = 0; G.meshVn = 0;
     G.t = glfwGetTime();
     G.inFrame = 1;
     return 1;
@@ -1270,6 +1313,8 @@ void rk_end_frame(void) {
         memcpy(G.fr[G.fi].instMap, G.instStage, (size_t)G.instN * sizeof(RkInst));
     if (G.uiVn)
         memcpy(G.fr[G.fi].uiMap, G.uiStage, (size_t)G.uiVn * sizeof(UIVert));
+    if (G.meshVn)
+        memcpy(G.fr[G.fi].meshMap, G.meshStage, (size_t)G.meshVn * sizeof(Vert));
 
     /* ---- shadow pass (always runs so the map is in READ layout for sampling) ---- */
     {
@@ -1387,9 +1432,25 @@ void rk_end_frame(void) {
             bind_inst();
             vkCmdDraw(G.cmd, cnt, e->count, (uint32_t)off, e->first);
             break; }
+        case K_MESH:
+            vkCmdBindPipeline(G.cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, G.pWorld);
+            bind_sets_and_mesh();
+            vkCmdBindVertexBuffers(G.cmd, 0, 1, &G.fr[G.fi].mesh, &(VkDeviceSize){0});
+            {   float c[4] = {1,1,1,1}; push_pc(e->mm, c, RKIF_VCOL); }
+            vkCmdDraw(G.cmd, e->count, 1, e->first, 0);
+            break;
+        case K_MLINES:
+            vkCmdBindPipeline(G.cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, G.pMeshLine);
+            bind_sets_and_mesh();
+            vkCmdBindVertexBuffers(G.cmd, 0, 1, &G.fr[G.fi].mesh, &(VkDeviceSize){0});
+            {   float c[4] = {e->cr, e->cg, e->cb, (float)e->pw / 1000.0f};
+                push_pc(e->mm, c, RKIF_UNLIT | RKIF_NOFOG); }
+            vkCmdDraw(G.cmd, e->count, 1, e->first, 0);
+            break;
         case K_LINES:
             vkCmdBindPipeline(G.cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, G.pLinesInst);
             bind_sets_and_mesh();
+            bind_mesh_buf(0);
             bind_inst();
             vkCmdDraw(G.cmd, G.lineCount, e->count, (uint32_t)G.lineOff, e->first);
             break;

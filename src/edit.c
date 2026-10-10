@@ -76,19 +76,18 @@ void unfuse_block(int i) {
     sel_clear();
     int first = g_nb;
     if (m->vox) {
-        /* sculpted model: explode into one micro-cube per solid voxel */
-        float cs = m->size.x / 16.0f, h = m->size.x * 0.5f;
+        /* sculpted topo model: explode into a micro-cube per vertex */
+        v3 scl = v3_make(fb.size.x / m->size.x, fb.size.y / m->size.y,
+                         fb.size.z / m->size.z);
+        float cs = fmaxf(fmaxf(m->size.x * scl.x, m->size.y * scl.y),
+                         m->size.z * scl.z) / 16.0f;
+        if (cs < 0.05f) cs = 0.05f;
         v3 sz = v3_make(cs, cs, cs);
-        for (int z = 0; z < 16 && g_nb < MAX_BLOCKS; z++)
-        for (int y = 0; y < 16 && g_nb < MAX_BLOCKS; y++)
-        for (int x = 0; x < 16 && g_nb < MAX_BLOCKS; x++) {
-            uint16_t v = m->voxd[(z*16 + y)*16 + x];
-            if (!(v & 0x8000)) continue;
-            float cc[3] = { ((v>>11)&31)/31.0f, ((v>>5)&63)/63.0f,
-                            (v&31)/31.0f };
-            v3 lp = v3_make((x + 0.5f)*cs - h, (y + 0.5f)*cs - h,
-                            (z + 0.5f)*cs - h);
-            v3 p = lp;
+        for (int v = 0; v < m->nvert && g_nb < MAX_BLOCKS; v++) {
+            float cc[3] = { m->mvcol[v][0]/255.0f, m->mvcol[v][1]/255.0f,
+                            m->mvcol[v][2]/255.0f };
+            v3 p = v3_make(m->mv[v][0]*scl.x, m->mv[v][1]*scl.y,
+                           m->mv[v][2]*scl.z);
             for (int k = 0; k < (fb.rot & 3); k++) p = v3_make(p.z, p.y, -p.x);
             int ni = world_add(v3_add(fb.pos, p), sz, RK_MESH_CUBE, 0, cc);
             if (ni >= 0) g_blocks[ni].alpha = 1.0f;
@@ -558,6 +557,7 @@ void edit_draw_world(void) {
     for (int i = 0; i < g_nb; i++) {
         Block *b = &g_blocks[i];
         float al = (b->flags & BF_GLASS) ? fminf(b->alpha, 0.6f) : b->alpha;
+        if (A.modal == 2) al *= 0.18f;      /* sculpt modal: world recedes */
         if (al < 0.999f) { gi[gn++] = i; continue; }
         v3 es = block_eff_size(b);
         RkInst in;
@@ -587,6 +587,7 @@ void edit_draw_world(void) {
         while (gi1 < gn && g_blocks[gi[gi1]].shape == sh) {
             Block *b = &g_blocks[gi[gi1]];
             float al = (b->flags & BF_GLASS) ? fminf(b->alpha, 0.6f) : b->alpha;
+            if (A.modal == 2) al *= 0.18f;
             v3 es = block_eff_size(b);
             memcpy(tinst[tn].pos, b->pos.e, 12);
             memcpy(tinst[tn].scale, es.e, 12);

@@ -89,6 +89,13 @@ int  rk_model_mesh_add(const Vert *v, int n);
 void rk_models_commit(void);
 void rk_models_reset(void);     /* drop all baked verts (for rebuild) */
 
+/* stream an arbitrary vertex-colored mesh for this frame only (sculpt
+   preview); drawn lit with `model` transform, no shadow cast */
+void rk_mesh(const Vert *v, uint32_t n, const float model[16]);
+/* same, but a line list with a uniform color (wireframe overlay) */
+void rk_meshlines(const Vert *v, uint32_t n, const float model[16],
+                  float r, float g, float b, float a);
+
 /* --- texture atlas (tex.c owns contents) --- */
 #define RK_TEX_ATLAS 1024          /* atlas is 1024x1024 RGBA */
 #define RK_TEX_TILE  128           /* tile edge in px */

@@ -61,7 +61,12 @@ static void on_cursor(GLFWwindow *w, double x, double y) {
     double dx = x - A.mx, dy = y - A.my;
     A.mx = x; A.my = y;
     if (A.modal == 1) { art_motion(); return; }
-    if (A.modal == 2) { sculpt_move((int)x, (int)y); return; }
+    if (A.modal == 2) {
+        sculpt_move((int)x, (int)y);
+        if (A.drag == M_LOOK) cam_look((float)dx, (float)dy);
+        if (A.drag == M_PAN)  cam_pan((float)dx, (float)dy);
+        return;
+    }
     if (A.drag == M_LOOK) cam_look((float)dx, (float)dy);
     if (A.drag == M_PAN)  cam_pan((float)dx, (float)dy);
     if (A.drag == M_MARQUEE) { A.marqX1 = (float)x; A.marqY1 = (float)y; }
@@ -82,8 +87,15 @@ static void on_mouse(GLFWwindow *w, int button, int action, int mods) {
             if (action == GLFW_PRESS) sculpt_press((int)A.mx, (int)A.my);
             else sculpt_release();
         } else if (button == GLFW_MOUSE_BUTTON_RIGHT) {
-            A.drag = (action == GLFW_PRESS) ? M_LOOK : M_IDLE;
-            if (action == GLFW_PRESS) { A.rmbX = A.mx; A.rmbY = A.my; }
+            if (action == GLFW_PRESS) {
+                A.drag = M_LOOK; A.rmbX = A.mx; A.rmbY = A.my;
+            } else {
+                /* short click = split nearest edge; drag = camera look */
+                float mdx = (float)(A.mx - A.rmbX), mdy = (float)(A.my - A.rmbY);
+                if (mdx*mdx + mdy*mdy < 36.0f)
+                    sculpt_rmb_click((int)A.mx, (int)A.my);
+                A.drag = M_IDLE;
+            }
         } else if (button == GLFW_MOUSE_BUTTON_MIDDLE) {
             A.drag = (action == GLFW_PRESS) ? M_PAN : M_IDLE;
         }

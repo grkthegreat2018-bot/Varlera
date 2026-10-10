@@ -65,11 +65,18 @@ mesh ids are re-baked dense. Eyedropper (RMB world click) picks color+texture.
 Modals (main.c routes all input by A.modal): 1 = pixel-art tool (art.c,
 PAINT tab EDIT/NEW/SHEET), 2 = sculpt mode (sculpt.c, SCULPT button top-left
 next to PLAY or SHAPES footer). Editor is paused while a modal is open;
-camera still flies. Sculpt: 16^3 voxel field, ADD/SUB/SMOOTH sphere brushes
-(BR1/BR2), 1X/2X/4X output size; DONE -> marching-tet bake -> CUSTOM model;
-RESCULPT row on a selected sculpted block reloads + edits it in place.
-models.bw v4 stores the voxel field (nch=-1 record) and re-bakes on load;
-unfusing a sculpted model explodes it into micro-cubes.
+camera still flies. Sculpt: direct vertex editing on a welded tri mesh —
+LMB grabs a vertex dot and drags on a camera-parallel plane (snapped to the
+marker grid), short RMB click splits the nearest edge (RMB drag still looks),
+Del removes the selected vertex, release welds overlapping verts and splits
+crossing edges. The 1X/2X/4X cube is a size marker only — the mesh may
+exceed it, and a second outline then shows the true AABB. DONE bakes to a
+CUSTOM model; RESCULPT row reloads + edits it in place. models.bw v6 stores
+verts/faces (nch=-2 record); v4/v5 voxel saves migrate through
+sculpt_bake_verts + weld_topo. Unfuse explodes a sculpted model into one
+micro-cube per vertex. Model meshes are normalized to the unit box at bake
+time (world instancing multiplies by block size — never store world-space
+extents in a baked mesh).
 
 Window: GUI subsystem (/ENTRY:mainCRTStartup, no console; stderr still works
 when redirected). Starts borderless fullscreen on the primary monitor;
