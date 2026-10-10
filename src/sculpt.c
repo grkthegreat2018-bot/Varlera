@@ -559,24 +559,41 @@ static int mirror_partners(int v, int *out) {
     }
     return n;
 }
-/* apply mirror transforms of v's position to its partners */
-static void mirror_apply(int v) {
-    if (!s_mirror || v < 0) return;
-    int pr[3]; int n = mirror_partners(v, pr);
+/* apply mirror transforms of v's position to its partners.
+   Partners + transform are recorded once at grab time (s_mirV/s_mirT) -
+   re-searching every frame loses them because the dragged vert snaps in
+   0.5 steps while the partner still sits at the old mirrored spot. */
+static int s_mirN = 0;
+static int s_mirV[4];                         /* partner vert indices       */
+static int s_mirT[4];                         /* 1 = -x | 2 = -z | 3 = -xz  */
+static void mirror_grab(int v) {
+    s_mirN = 0;
+    if (!s_mirror || v < 0 || v >= s_nv) return;
     v3 p = vert_at(v);
-    for (int i = 0; i < n; i++) {
-        v3 q = vert_at(pr[i]);
-        v3 t = q;
-        if (s_mirror == 2 &&
-            fabsf(q.x - p.x) < 0.05f && fabsf(q.z + p.z) < 0.05f &&
-            fabsf(q.x + p.x) >= 0.05f)
-            t = v3_make(p.x, p.y, -p.z);
-        else if (s_mirror == 2 &&
-                 fabsf(q.x + p.x) < 0.05f && fabsf(q.z + p.z) < 0.05f &&
-                 fabsf(p.x) > 0.05f && fabsf(p.z) > 0.05f)
-            t = v3_make(-p.x, p.y, -p.z);
-        else t = v3_make(-p.x, p.y, p.z);
-        vert_set(pr[i], t);
+    float eps = merge_eps() * 2.5f + 0.02f;
+    for (int i = 0; i < s_nv && s_mirN < 4; i++) {
+        if (i == v) continue;
+        v3 q = vert_at(i);
+        int t = 0;
+        if (fabsf(q.x + p.x) < eps && fabsf(q.y - p.y) < eps &&
+            fabsf(q.z - p.z) < eps) t = 1;
+        else if (s_mirror == 2) {
+            if (fabsf(q.x - p.x) < eps && fabsf(q.y - p.y) < eps &&
+                fabsf(q.z + p.z) < eps) t = 2;
+            else if (fabsf(q.x + p.x) < eps && fabsf(q.y - p.y) < eps &&
+                     fabsf(q.z + p.z) < eps) t = 3;
+        }
+        if (t) { s_mirV[s_mirN] = i; s_mirT[s_mirN] = t; s_mirN++; }
+    }
+}
+static void mirror_apply(int v) {
+    if (v < 0) return;
+    v3 p = vert_at(v);
+    for (int i = 0; i < s_mirN; i++) {
+        v3 t = p;
+        if (s_mirT[i] & 1) t.x = -t.x;
+        if (s_mirT[i] & 2) t.z = -t.z;
+        vert_set(s_mirV[i], t);
     }
 }
 
@@ -1195,6 +1212,7 @@ int sculpt_press(int mx, int my) {
         s_dragPt = s_partAnchor;
         s_dragN = cam_basis().f;
         s_dragV = -2;                        /* sentinel: island drag */
+        s_mirN = 0;
         s_selV = -1;
         return 1;
     }
@@ -1206,6 +1224,7 @@ int sculpt_press(int mx, int my) {
         s_dragN = cam_basis().f;
         s_dragPt = vert_at(v);
         s_dragFrom = s_dragPt;
+        mirror_grab(v);                      /* record partners once */
         float denom = v3_dot(s_dragN, rd);
         if (fabsf(denom) > 1e-6f) {
             float t = v3_dot(s_dragN, v3_sub(s_dragPt, ro)) / denom;

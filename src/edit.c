@@ -307,12 +307,24 @@ static void clone_selection(void) { /* duplicate selected blocks in place, selec
 static void copy_clip(void) {
     A.nClip = 0;
     if (!A.nsel) return;
-    v3 c = v3_make(0,0,0); int n = 0;
-    for (int i = 0; i < g_nb; i++) if (A.sel[i]) { c = v3_add(c, g_blocks[i].pos); n++; }
-    c = v3_scale(c, 1.0f/n);
+    /* reference point: center of the selection's footprint (x/z), bottom of
+       the lowest block (y). Using the AABB - not the centroid of centers -
+       keeps stored offsets formation-exact so pastes can't collapse blocks
+       onto each other or drop multi-height stacks through the ground. */
+    v3 lo = v3_make(1e9f,1e9f,1e9f), hi = v3_make(-1e9f,-1e9f,-1e9f);
     for (int i = 0; i < g_nb; i++) if (A.sel[i]) {
+        v3 es = block_eff_size(&g_blocks[i]);
+        for (int a = 0; a < 3; a++) {
+            float l = g_blocks[i].pos.e[a] - es.e[a] * 0.5f;
+            float h = g_blocks[i].pos.e[a] + es.e[a] * 0.5f;
+            if (l < lo.e[a]) lo.e[a] = l;
+            if (h > hi.e[a]) hi.e[a] = h;
+        }
+    }
+    v3 ref = v3_make((lo.x + hi.x) * 0.5f, lo.y, (lo.z + hi.z) * 0.5f);
+    for (int i = 0; i < g_nb && A.nClip < MAX_BLOCKS; i++) if (A.sel[i]) {
         A.clip[A.nClip] = g_blocks[i];
-        A.clip[A.nClip].pos = v3_sub(g_blocks[i].pos, c);
+        A.clip[A.nClip].pos = v3_sub(g_blocks[i].pos, ref);
         A.nClip++;
     }
 }
@@ -323,10 +335,10 @@ static void paste_clip(v3 at) {
     sel_clear();
     for (int i = 0; i < A.nClip; i++) {
         Block b = A.clip[i];
+        /* `at` is already grid-snapped by the caller; adding the exact
+           stored offset keeps the formation coherent - no per-block snap,
+           no per-block ground clamp (the ref bottom lands on `at.y`) */
         b.pos = v3_add(b.pos, at);
-        b.pos.x = snapf(b.pos.x, GRID_SNAP); b.pos.z = snapf(b.pos.z, GRID_SNAP);
-        float half = block_eff_size(&b).y*0.5f;
-        if (b.pos.y < half) b.pos.y = half;
         int ni = world_addb(&b);
         if (ni >= 0) {
             g_blocks[ni].id = g_nextid++;
