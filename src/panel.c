@@ -41,6 +41,11 @@ static const Asset ASSETS[] = {
     {"Cone",       "Pointy top.",                           RK_MESH_CONE,     {1,1,1}},
     {"Dome",       "Half sphere.",                          RK_MESH_DOME,     {1,0.55f,1}},
     {"Pyramid",    "Square pyramid.",                       RK_MESH_PYRAMID,  {1,1,1}},
+    {"Slab",       "Half-height block.",                    RK_MESH_CUBE,     {1,0.5f,1}},
+    {"Plate",      "Quarter-height slab.",                  RK_MESH_CUBE,     {1,0.25f,1}},
+    {"Beam",       "Thin square post.",                     RK_MESH_CUBE,     {1,0.4f,0.4f}},
+    {"Pipe",       "Thin round rod.",                       RK_MESH_WHEEL,    {1,0.45f,0.45f}},
+    {"Arch",       "U-shaped opening.",                     RK_MESH_ARCH,     {1,1,1}},
     /* RAMPS */
     {"Wedge",      "45 deg ramp.",                          RK_MESH_WEDGE,    {1,1,1}},
     {"Corner",     "Corner wedge - slopes from one corner.",RK_MESH_CORNERW,  {1,1,1}},
@@ -52,14 +57,15 @@ static const Asset ASSETS[] = {
     {"Round Cube", "Cube with rounded edges.",              RK_MESH_ROUNDC,   {1,1,1}},
     {"Frame",      "Hollow cube - edges only.",             RK_MESH_FRAME,    {1,1,1}},
     {"Cage Ball",  "Sphere with holes on all sides.",       RK_MESH_CAGEBALL, {1,1,1}},
+    {"Ring",       "Standing donut.",                       RK_MESH_RING,     {1,1,1}},
 };
 #define N_ASSETS ((int)(sizeof ASSETS / sizeof ASSETS[0]))
 
 typedef struct { const char *name; int first, count; } Cat;
 static const Cat CATS[] = {
-    {"BASIC",    0, 6},
-    {"RAMPS",    6, 4},
-    {"SPECIAL", 10, 5},
+    {"BASIC",    0, 11},
+    {"RAMPS",    11, 4},
+    {"SPECIAL", 15, 6},
     {"SCULPTED", 0, 0},       /* dynamic: sculpted topology models only */
 };
 #define N_CATS ((int)(sizeof CATS / sizeof CATS[0]))

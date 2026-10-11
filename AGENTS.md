@@ -71,6 +71,21 @@ links m/dl/pthread. Win32-only code (file dialog, DPI awareness) is `_WIN32`
   GPU times come from `rk_gpu_times` (per-in-flight timestamp query pools:
   shadow pass, main pass, total). `prof_frame()` accumulates a 120-frame
   ring; `prof_draw()` renders the overlay. Add zones, not printf spam.
+- `src/settings.c` — settings.bw v1: window rect/fullscreen, cam speed/fov/
+  invertY, prof overlay. `settings_load` pre-window, `apply` post-cam_init,
+  `save` on toggle + dirty flag. Keys: Y invert, -/= fov.
+- `src/font.h` — glyphs baked into reserved atlas tile (7,7) at tex_init
+  (`font_bake`); `ui_text` = one tinted `rk_ui_texrect_col` quad per char.
+- `src/meshgen.c` — `meshgen_shape()` emits flat Vert soups per RK_MESH_*
+  id (cube..ring + MESHGEN_PLANE); adding a shape = enum + gen fn +
+  build_all off[] + panel ASSETS/CATS row.
+- Screenshot: F12 or `VARLERA_SHOT=out.bmp` (auto at frame 45) —
+  swapchain TRANSFER_SRC copy -> staging -> 24bpp BMP next frame.
+- Frustum culling: `aabb_in_frustum` (math3d) in edit_draw_world;
+  off-camera opaque blocks go to `rk_caster` (K_CASTER = shadow pass
+  only) via `rk_can_shadow_cast` (light-space ortho rect extruded).
+- Sky: K_SKY/pSky fullscreen-triangle gradient + sun disc
+  (sky.vert unprojects through inverse VP; env colors drive it).
 - `src/font.h` — 5x7 bitmap font rendered as UI rects (`ui_text`/`ui_text_clip`).
 - `src/math3d.h` — `v3` union (`{x,y,z}` / `.e[3]`), column-major `m4` float[16],
   `m4_perspective_rz`/`m4_ortho_rz` reversed-Z variants.

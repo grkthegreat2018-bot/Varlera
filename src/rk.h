@@ -25,6 +25,8 @@ typedef enum {
     RK_MESH_ROUNDC,     /* rounded-edge cube (superellipsoid) */
     RK_MESH_CAGEBALL,   /* sphere with circular holes on all 6 axis sides */
     RK_MESH_CORSTAIR,   /* L-shaped corner staircase */
+    RK_MESH_ARCH,       /* box arch: two legs + lintel, opening in z */
+    RK_MESH_RING,       /* standing torus (ring in the XY plane) */
     RK_MESH_COUNT
 } RkMesh;
 

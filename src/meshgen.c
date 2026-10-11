@@ -332,6 +332,30 @@ static int gen_corstair(void) {
     return s;
 }
 
+/* box arch: two legs + a lintel across the top, opening along z */
+static int gen_arch(void) {
+    int s = g_nv;
+    const float h = 0.5f, tw = 0.16f, tz = 0.30f;
+    beam(v3_make(-h, -h, -tz), v3_make(-h + tw, h, tz));   /* -x leg   */
+    beam(v3_make(h - tw, -h, -tz), v3_make(h, h, tz));     /* +x leg   */
+    beam(v3_make(-h, 0.30f, -tz), v3_make(h, h, tz));      /* lintel   */
+    return s;
+}
+
+/* standing ring: the Y-axis torus tipped 90deg about X so it stands in XY */
+static int gen_ring(void) {
+    int s = g_nv;
+    gen_torus(20, 10);
+    for (int i = s; i < g_nv; i++) {
+        Vert *v = &g_verts[i];
+        float y = v->pos[1], z = v->pos[2];
+        v->pos[1] = -z; v->pos[2] = y;
+        float ny = v->nrm[1], nz = v->nrm[2];
+        v->nrm[1] = -nz; v->nrm[2] = ny;
+    }
+    return s;
+}
+
 static int gen_line_box(void) {
     int s = g_nv;
     float h = 0.5f;
@@ -372,6 +396,8 @@ static int gen_by_index(int shape) {
     case RK_MESH_ROUNDC:   return gen_roundc(14);
     case RK_MESH_CAGEBALL: return gen_cageball(18, 36);
     case RK_MESH_CORSTAIR: return gen_corstair();
+    case RK_MESH_ARCH:     return gen_arch();
+    case RK_MESH_RING:     return gen_ring();
     }
     return g_nv;
 }
@@ -400,6 +426,8 @@ int meshgen_build_all(Vert *pool, int maxverts,
     off[RK_MESH_ROUNDC]   = (uint32_t)gen_roundc(14);
     off[RK_MESH_CAGEBALL] = (uint32_t)gen_cageball(12, 18);
     off[RK_MESH_CORSTAIR] = (uint32_t)gen_corstair();
+    off[RK_MESH_ARCH]     = (uint32_t)gen_arch();
+    off[RK_MESH_RING]     = (uint32_t)gen_ring();
     off[MESHGEN_PLANE]    = (uint32_t)gen_plane();
     *lineOff = (uint32_t)gen_line_box();
     for (int i = 0; i < MESHGEN_TOTAL; i++) {
