@@ -22,6 +22,7 @@
 #include "toast.h"
 #include "log.h"
 #include "settings.h"
+#include "bundle.h"
 #include "world.h"
 #include "math3d.h"
 
@@ -288,6 +289,8 @@ int main(void) {
     const char *envShot = getenv("VARLERA_SHOT");
     const char *envReload = getenv("VARLERA_RELOAD");   /* test hook: F8 path */
     const char *envSave  = getenv("VARLERA_SAVE");      /* test hook: v4 save */
+    const char *envBwx   = getenv("VARLERA_BWX");       /* test hook: export */
+    const char *envBwxIn = getenv("VARLERA_BWXIN");     /* test hook: import */
     const char *envTab   = getenv("VARLERA_TAB");       /* test hook: open tab */
     if (envTab) A.panelTab = atoi(envTab);
     int frameNo = 0;
@@ -359,6 +362,10 @@ int main(void) {
             worlds_ensure();
             world_save(worlds_file(A.worldName, "bw"), A.worldName);
         }
+        if (envBwx && frameNo == 50 && bundle_save(envBwx, A.worldName))
+            fprintf(stderr, "bundle -> %s\n", envBwx);
+        if (envBwxIn && frameNo == 50 && bundle_load(envBwxIn, A.worldName))
+            fprintf(stderr, "bundle loaded %s\n", envBwxIn);
         if (envReload && frameNo == 60) {
             toast_say(rk_reload_shaders() ? "shaders reloaded"
                                           : "shader reload: compile errors");

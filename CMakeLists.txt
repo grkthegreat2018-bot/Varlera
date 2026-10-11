@@ -53,6 +53,7 @@ add_executable(varlera WIN32
   src/marching.c
   src/prof.c
   src/toast.c
+  src/bundle.c
   src/log.c
   src/settings.c
 )

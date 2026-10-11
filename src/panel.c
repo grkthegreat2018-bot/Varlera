@@ -7,6 +7,7 @@
 #include "art.h"
 #include "sculpt.h"
 #include "toast.h"
+#include "bundle.h"
 #include "font.h"
 #include "math3d.h"
 #include <string.h>
@@ -24,22 +25,44 @@
 #pragma comment(lib, "shell32")
 #endif
 
-/* OS pickers for SAVE AS / save dir (zenity on Linux). */
-static int pick_save_path(char *out, int n) {
+/* OS pickers for SAVE AS / bundles / save dir (zenity on Linux). */
+static int pick_save_path(char *out, int n, const char *title,
+                          const char *filter, const char *ext) {
 #ifdef _WIN32
     memset(out, 0, n);
     OPENFILENAMEA ofn; memset(&ofn, 0, sizeof ofn);
     ofn.lStructSize = sizeof ofn;
     ofn.hwndOwner = glfwGetWin32Window(A.win);
     ofn.lpstrFile = out; ofn.nMaxFile = n;
-    ofn.lpstrFilter = "Varlera World\0*.bw\0All Files\0*.*\0";
-    ofn.lpstrDefExt = "bw";
+    ofn.lpstrFilter = filter;
+    ofn.lpstrDefExt = ext;
     ofn.Flags = OFN_OVERWRITEPROMPT | OFN_NOCHANGEDIR;
-    ofn.lpstrTitle = "Save world as";
+    ofn.lpstrTitle = title;
     return GetSaveFileNameA(&ofn);
 #else
-    FILE *pp = popen("zenity --file-selection --save "
-                     "--file-filter='Varlera world | *.bw' 2>/dev/null", "r");
+    (void)title; (void)ext;
+    FILE *pp = popen("zenity --file-selection --save 2>/dev/null", "r");
+    if (!pp) return 0;
+    if (!fgets(out, n, pp)) { pclose(pp); return 0; }
+    out[strcspn(out, "\r\n")] = 0;
+    return pclose(pp) == 0 && out[0];
+#endif
+}
+static int pick_open_path(char *out, int n, const char *title,
+                          const char *filter) {
+#ifdef _WIN32
+    memset(out, 0, n);
+    OPENFILENAMEA ofn; memset(&ofn, 0, sizeof ofn);
+    ofn.lStructSize = sizeof ofn;
+    ofn.hwndOwner = glfwGetWin32Window(A.win);
+    ofn.lpstrFile = out; ofn.nMaxFile = n;
+    ofn.lpstrFilter = filter;
+    ofn.Flags = OFN_FILEMUSTEXIST | OFN_NOCHANGEDIR;
+    ofn.lpstrTitle = title;
+    return GetOpenFileNameA(&ofn);
+#else
+    (void)title; (void)filter;
+    FILE *pp = popen("zenity --file-selection 2>/dev/null", "r");
     if (!pp) return 0;
     if (!fgets(out, n, pp)) { pclose(pp); return 0; }
     out[strcspn(out, "\r\n")] = 0;
@@ -629,7 +652,7 @@ int panel_press(double x, double y) {
     /* WORLD tab */
     if (A.panelTab != 3) return 1;
     if (in_rect(fx, fy, px + 8, 58, PW - 16, 20)) { A.textMode = 4; return 1; }
-    for (int i = 0; i < 7; i++) {
+    for (int i = 0; i < 9; i++) {
         float bx = px + 8 + (i%3)*68.0f, byy = 80.0f + (i/3)*30.0f;
         if (in_rect(fx, fy, bx, byy, 62, 24)) {
             switch (i) {
@@ -643,13 +666,24 @@ int panel_press(double x, double y) {
             case 3: if (world_redo()) sel_clear(); break;
             case 4: world_push_undo(); g_nb = 0; sel_clear(); break;
             case 5: { char p[512];
-                      if (pick_save_path(p, sizeof p)) {
+                      if (pick_save_path(p, sizeof p, "Save world as",
+                                         "Varlera World\0*.bw\0All Files\0*.*\0", "bw")) {
                           world_save(p, A.worldName); tex_save("textures.bw");
                       } break; }
             case 6: { char d[384];
                       if (pick_dir(d, sizeof d)) {
                           worlds_set_dir(d); worlds_ensure(); A.setDirty = 1;
                           toast_say("SAVE DIR SET"); } break; }
+            case 7: { char p[512];
+                      if (pick_save_path(p, sizeof p, "Export project bundle",
+                                         "Varlera Bundle\0*.bwx\0All Files\0*.*\0", "bwx") &&
+                          bundle_save(p, A.worldName))
+                          toast_say("EXPORTED .BWX"); } break;
+            case 8: { char p[512];
+                      if (pick_open_path(p, sizeof p, "Import project bundle",
+                                         "Varlera Bundle\0*.bwx\0All Files\0*.*\0") &&
+                          bundle_load(p, A.worldName))
+                          sel_clear(); } break;
             }
             return 1;
         }
@@ -1003,8 +1037,9 @@ static void draw_world(float px) {
     snprintf(nb, sizeof nb, "NAME: %s%s", A.worldName, foc ? "_" : "");
     ui_text(px + 14, 64, nb, 1,
             foc ? 1.0f : 0.75f, foc ? 1.0f : 0.78f, foc ? 1.0f : 0.85f, 1);
-    const char *names[] = {"SAVE","LOAD","UNDO","REDO","CLEAR","SAVEAS","DIR"};
-    for (int i = 0; i < 7; i++) {
+    const char *names[] = {"SAVE","LOAD","UNDO","REDO","CLEAR","SAVEAS",
+                           "DIR","EXPORT","IMPORT"};
+    for (int i = 0; i < 9; i++) {
         float bx = px + 8 + (i%3)*68;
         float by = 80.0f + (i/3)*30.0f;
         rk_ui_rect(bx, by, 62, 24, 0.22f,0.30f,0.45f, 1);
