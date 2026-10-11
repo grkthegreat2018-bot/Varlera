@@ -1,5 +1,6 @@
-/* font.h - tiny 5x7 bitmap font rendered as UI rects (no texture needed).
- * Lowercase maps to uppercase. Unknown chars render as '?'. */
+/* font.h - tiny 5x7 bitmap font. Glyphs are baked into a reserved atlas
+ * tile (FONT_TX,FONT_TY) at font_bake() time; text renders as one tinted
+ * textured quad per char. Lowercase maps to uppercase. '?' for unknown. */
 #ifndef FONT_H
 #define FONT_H
 
@@ -69,25 +70,56 @@ static const uint8_t FONT[][5] = {
     {0x00,0x41,0x41,0x7F,0x00}, /* ] */
 };
 
+/* glyph strip lives in atlas tile (FONT_TX,FONT_TY): FONT_COLS cells of
+ * FONT_CELL px (glyph uses 6x7 of it: 5px bitmap + 1px advance space).
+ * font_bake writes white+alpha pixels; text tints them via vert color.
+ * tex.c marks the tile used so tex_new never allocates over it and calls
+ * font_bake after every atlas wipe (tex_load). */
+#define FONT_TX   7
+#define FONT_TY   7
+#define FONT_CELL 8
+#define FONT_COLS 16
+
+static inline void font_bake(uint8_t *atlas) {
+    int n = (int)strlen(FONT_CHARS);
+    for (int i = 0; i < n; i++) {
+        int gx = FONT_TX * RK_TEX_TILE + (i % FONT_COLS) * FONT_CELL;
+        int gy = FONT_TY * RK_TEX_TILE + (i / FONT_COLS) * FONT_CELL;
+        for (int row = 0; row < 7; row++)
+            for (int col = 0; col < 6; col++) {
+                int on = col < 5 && (FONT[i][col] & (1 << row));
+                uint8_t *p = &atlas[((size_t)(gy + row) * RK_TEX_ATLAS
+                                     + (size_t)(gx + col)) * 4];
+                p[0] = p[1] = p[2] = 255;
+                p[3] = (uint8_t)(on ? 255 : 0);
+            }
+    }
+}
+
 /* draw text clipped to y range [cy0,cy1); x,y = top-left px; returns width */
 static inline int ui_text_clip(float x, float y, const char *s, int scale,
                                float r, float g, float b, float a,
                                float cy0, float cy1) {
+    const float inv = 1.0f / RK_TEX_ATLAS;
     int cx = 0;
+    if (scale < 1) scale = 1;
     for (const char *p = s; *p; p++) {
         char c = *p;
         if (c >= 'a' && c <= 'z') c = (char)(c - 'a' + 'A');
         const char *hit = strchr(FONT_CHARS, c);
-        const uint8_t *gl = hit ? FONT[hit - FONT_CHARS] : FONT[40 /*'?'*/];
-        for (int col = 0; col < 5; col++)
-            for (int row = 0; row < 7; row++) {
-                if (!(gl[col] & (1 << row))) continue;
-                float py = y + row*scale;
-                if (py + scale <= cy0 || py >= cy1) continue;
-                float top = py < cy0 ? cy0 : py;
-                float h = py + scale > cy1 ? cy1 - py : (float)scale;
-                rk_ui_rect(x + cx + col*scale, top, (float)scale, h, r, g, b, a);
-            }
+        int gi = hit ? (int)(hit - FONT_CHARS) : 40 /*'?'*/;
+        if (gi == 0) { cx += 6 * scale; continue; }          /* space */
+        float qh = 7.0f * scale;
+        float qy = y < cy0 ? cy0 : y;
+        float qb = y + qh > cy1 ? cy1 : y + qh;
+        if (qb > qy) {
+            float gx = (float)(FONT_TX * RK_TEX_TILE + (gi % FONT_COLS) * FONT_CELL);
+            float gy = (float)(FONT_TY * RK_TEX_TILE + (gi / FONT_COLS) * FONT_CELL);
+            rk_ui_texrect_col(x + cx, qy, 6.0f * scale, qb - qy,
+                              r, g, b, a,
+                              gx * inv, (gy + (qy - y) / scale) * inv,
+                              (gx + 6) * inv, (gy + (qb - y) / scale) * inv);
+        }
         cx += 6 * scale;
     }
     return cx;

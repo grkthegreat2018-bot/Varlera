@@ -99,10 +99,15 @@ void rk_ui_rect(float px, float py, float pw, float ph, float r, float g, float 
 }
 
 /* textured UI quad: samples the atlas region [u0,v0]-[u1,v1] */
+void rk_ui_texrect_col(float px, float py, float pw, float ph,
+                       float r, float g, float b, float a,
+                       float u0, float v0, float u1, float v1) {
+    if (G.uiN < MAX_UI_QUADS)
+        G.uiQ[G.uiN++] = (UIRect){px, py, pw, ph, r, g, b, a, u0, v0, u1, v1, 1};
+}
 void rk_ui_texrect(float px, float py, float pw, float ph,
                    float u0, float v0, float u1, float v1) {
-    if (G.uiN < MAX_UI_QUADS)
-        G.uiQ[G.uiN++] = (UIRect){px, py, pw, ph, 1,1,1,1, u0, v0, u1, v1, 1};
+    rk_ui_texrect_col(px, py, pw, ph, 1,1,1,1, u0, v0, u1, v1);
 }
 
 void rk_ui_flush(void) {

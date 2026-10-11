@@ -115,6 +115,10 @@ void rk_ui_rect(float px, float py, float pw, float ph, float r, float g, float 
 /* textured UI quad sampling atlas region [u0,v0]-[u1,v1] */
 void rk_ui_texrect(float px, float py, float pw, float ph,
                    float u0, float v0, float u1, float v1);
+/* same, tinted (texture rgb*a multiplied by r,g,b,a) */
+void rk_ui_texrect_col(float px, float py, float pw, float ph,
+                       float r, float g, float b, float a,
+                       float u0, float v0, float u1, float v1);
 void rk_ui_flush(void);
 
 /* environment look: sky tints clear+fog, ground tints the grid base color */

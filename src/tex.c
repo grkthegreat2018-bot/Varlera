@@ -3,6 +3,7 @@
  * Files: textures.bw (v1) - header + used records + per-record pixel payload.
  */
 #include "tex.h"
+#include "font.h"
 #include <string.h>
 #include <stdio.h>
 #include <math.h>
@@ -21,6 +22,14 @@ static void put(int x, int y, uint8_t r, uint8_t g, uint8_t b, uint8_t a) {
     if (x < 0 || y < 0 || x >= ATW || y >= ATW) return;
     uint8_t *p = &g_atlas[(y * ATW + x) * 4];
     p[0] = r; p[1] = g; p[2] = b; p[3] = a;
+}
+
+/* tile (FONT_TX,FONT_TY) holds the baked glyph strip — permanently marked
+ * used so tex_new never allocates over it. font_bake rewrites the pixels;
+ * call after any atlas wipe (tex_load) and before user tiles are handed out. */
+static void font_reserve(void) {
+    s_tiles[FONT_TY][FONT_TX] = 1;
+    font_bake(g_atlas);
 }
 
 static uint32_t s_rng = 0x9E3779B9u;
@@ -231,14 +240,24 @@ int tex_load(const char *path) {
         Tex *t = &g_tex[i];
         if (fread(t, sizeof(Tex), 1, f) != 1) { fclose(f); return 0; }
         if (t->tx + t->tw > TILES || t->ty + t->th > TILES) { s_used[i] = 0; continue; }
+        /* records overlapping the reserved font tile get dropped (payload
+           is still read to keep the stream aligned; font wins the pixels) */
+        int fonthit = t->tx <= FONT_TX && t->tx + t->tw > FONT_TX &&
+                      t->ty <= FONT_TY && t->ty + t->th > FONT_TY;
         for (int j = 0; j < t->th; j++)
             for (int k = 0; k < t->tw; k++) s_tiles[t->ty + j][t->tx + k] = 1;
         uint8_t *dst = &g_atlas[(t->ty * TEX_TILE * ATW + t->tx * TEX_TILE) * 4];
         for (int y = 0; y < t->th * TEX_TILE; y++)
             if (fread(dst + (size_t)y * ATW * 4, 4, (size_t)t->tw * TEX_TILE, f)
                 != (size_t)t->tw * TEX_TILE) { fclose(f); return 0; }
+        if (fonthit) {
+            for (int j = 0; j < t->th; j++)
+                for (int k = 0; k < t->tw; k++) s_tiles[t->ty + j][t->tx + k] = 0;
+            s_used[i] = 0; continue;
+        }
         tex_sync_rect(i);
     }
+    font_reserve();
     fclose(f);
     return 1;
 }
@@ -249,6 +268,7 @@ void tex_init(void) {
     memset(g_atlas, 0, sizeof g_atlas);
     memset(s_used, 0, sizeof s_used);
     memset(s_tiles, 0, sizeof s_tiles);
+    font_reserve();                     /* mark+bake before tile handout */
     g_ntex = 1;
     snprintf(g_tex[0].name, 16, "NONE");
 
