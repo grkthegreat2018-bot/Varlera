@@ -82,7 +82,9 @@ typedef struct {
     uint16_t trigHeld;          /* play mode: bit per TRIG_* currently active */
 
     /* text input: TM_* focus modes share key/char dispatch */
-    int textMode;               /* 0 off,1 search,2 console,3 rename,4 world name */
+    int textMode;               /* 0 off,1 search,2 console,3 rename,
+                                   4 world name, 5 SAY/TITLE message */
+    int msgSel;                 /* g_msgs slot edited by textMode 5 */
     char search[33];            /* SHAPES filter (non-empty = filtered view) */
     char cmdBuf[96]; int cmdLen;
     char renBuf[13];            /* textMode 3: block name being edited */

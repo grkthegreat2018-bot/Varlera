@@ -58,6 +58,10 @@ static void on_char(GLFWwindow *w, unsigned int cp) {
     } else if (A.textMode == 4) {
         int n = (int)strlen(A.worldName);
         if (n < 24) { A.worldName[n] = (char)cp; A.worldName[n+1] = 0; }
+    } else if (A.textMode == 5) {
+        char *m = g_msgs[A.msgSel & (MSG_MAX - 1)];
+        int n = (int)strlen(m);
+        if (n < MSG_LEN - 1) { m[n] = (char)cp; m[n+1] = 0; world_wset_dirty(); }
     }
 }
 
@@ -188,6 +192,10 @@ static void on_key(GLFWwindow *w, int key, int sc, int action, int mods) {
             else if (A.textMode == 2 && A.cmdLen) A.cmdBuf[--A.cmdLen] = 0;
             else if (A.textMode == 3) { int n = (int)strlen(A.renBuf); if (n) A.renBuf[n-1] = 0; }
             else if (A.textMode == 4) { int n = (int)strlen(A.worldName); if (n) A.worldName[n-1] = 0; }
+            else if (A.textMode == 5) {
+                char *m = g_msgs[A.msgSel & (MSG_MAX - 1)];
+                int n = (int)strlen(m); if (n) { m[n-1] = 0; world_wset_dirty(); }
+            }
         }
         return;
     }

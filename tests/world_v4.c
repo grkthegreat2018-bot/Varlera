@@ -15,6 +15,9 @@
 
 static int fails;
 
+/* stub: the app's toast.c is not linked into this test */
+void toast_say(const char *msg) { (void)msg; }
+
 #define CHECK(cond) do { \
     if (!(cond)) { printf("FAIL %s:%d  %s\n", __FILE__, __LINE__, #cond); fails++; } \
 } while (0)
@@ -39,17 +42,20 @@ int main(void) {
     b.alpha = 1.0f; b.shape = 200;
     CHECK(world_addb(&b) == 1);
 
-    /* world-settings trailer: set non-defaults, verify round-trip */
+    /* world-settings + message trailers: non-defaults, verify round-trip */
+    snprintf(g_msgs[3], MSG_LEN, "hello world");
     world_wset()->chunkShape = 2;
     world_wset()->chunkSize  = 32;
     world_wset()->lod        = 1;
     world_wset()->gravMul    = 4;                    /* 0.5x gravity */
     CHECK(world_save("test_v4_tmp.bw", "myworld"));
 
-    /* v4 file must be smaller than the v3 flat dump for these 2 blocks */
+    /* packed records must stay smaller than the v3 flat dump even with
+       the header + WSet + message-table overhead */
     FILE *f = fopen("test_v4_tmp.bw", "rb"); fseek(f, 0, SEEK_END);
     long sz = ftell(f); fclose(f);
-    CHECK(sz > 0 && sz < (long)(56 + 2 * sizeof(Block)));
+    long fixed = 56 + (long)sizeof(WSet) + 8 + MSG_MAX * MSG_LEN;
+    CHECK(sz > fixed && sz - fixed < (long)(2 * sizeof(Block)));
 
     char name[32] = {0};
     memset(g_blocks, 0, sizeof g_blocks); g_nb = 0;
@@ -58,6 +64,7 @@ int main(void) {
     CHECK(strcmp(name, "myworld") == 0);
     CHECK(world_wset()->chunkShape == 2 && world_wset()->chunkSize == 32);
     CHECK(world_wset()->lod == 1 && world_wset()->gravMul == 4);
+    CHECK(strcmp(g_msgs[3], "hello world") == 0 && !g_msgs[0][0]);
 
     Block *p = &g_blocks[0];
     CHECK(p->pos.x == 2.5f && p->pos.z == -4.0f && p->size.z == 2.0f);
@@ -91,6 +98,7 @@ int main(void) {
     CHECK(g_blocks[0].alpha == 1.0f);
     CHECK(g_nextid >= 100);
     CHECK(world_wset()->chunkShape == 0 && world_wset()->gravMul == 8);
+    CHECK(!g_msgs[3][0]);                        /* msgs reset on v3 load */
     remove("test_v3_tmp.bw");
 
     /* corrupt-version rejection */

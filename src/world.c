@@ -1,6 +1,7 @@
 #include "world.h"
 #include <string.h>
 #include <stdio.h>
+#include "toast.h"
 #include <stdlib.h>
 #include <time.h>
 #ifdef _WIN32
@@ -111,7 +112,9 @@ void world_delete(int i) {
 static uint32_t s_created;    /* from v4 header; now() if absent */
 
 #define WS_MAGIC 0x34535742u    /* 'BWS4' settings trailer */
+#define MS_MAGIC 0x53574D42u    /* 'BWMS' message-table trailer */
 static WSet s_wset;
+char g_msgs[MSG_MAX][MSG_LEN];
 static void wset_defaults(void) {
     memset(&s_wset, 0, sizeof s_wset);
     s_wset.gravMul = 8;                        /* 1.0x gravity */
@@ -202,8 +205,11 @@ int world_save(const char *path, const char *name) {
         }
         if (fl & BF4_NAME) ok &= fwrite(b->name, 12, 1, f) == 1;
     }
-    s_wset.magic = WS_MAGIC;                 /* settings trailer (v4) */
+    s_wset.magic = WS_MAGIC;                 /* settings trailer (v4+) */
     ok &= fwrite(&s_wset, sizeof s_wset, 1, f) == 1;
+    uint32_t mh[2] = {MS_MAGIC, MSG_MAX};    /* message table trailer */
+    ok &= fwrite(mh, 8, 1, f) == 1;
+    ok &= fwrite(g_msgs, MSG_LEN, MSG_MAX, f) == MSG_MAX;
     fclose(f);
     return ok;
 }
@@ -236,6 +242,7 @@ int world_load(const char *path, char *nameOut) {
     g_nb = (int)hdr[2];
     s_created = 0;
     wset_defaults();
+    memset(g_msgs, 0, sizeof g_msgs);
     if (ver >= 3 && fread(&g_nextid, 4, 1, f) != 1) g_nextid = 1;
     int ok = 1;
     if (ver >= 4) {                            /* v4/v5: meta header + packed */
@@ -279,6 +286,12 @@ int world_load(const char *path, char *nameOut) {
         WSet ws;
         if (ok && fread(&ws, sizeof ws, 1, f) == 1 && ws.magic == WS_MAGIC)
             s_wset = ws;
+        /* message-table trailer (optional) */
+        uint32_t mh[2];
+        if (ok && fread(mh, 8, 1, f) == 1 && mh[0] == MS_MAGIC) {
+            uint32_t n = mh[1] > MSG_MAX ? MSG_MAX : mh[1];
+            if (fread(g_msgs, MSG_LEN, n, f) != n) ok = 0;
+        }
     } else if (ver < 3) {                      /* v1/v2 fixed-size records */
         int rec = ver == 1 ? BW_VER1_BLKSZ : BW_VER2_BLKSZ;
         uint8_t buf[BW_VER2_BLKSZ];
@@ -414,6 +427,11 @@ void world_physics(float dt, uint16_t trigHeld) {
     for (int i = 0; i < g_nb; i++) {
         Block *s = &g_blocks[i];
         if (s->act < ACT_COLOR || !((edge >> s->trig) & 1)) continue;
+        if (s->act >= ACT_SAY) {                 /* text acts: global */
+            const char *m = g_msgs[s->actParam & (MSG_MAX - 1)];
+            if (*m) toast_say(m);              /* TITLE styling later */
+            continue;
+        }
         for (int t = 0; t < g_nb; t++) {
             Block *b = &g_blocks[t];
             if (!tgt_match(s, b)) continue;

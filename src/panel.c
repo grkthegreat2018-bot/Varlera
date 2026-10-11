@@ -1256,12 +1256,13 @@ void panel_draw(void) {
 
 /* ---- block script menu: floats above the selection ---- */
 enum { SM_GRAV, SM_COLL, SM_LOCK, SM_NAME, SM_TRIG, SM_ACT, SM_TGT, SM_PARAM,
-       SM_TRACT, SM_BOUNCE, SM_WEIGHT, SM_UNFUSE, SM_FUSE, SM_EDIT };
+       SM_MSG, SM_TRACT, SM_BOUNCE, SM_WEIGHT, SM_UNFUSE, SM_FUSE, SM_EDIT };
 static const char *SM_LABEL[] = {"GRAVITY","COLLIDE","LOCKED","NAME","TRIG","ACT",
-                                 "TGT","PARAM","TRAC","BOUNCE","WEIGHT",
+                                 "TGT","PARAM","MSG","TRAC","BOUNCE","WEIGHT",
                                  "UNFUSE","FUSE ALL","RESCULPT"};
 static const char *TRIG_NAME[N_TRIGS] = {"ALWAYS","SPACE","W","A","S","D","E","Q","CLICK"};
-static const char *ACT_NAME[N_ACTS] = {"NONE","SPIN","GLOW","BOOST","COLOR","TEX","DELETE"};
+static const char *ACT_NAME[N_ACTS] = {"NONE","SPIN","GLOW","BOOST","COLOR","TEX",
+                                       "DELETE","SAY","TITLE"};
 static const char *TGT_LBL[4] = {"SELF","ASSET","NAME","ALL"};
 #define SM_W 152.0f
 
@@ -1287,6 +1288,7 @@ static int script_layout(float *bx, float *by, int acts[16]) {
         acts[nr++] = SM_NAME;
         acts[nr++] = SM_TRIG; acts[nr++] = SM_ACT; acts[nr++] = SM_TGT;
         acts[nr++] = SM_PARAM;
+        if (g_blocks[sel_first()].act >= ACT_SAY) acts[nr++] = SM_MSG;
         acts[nr++] = SM_TRACT; acts[nr++] = SM_BOUNCE; acts[nr++] = SM_WEIGHT;
         int si0 = sel_first();
         int sh = g_blocks[si0].shape;
@@ -1347,6 +1349,7 @@ static void draw_script_menu(void) {
         int btn = acts[r] == SM_FUSE || acts[r] == SM_UNFUSE ||
                   acts[r] == SM_TRIG || acts[r] == SM_ACT || acts[r] == SM_EDIT ||
                   acts[r] == SM_NAME || acts[r] == SM_TGT || acts[r] == SM_PARAM ||
+                  acts[r] == SM_MSG ||
                   acts[r] >= SM_TRACT && acts[r] <= SM_WEIGHT;
         rk_ui_rect(bx+4, ry, SM_W-8, 19,
                    btn ? 0.25f : 0.16f+hov*0.08f,
@@ -1361,6 +1364,15 @@ static void draw_script_menu(void) {
         else if (b && acts[r] == SM_TRACT) { snprintf(lab, sizeof lab, "TRAC: %d", b->traction); txt = lab; }
         else if (b && acts[r] == SM_BOUNCE) { snprintf(lab, sizeof lab, "BOUNCE: %d", b->bounce); txt = lab; }
         else if (b && acts[r] == SM_WEIGHT) { snprintf(lab, sizeof lab, "WEIGHT: %d", b->weight); txt = lab; }
+        else if (b && acts[r] == SM_MSG) {
+            const char *m = g_msgs[b->actParam & (MSG_MAX - 1)];
+            if (A.textMode == 5)
+                snprintf(lab, sizeof lab, "MSG%d: %s_", b->actParam & 15, m);
+            else
+                snprintf(lab, sizeof lab, "MSG%d: %s", b->actParam & 15,
+                         m[0] ? m : "-");
+            txt = lab;
+        }
         else if (b && acts[r] == SM_NAME) {
             if (A.textMode == 3)
                 snprintf(lab, sizeof lab, "NAME: %s_", A.renBuf);
@@ -1433,6 +1445,10 @@ int panel_script_click(double x, double y) {
             break;
         case SM_TGT:   g_blocks[i].tgt = (g_blocks[i].tgt + 1) & 3; break;
         case SM_PARAM:  g_blocks[i].actParam = (g_blocks[i].actParam + 1) & 15; break;
+        case SM_MSG:
+            A.msgSel = g_blocks[i].actParam & (MSG_MAX - 1);
+            A.textMode = 5;
+            break;
         case SM_TRACT:  g_blocks[i].traction = (g_blocks[i].traction + 1) & 15; break;
         case SM_BOUNCE: g_blocks[i].bounce  = (g_blocks[i].bounce + 1) & 15; break;
         case SM_WEIGHT: g_blocks[i].weight  = (g_blocks[i].weight + 1) & 15; break;

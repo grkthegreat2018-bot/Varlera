@@ -57,7 +57,14 @@ typedef struct {
 #define ACT_COLOR   4           /* actParam = palette-ish color index (cycle) */
 #define ACT_TEX     5           /* actParam = texture id */
 #define ACT_DEL     6           /* delete block while triggered */
-#define N_ACTS      7
+#define ACT_SAY     7           /* toast g_msgs[actParam] on trigger edge */
+#define ACT_TITLE   8           /* same, styled as a title card */
+#define N_ACTS      9
+
+/* world message table (ACT_SAY/ACT_TITLE text slots) */
+#define MSG_MAX 16
+#define MSG_LEN 32
+extern char g_msgs[MSG_MAX][MSG_LEN];
 
 extern Block g_blocks[MAX_BLOCKS];
 extern int g_nb;

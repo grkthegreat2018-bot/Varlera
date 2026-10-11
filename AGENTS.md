@@ -151,10 +151,13 @@ shadow/main ms + draws/inst/ui-verts/blocks/models).
 
 Scripting (BW-style): select a block -> docked menu -> cycle TRIG
 (ALWAYS/SPACE/W/A/S/D/E/Q/CLICK), ACT (NONE/SPIN/GLOW/BOOST/COLOR/TEX/
-DELETE), TGT (SELF/ASSET/NAME/ALL) and PARAM (0-15). SPIN/GLOW/BOOST are
-held acts; COLOR/TEX/DELETE are discrete — they fire on the trigger edge
-(`s_prevHeld` diff in world_physics) and apply to the TGT set
-(`tgt_match`). NAME edits `Block.name` (textMode 3, `renBuf`, commit via
+DELETE/SAY/TITLE), TGT (SELF/ASSET/NAME/ALL) and PARAM (0-15). SPIN/GLOW/
+BOOST are held acts; COLOR/TEX/DELETE are discrete — they fire on the
+trigger edge (`s_prevHeld` diff in world_physics) and apply to the TGT
+set (`tgt_match`). SAY/TITLE are edge-triggered global text acts:
+`g_msgs[16][32]` world message table (MSG row edits the actParam slot,
+textMode 5), shown via `toast_say`; stored as a `BWMS` file trailer.
+NAME edits `Block.name` (textMode 3, `renBuf`, commit via
 `panel_rename_commit` keyed on stable `Block.id`); TGT NAME targets blocks
 sharing that name. ACT_COLOR paints `g_palette[actParam&15]` — the shared
 16-color table in world.c that the PAINT tab also uses. Legacy BF_SPIN
