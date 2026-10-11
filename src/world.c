@@ -109,9 +109,16 @@ void world_delete(int i) {
 
 static uint32_t s_created;    /* from v4 header; now() if absent */
 
-/* ---- worlds/ dir paths: worlds/<san>.<ext>; san = [a-z0-9_-] ---- */
+/* ---- save dir paths: <dir>/<san>.<ext>; san = [a-z0-9_-] ---- */
+static char s_dir[384] = "worlds";   /* user-chosen via WORLD tab DIR */
+
+void worlds_set_dir(const char *d) {
+    snprintf(s_dir, sizeof s_dir, "%s", (d && *d) ? d : "worlds");
+}
+const char *worlds_dir(void) { return s_dir; }
+
 const char *worlds_file(const char *name, const char *ext) {
-    static char s_path[160];
+    static char s_path[512];
     char san[25]; int n = 0;
     for (const char *p = name; *p && n < 24; p++) {
         char c = *p;
@@ -121,15 +128,15 @@ const char *worlds_file(const char *name, const char *ext) {
         san[n++] = c;
     }
     if (!n) { san[0] = 'w'; san[1] = 0; } else san[n] = 0;
-    snprintf(s_path, sizeof s_path, "worlds/%s.%s", san, ext);
+    snprintf(s_path, sizeof s_path, "%s/%s.%s", s_dir, san, ext);
     return s_path;
 }
 
 void worlds_ensure(void) {
 #ifdef _WIN32
-    _mkdir("worlds");
+    _mkdir(s_dir);
 #else
-    mkdir("worlds", 0755);
+    mkdir(s_dir, 0755);
 #endif
 }
 

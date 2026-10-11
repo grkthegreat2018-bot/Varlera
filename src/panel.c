@@ -13,6 +13,59 @@
 #include <stdio.h>
 #include <math.h>
 #include <ctype.h>
+#ifdef _WIN32
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
+#include <commdlg.h>
+#include <shlobj.h>
+#define GLFW_EXPOSE_NATIVE_WIN32
+#include <GLFW/glfw3native.h>
+#pragma comment(lib, "comdlg32")
+#pragma comment(lib, "shell32")
+#endif
+
+/* OS pickers for SAVE AS / save dir (zenity on Linux). */
+static int pick_save_path(char *out, int n) {
+#ifdef _WIN32
+    memset(out, 0, n);
+    OPENFILENAMEA ofn; memset(&ofn, 0, sizeof ofn);
+    ofn.lStructSize = sizeof ofn;
+    ofn.hwndOwner = glfwGetWin32Window(A.win);
+    ofn.lpstrFile = out; ofn.nMaxFile = n;
+    ofn.lpstrFilter = "Varlera World\0*.bw\0All Files\0*.*\0";
+    ofn.lpstrDefExt = "bw";
+    ofn.Flags = OFN_OVERWRITEPROMPT | OFN_NOCHANGEDIR;
+    ofn.lpstrTitle = "Save world as";
+    return GetSaveFileNameA(&ofn);
+#else
+    FILE *pp = popen("zenity --file-selection --save "
+                     "--file-filter='Varlera world | *.bw' 2>/dev/null", "r");
+    if (!pp) return 0;
+    if (!fgets(out, n, pp)) { pclose(pp); return 0; }
+    out[strcspn(out, "\r\n")] = 0;
+    return pclose(pp) == 0 && out[0];
+#endif
+}
+static int pick_dir(char *out, int n) {
+#ifdef _WIN32
+    BROWSEINFOA bi; memset(&bi, 0, sizeof bi);
+    bi.hwndOwner = glfwGetWin32Window(A.win);
+    bi.lpszTitle = "Choose world save folder";
+    bi.ulFlags = BIF_RETURNONLYFSDIRS | BIF_NEWDIALOGSTYLE;
+    LPITEMIDLIST pidl = SHBrowseForFolderA(&bi);
+    if (!pidl) return 0;
+    int ok = SHGetPathFromIDListA(pidl, out);
+    CoTaskMemFree(pidl);
+    (void)n;
+    return ok;
+#else
+    FILE *pp = popen("zenity --file-selection --directory 2>/dev/null", "r");
+    if (!pp) return 0;
+    if (!fgets(out, n, pp)) { pclose(pp); return 0; }
+    out[strcspn(out, "\r\n")] = 0;
+    return pclose(pp) == 0 && out[0];
+#endif
+}
 
 #define PW      236.0f    /* panel width */
 #define STRIPW  26.0f     /* collapsed strip width */
@@ -539,13 +592,8 @@ int panel_press(double x, double y) {
     /* WORLD tab */
     if (A.panelTab != 3) return 1;
     if (in_rect(fx, fy, px + 8, 58, PW - 16, 20)) { A.textMode = 4; return 1; }
-    float by = 80;
-    struct { float x; const char *n; } btns[] = {
-        {px+8, "SAVE"}, {px+76, "LOAD"}, {px+144, "UNDO"},
-        {px+8, "REDO"}, {px+76, "CLEAR"},
-    };
-    for (int i = 0; i < 5; i++) {
-        float bx = btns[i].x, byy = by + (i/3)*30;
+    for (int i = 0; i < 7; i++) {
+        float bx = px + 8 + (i%3)*68.0f, byy = 80.0f + (i/3)*30.0f;
         if (in_rect(fx, fy, bx, byy, 62, 24)) {
             switch (i) {
             case 0: worlds_ensure();
@@ -557,13 +605,21 @@ int panel_press(double x, double y) {
             case 2: if (world_undo()) sel_clear(); break;
             case 3: if (world_redo()) sel_clear(); break;
             case 4: world_push_undo(); g_nb = 0; sel_clear(); break;
+            case 5: { char p[512];
+                      if (pick_save_path(p, sizeof p)) {
+                          world_save(p, A.worldName); tex_save("textures.bw");
+                      } break; }
+            case 6: { char d[384];
+                      if (pick_dir(d, sizeof d)) {
+                          worlds_set_dir(d); worlds_ensure(); A.setDirty = 1;
+                          toast_say("SAVE DIR SET"); } break; }
             }
             return 1;
         }
     }
     /* environment pickers: SKY / GROUND cycle */
     for (int i = 0; i < 2; i++) {
-        float ey = 196.0f + i * 34.0f;
+        float ey = 226.0f + i * 34.0f;
         if (in_rect(fx, fy, px + 8, ey, PW - 16, 26)) {
             if (i == 0) s_sky = (s_sky + 1) % ENV_NSKY;
             else        s_ground = (s_ground + 1) % ENV_NGROUND;
@@ -902,8 +958,8 @@ static void draw_world(float px) {
     snprintf(nb, sizeof nb, "NAME: %s%s", A.worldName, foc ? "_" : "");
     ui_text(px + 14, 64, nb, 1,
             foc ? 1.0f : 0.75f, foc ? 1.0f : 0.78f, foc ? 1.0f : 0.85f, 1);
-    const char *names[] = {"SAVE","LOAD","UNDO","REDO","CLEAR"};
-    for (int i = 0; i < 5; i++) {
+    const char *names[] = {"SAVE","LOAD","UNDO","REDO","CLEAR","SAVEAS","DIR"};
+    for (int i = 0; i < 7; i++) {
         float bx = px + 8 + (i%3)*68;
         float by = 80.0f + (i/3)*30.0f;
         rk_ui_rect(bx, by, 62, 24, 0.22f,0.30f,0.45f, 1);
@@ -911,15 +967,21 @@ static void draw_world(float px) {
     }
     char buf[48];
     snprintf(buf, sizeof buf, "BLOCKS %d / %d", g_nb, MAX_BLOCKS);
-    ui_text(px+12, 150, buf, 1, 0.75f,0.78f,0.85f, 1);
-    ui_text(px+12, 170, "UNDO STACK OK", 1, 0.55f,0.6f,0.68f, 1);
+    ui_text(px+12, 172, buf, 1, 0.75f,0.78f,0.85f, 1);
+    /* save dir tail (fits ~24 chars) */
+    {
+        const char *d = worlds_dir(); int dl = (int)strlen(d);
+        const char *tail = dl > 22 ? d + dl - 22 : d;
+        snprintf(buf, sizeof buf, "DIR ...%s", tail);
+        ui_text(px+12, 190, buf, 1, 0.55f,0.6f,0.68f, 1);
+    }
 
     /* environment: sky + ground presets */
-    ui_text(px + 12, 184, "ENVIRONMENT", 1, 0.7f,0.72f,0.8f, 1);
+    ui_text(px + 12, 212, "ENVIRONMENT", 1, 0.7f,0.72f,0.8f, 1);
     const char *envN[2] = {ENV_SKY_N[s_sky], ENV_GROUND_N[s_ground]};
     const char *envL[2] = {"SKY:", "GROUND:"};
     for (int i = 0; i < 2; i++) {
-        float ey = 196.0f + i * 34.0f;
+        float ey = 226.0f + i * 34.0f;
         int hov = in_rect((float)A.mx,(float)A.my, px + 8, ey, PW - 16, 26);
         rk_ui_rect(px + 8, ey, PW - 16, 26,
                    0.22f + hov*0.08f, 0.28f + hov*0.08f, 0.38f + hov*0.08f, 1);

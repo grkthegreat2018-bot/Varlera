@@ -288,6 +288,8 @@ int main(void) {
     const char *envShot = getenv("VARLERA_SHOT");
     const char *envReload = getenv("VARLERA_RELOAD");   /* test hook: F8 path */
     const char *envSave  = getenv("VARLERA_SAVE");      /* test hook: v4 save */
+    const char *envTab   = getenv("VARLERA_TAB");       /* test hook: open tab */
+    if (envTab) A.panelTab = atoi(envTab);
     int frameNo = 0;
 
     puts("Varlera controls:");
