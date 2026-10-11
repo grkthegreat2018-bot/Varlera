@@ -82,6 +82,10 @@ links m/dl/pthread. Win32-only code (file dialog, DPI awareness) is `_WIN32`
   invertY, prof overlay, guide toggle + seen bitmask (pad-carved, same size).
   `settings_load` pre-window, `apply` post-cam_init,
   `save` on toggle + dirty flag. Keys: Y invert, -/= fov, G guide.
+- `src/log.c` — `log_init()` at main() start tees fd-2 through a pipe:
+  every `fprintf(stderr)` mirrors to real stderr AND `varlera.log`
+  (truncated per run); glslc children inherit the pipe so compile errors
+  land in the log too. Win32 crash filter writes `crash_<pid>.dmp`.
 - `src/toast.c` — guide toasts: 10s idle tip cycler when `A.guideOn`,
   `toast_tip(id)` = one-shot contextual tips (place per category, arm, fuse,
   sculpt, play) persisted via `A.guideSeen`; `toast_say` = transient message.

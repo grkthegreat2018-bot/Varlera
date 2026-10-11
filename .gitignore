@@ -1,4 +1,9 @@
 build*/
 shot*.png
+*.bmp
+varlera.log
+crash_*.dmp
+*_err.log
+tee_check.log
 .devin/scratchpad.md
 .devin_*.txt

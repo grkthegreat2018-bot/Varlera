@@ -5,6 +5,7 @@
 #ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
+#include <io.h>
 #endif
 #include "rk_int.h"
 /* ---------------- memory & buffer helpers ---------------- */
@@ -402,10 +403,15 @@ static int run_glslc(const char *src, const char *dst) {
 #if defined(_WIN32) && defined(GLSLC)
     char cmd[1024];
     snprintf(cmd, sizeof cmd, "\"%s\" \"%s\" -o \"%s\"", GLSLC, src, dst);
-    STARTUPINFOA si = {sizeof si}; si.dwFlags = STARTF_USESHOWWINDOW;
+    STARTUPINFOA si = {sizeof si};
+    si.dwFlags = STARTF_USESHOWWINDOW | STARTF_USESTDHANDLES;
     si.wShowWindow = SW_HIDE;
+    /* child's stderr/stdout -> our (possibly piped) stderr -> varlera.log */
+    HANDLE he = (HANDLE)_get_osfhandle(_fileno(stderr));
+    si.hStdOutput = he; si.hStdError = he;
+    si.hStdInput = GetStdHandle(STD_INPUT_HANDLE);
     PROCESS_INFORMATION pi = {0};
-    if (!CreateProcessA(NULL, cmd, NULL, NULL, FALSE, CREATE_NO_WINDOW,
+    if (!CreateProcessA(NULL, cmd, NULL, NULL, TRUE, CREATE_NO_WINDOW,
                         NULL, NULL, &si, &pi)) return 1;
     WaitForSingleObject(pi.hProcess, 30000);
     DWORD rc = 1; GetExitCodeProcess(pi.hProcess, &rc);

@@ -53,11 +53,15 @@ add_executable(varlera WIN32
   src/marching.c
   src/prof.c
   src/toast.c
+  src/log.c
   src/settings.c
 )
 add_dependencies(varlera shaders)
 target_include_directories(varlera PRIVATE src ${VULKAN_INCLUDE_DIR})
 target_link_libraries(varlera PRIVATE glfw ${VULKAN_LIBRARY})
+if(WIN32)
+  target_link_libraries(varlera PRIVATE dbghelp)   # crash minidump
+endif()
 if(UNIX AND NOT APPLE)
   target_link_libraries(varlera PRIVATE m dl pthread)
 endif()

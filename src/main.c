@@ -20,6 +20,7 @@
 #include "rk.h"
 #include "prof.h"
 #include "toast.h"
+#include "log.h"
 #include "settings.h"
 #include "world.h"
 #include "math3d.h"
@@ -224,6 +225,7 @@ static void on_resize(GLFWwindow *w, int width, int height) {
 
 int main(void) {
     memset(&A, 0, sizeof A);
+    log_init();                        /* stderr tee -> varlera.log + crash dmp */
 #ifdef _WIN32
     /* render at real monitor pixels, not Windows-scaled logical size -
        without this the whole UI is blurry upscaled text */
