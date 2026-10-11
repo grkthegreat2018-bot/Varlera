@@ -5,27 +5,30 @@ Sorted easy → hard. Effort is rough engineering scale: **S** = days,
 subsystems involved. Do items in a tier in any order; earlier tiers
 unblock and de-risk later ones.
 
+Status: **✅** shipped (commit in parens) · **⏳** partially landed.
+
 Measured baseline (profiler, `F3` / stderr `prof |`): GPU ~0.04ms,
-CPU queue ~0.08ms, `uiv` ~8k verts/frame — UI text-as-rects is the
-largest CPU cost in an empty scene. Re-measure after each perf item.
+frame ~0.52ms total, `uiv` ~810 verts/frame (post-font-atlas; was ~8k).
+Biggest remaining CPU cost is submit ~0.43ms. Re-measure after each
+perf item.
 
 ## Tier 1 — easy wins
 
 | Feature | Effort | Touches | Notes |
 |---|---|---|---|
-| Font atlas (text as textured quads) | S | `font.h`, `tex.c`, `rk_ui_flush` | Kills ~8k verts/frame of rect-built glyphs. Highest measured ROI. |
-| Frustum culling in `edit_draw_world` | S | `edit.c`, `math3d.h` | Skip blocks/models outside camera planes before `rk_world`/`rk_ghost`. Needed before world scale grows. |
-| Settings file (`settings.bw`) | S | `main.c`, `camera.c` | FOV, sens, invert-Y, prof autostart, vsync. Same `bw` binary pattern as env/undo files. |
-| Better default stylized skybox/ground | S | `rk.c`, `edit.c` env presets | Gradient dome + sun disc draw before world; ground plane styles per env preset. `rk_set_env` already exists. |
-| Side panel polish | S | `panel.c` | Use `rk_draw_icon` (renders real meshes with material) for block icons; spacing/hover states; collapse animation. |
-| Object indexing + metadata | S | `world.c`, `model.c`, `panel.c` | Name/tag/search fields on models + palette entries; filter box in MODELS tab. |
-| More default block shapes | S | `meshgen.c`, `panel.c` | Wedges, corners, pipes, cylinders — `meshgen_shape` is table-driven; each new shape = verts + SHAPES row. Port BW's full basic-shape set for parity. |
-| User settings + controls | S→M | `main.c`, `camera.c`, new `settings.c` | Extends settings file: rebindable keys, theme tint, UI scale, camera presets, autosave interval. |
-| QOL pass | S | `panel.c`, `edit.c`, `main.c` | Hotkey hints bar, action toasts, drag multi-select in MODELS, block search, ghost preview in panel tooltips. |
-| Debugging v1 | S | `prof.c`, `main.c` | Overlay page 2 (per-zone sparklines + counters), `varlera.log` file mirror of stderr, Win32 crash minidump (`_WIN32` guard), `VK_VALIDATION` hotkey toggle. |
-| Guide toasts | S | `panel.c`, `settings.c`, `main.c` | Cycling tip toast (settings toggle); contextual tips fire on first-time actions — placing a never-placed shape, opening sculpt, entering play mode. Seen-set persists in settings.bw v2. |
-| Material flags | S→M | `world.c`, `tex.c`, shader | Rough/metal/emissive bits into `texm`/instance flags + shader branches (matte vs glossy, glow feeds bloom). Foundation for shader effects. |
-| Shader hot-reload | S | `rk_vk.c`, `CMakeLists.txt` | F8: re-run glslc + recreate pipelines in place. Dev-velocity win for every shader item below; pipelines are already isolated creation code. |
+| ✅ Font atlas (text as textured quads) `984f565` | S | `font.h`, `tex.c`, `rk_ui_flush` | Kills ~8k verts/frame of rect-built glyphs — landed: `uiv` 8196→756. |
+| ✅ Frustum culling in `edit_draw_world` `3087517` | S | `edit.c`, `math3d.h` | Per-block AABB test before `rk_world`/`rk_ghost`; `K_CASTER` keeps off-screen shadow casters. |
+| ✅ Settings file (`settings.bw`) `5be4a7d` | S | `main.c`, `camera.c`, `settings.c` | Window rect/fullscreen, speed, FOV, invert-Y, prof autostart persist. |
+| ⏳ Stylized skybox/ground `8d2a896` | S | `rk.c`, `edit.c` env presets | Sky pass landed (gradient dome + sun disc via env presets). Ground plane styles pending. |
+| ⏳ Side panel polish | S | `panel.c` | Search + richer tooltips landed; icon materials, hover states, collapse animation pending. |
+| ✅ Object indexing + metadata `756a1fc` | S | `world.c`, `model.c`, `panel.c` | Search on SHAPES/MODELS/PROPS, info readout w/ stable id, full script rows (TRIG/ACT/TGT/PARAM/NAME), dead ACT_COLOR/TEX/DEL wired live. |
+| ⏳ More default block shapes `353686d` | S | `meshgen.c`, `panel.c` | Pass 1 landed: Slab/Plate/Beam/Pipe/Arch/Ring. BW parity pass remains. |
+| ⏳ User settings + controls `5be4a7d` | S→M | `main.c`, `camera.c`, `settings.c` | Core file + FOV/invert-Y landed; rebindable keys, UI scale, autosave interval pending. |
+| ⏳ QOL pass | S | `panel.c`, `edit.c`, `main.c` | Block search + toasts landed; hotkey hints bar, drag multi-select pending. |
+| ⏳ Debugging v1 `d0d6685` | S | `prof.c`, `main.c`, `log.c` | `varlera.log` stderr tee + crash minidump landed; overlay page 2 + validation hotkey pending. |
+| ✅ Guide toasts `a3ce468` | S | `panel.c`, `settings.c`, `main.c`, `toast.c` | 12-tip idle cycler + first-time contextual tips; `G` toggle; seen-set in settings.bw. |
+| ✅ Material flags `0c3eff5` | S→M | `world.c`, `tex.c`, shader | texm bits 3-4 = MATTE/GLOSS/METAL/GLOW → world.frag Blinn spec/metal/glow; MAT cycler in TEX tab. |
+| ✅ Shader hot-reload `6aef718` | S | `rk_vk.c`, `CMakeLists.txt` | F8: glslc re-run + all pipelines rebuilt in place (device-idle); `VARLERA_RELOAD` test hook. |
 
 ## Tier 2 — medium (one subsystem each)
 
@@ -33,9 +36,9 @@ largest CPU cost in an empty scene. Re-measure after each perf item.
 |---|---|---|---|
 | Overhauled texture menu | M | `panel.c` TEX tab | UX rework of existing palette editor: drag slots, import/export PNG strip, per-texture preview. Stepping stone to the art tool. |
 | Aseprite-like art tool | M | `panel.c`/`tex.c` (or new `art.c`) | Layers + opacity, selection/move/fill/line tools, color pick+swatches, undo stack, zoom pan. Self-contained; worth extracting from `panel.c` once it grows past ~1k lines. |
-| Better world data handling | M | `world.c` save/load | Format v4: header with name/created/modified, `worlds/` dir, thumbnails (render one frame offscreen or save atlas cell), autosave timer, load-version migration (v3 reader already exists). |
-| Better world file size | M | `world.c` save/load | Folds into v4: quantize pos/size to grid, RLE over sorted blocks (long runs share shape/tex/col), varint lengths, optional embedded deflate (small public-domain impl fits the no-dep style). Expect ~3-5x on typical worlds. |
-| Better I/O | M | `main.c`, `world.c`, `tex.c` | One save worker thread (async world+models+atlas), export world→OBJ and atlas→PNG, import OBJ drag-drop, file dialogs on every path (Win32 common dialog exists; zenity guarded on Linux). **Save-As to a user-chosen folder** for worlds/models/textures (`GetSaveFileName`); saved under `worlds/` by default. |
+| ✅ Better world data handling `7db72fe` | M | `world.c` save/load | Format v4: 56B header (name/created/modified/nextid), `worlds/` dir + name field, `.bmp` thumbnails on save, 90s autosave (`world_rev` dirty check), v1-v3 readers kept. |
+| ⏳ Better world file size `7db72fe` | M | `world.c` save/load | Quantized 30B/block records landed (~2x vs v3). RLE/varint/deflate pending — expect another step down on big worlds. |
+| ⏳ Better I/O `7db72fe` | M | `main.c`, `world.c`, `tex.c` | `worlds/` layout + thumbs + autosave landed. Pending: async save thread, world→OBJ / atlas→PNG export, OBJ drag-drop, **Save-As to a user-chosen folder** (`GetSaveFileName`). |
 | Portable world bundle | M | `world.c`, `model.c`, `tex.c` | `.bwx` single-file export = world + referenced models + atlas strip + provenance block. The "share without servers" answer — import validates + regenerates missing pieces. |
 | World settings system | M | `world.c`, `panel.c` WORLD tab | Per-world settings record in `env.bw` v2: physics mode, gravity scale, chunking, LOD, sky assets, render flags. Fields that alter stored data get a destructive-change confirm dialog ("may wipe/reshape this world") before applying. Foundation row for the Tier-3 settings below. |
 | Skybox objects | M | `rk.c` sky pass, `model.c`, `panel.c` | User-chosen models replace flat preset sky elements: sun disc→sculpted sun, billboard clouds, moon, stars — drawn in the sky pass (no depth) per env preset. Ships a default skybox asset pack. |
@@ -55,8 +58,9 @@ largest CPU cost in an empty scene. Re-measure after each perf item.
 | Blender auto-conversion | M | `model.c`, `sculpt.c`, new `import.c` | OBJ/GLB import → weld → normalize-to-unit-box → bake (`import.obj` path already exists; extend to drag-drop + GLB). Optional Blender-side exporter script for direct `.bw` write. |
 | 2D animation (flipbook) | M | `tex.c`, `art.c`, `world.c`, shader | Atlas strips = frames; blocks/materials get frame-count+fps bits; shader or CPU-side UV offset. Art tool gets onion-skin + frame timeline. Feeds particles + shader effects. |
 | Asset manifest | M | new `assets.c` | One index file (paths, hashes, version) for worlds/models/atlas/scripts — basis for modding + per-world texture packs later. |
-| Stress test scripts | M | new `tests/` + `world.c` | Scripted scene generators (N random blocks / fused models / worst-case glass sort / full shadow volume) run headless-ish with `prof` logging — regression baselines + feeds "when do we need occlusion" data. Ties into deterministic replay. |
-| Codebase docs + tests | M→ongoing | `AGENTS.md`, new `CONTRIBUTING.md`, `tests/` | For OSS + agent velocity: architecture map, per-module ownership, style guide, smoke tests that build+run each commit. Small focused files stay a hard rule (the rk.c/sculpt.c splits proved it). |
+| ⏳ Stress test scripts `7db72fe` | M | `tests/` + `world.c` | `tests/` + ctest harness landed (`world_v4_test`). Pending: scripted scene generators (N blocks / fused / glass sort / shadow volume) with `prof` logging. |
+| ⏳ Codebase docs + tests | M→ongoing | `AGENTS.md`, `CONTRIBUTING.md`, `tests/` | AGENTS.md kept current through every commit; `/W4` clean + file splits done (`rk_vk`/`meshgen`/`marching`). Pending: `CONTRIBUTING.md`, more tests. |
+| ⏳ Aseprite-like art tool | M | `art.c`, `tex.c` | `art.c` modal exists (PEN/ERASE/FILL/LINE/RECT/PICK + MIRROR/UNDO, wheel zoom, RMB pan). Pending: layers, selection/move, frame timeline. |
 | Object physics stats (data) | M | `world.c`, `panel.c` | `Block` gains traction/bounce/weight fields + info-panel editing — data model + persistence only; runtime effect lands with the physics items below. |
 | Particle system | M | new `particles.c`, `rk.c`, `tex.c`, `world.c` | Fixed pool (~4k): billboard sprites sampling atlas art (2D) + instanced sculpted-mesh particles via the `RkInst` path (3D). Emitters keyed by `trig`/`act` rows (SPIN→sparks, BOOST→smoke); gravity/fade params; `prof_count` a `PC_PARTICLES` slot. No new draw infrastructure needed. |
 | Post chain: bloom + tonemap | M | `rk.c`, `rk_vk.c`, new shaders | Downsample+blur+composite after MSAA resolve (resolve pass already exists); emissive material flags feed the bright pass. Adds filmic tonemap — current output is clamped sRGB. |
@@ -108,13 +112,12 @@ largest CPU cost in an empty scene. Re-measure after each perf item.
 
 ## Suggested order
 
-1. Font atlas → frustum culling → settings file (measured wins, tiny).
-2. Skybox/ground defaults + panel polish + indexing + new shapes +
-   QOL/debugging v1 (visual + feel payoff, all S).
-3. Texture menu → art tool (extraction point: new `art.c`).
-4. World data v4 (incl. file-size compression) + better I/O + menus +
-   world-settings schema (app-state refactor is the gateway to
-   everything UI).
+1. ~~Font atlas → frustum culling → settings file~~ ✅ all landed.
+2. ~~Skybox/ground defaults~~ ✅, ~~indexing~~ ✅, shapes ⏳ (pass 1),
+   QOL/debugging ⏳, panel polish ⏳ (visual + feel payoff, all S).
+3. Texture menu → art tool (`art.c` extracted; tools live, layers pending).
+4. ~~World data v4~~ ✅ core landed; better I/O + menus + world-settings
+   schema next (app-state refactor is the gateway to everything UI).
 5. Greedy-mesh play mode + mesh cache + material flags + particle
    system + bloom/AO + flipbook anim + assembly sculpt mode +
    auto-merge (perf and content, needed at scale).
