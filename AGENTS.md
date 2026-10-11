@@ -64,8 +64,8 @@ links m/dl/pthread. Win32-only code (file dialog, DPI awareness) is `_WIN32`
   `art_open`, MODE/TYPE cycling `A.paintTexM` + MAT row = material
   MATTE/GLOSS/METAL/GLOW in texm bits3-4, scrollable grid of real atlas
   previews via `rk_ui_texrect`), WORLD (SAVE/LOAD/UNDO/REDO/CLEAR + block count
-  + ENVIRONMENT: SKY x6 / GROUND x5 preset cycler -> `rk_set_env`, saved to
-  `env.bw`), MODELS (fused block groups), PROPS (`adv` premade assets).
+  + ENVIRONMENT + WORLD SETTINGS — see panel_world.c), MODELS (fused block
+  groups), PROPS (`adv` premade assets).
   Asset geometry, paint color and texture are fully decoupled. Script menu
   docks left of panel on select: single-select shows `BLOCK #id` + mesh name
   + pos/size + TEX/alpha info header; GRAVITY/COLLIDE/LOCKED toggles +
@@ -77,8 +77,7 @@ links m/dl/pthread. Win32-only code (file dialog, DPI awareness) is `_WIN32`
   stats are u8 0-15, defaults BS_TRACT 12 / BS_BOUNCE 0 / BS_WEIGHT 8,
   editable via script-menu TRAC/BOUNCE/WEIGHT rows), undo/redo stacks,
   `world.bw`
-  binary save/load, play-mode gravity settle (XZ uniform grid broadphase)
-  + snapshot/restore. Format v5: 56B header (magic BWLB, ver, nBlocks,
+  binary save/load. Format v5: 56B header (magic BWLB, ver, nBlocks,
   nextid, created, modified, name[32]) then per-block packed records —
   flag byte, id, 9 metadata bytes, u8 color/alpha, traction/bounce/weight
   (v5; v4 heads are 3B shorter), 6xi16 quantized pos/size (1/16 grid, raw
@@ -92,6 +91,20 @@ links m/dl/pthread. Win32-only code (file dialog, DPI awareness) is `_WIN32`
   gravMul / skyAssets) — `world_wset()` is the live record, WORLD tab
   edits it and dangerous rows (`!`) get an APPLY/CANCEL wipe-warning
   dialog. `tests/world_v4.c` (ctest) covers round-trip + v3 migration.
+- `src/physics.c` — play mode: `world_physics(dt, trigHeld)` gravity settle
+  (XZ uniform-grid broadphase over a packed support grid), trigger-edge
+  script actions (COLOR/TEX/DEL with `tgt` scoping, SAY/TITLE toasts,
+  BOOST thruster), snapshot/restore (`world_snapshot_play`/`_restore_play`,
+  `world_reset_physics`). Extracted from world.c; physics.h is the API.
+- `src/filepick.c` — OS pickers shared by panel_world/sculpt: `pick_save_path`/
+  `pick_open_path`/`pick_dir` (Win32 common dialogs + SHBrowseForFolder;
+  zenity fallback on Linux).
+- `src/panel_world.c` — WORLD tab extracted from panel.c: name field,
+  9-button grid (SAVE/LOAD/UNDO/REDO/CLEAR/SAVEAS/DIR/EXPORT/IMPORT), env
+  presets (env.bw), WSet settings rows + wipe-warning confirm dialog.
+  panel.c delegates via `panel_world_tab_press/_draw/_confirm_click/
+  _confirm_draw`; shared chrome constants (`PW`, `in_rect`, `panel_x`)
+  live in panel.h.
 - `src/prof.c` / `prof.h` — frame cost logging. `prof_zone_begin/end(PZ_*)`
   around frame phases; `prof_count(PC_*)` for draws/insts/verts/blocks.
   GPU times come from `rk_gpu_times` (per-in-flight timestamp query pools:

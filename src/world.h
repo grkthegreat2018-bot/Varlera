@@ -118,11 +118,6 @@ typedef struct {
 WSet *world_wset(void);          /* live record; edit in place */
 void world_wset_dirty(void);     /* call after edits -> autosave notices */
 
-/* play-mode gravity settle + script actions; call each frame while playing */
-void world_physics(float dt, uint16_t trigHeld);
-void world_reset_physics(void); /* restores pre-play transforms */
-
-void world_snapshot_play(void); /* capture state before physics mutates it */
-void world_restore_play(void);
+/* play-mode sim lives in physics.c -> physics.h */
 
 #endif

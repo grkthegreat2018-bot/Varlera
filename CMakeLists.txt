@@ -51,6 +51,9 @@ add_executable(varlera WIN32
   src/art.c
   src/sculpt.c
   src/marching.c
+  src/physics.c
+  src/filepick.c
+  src/panel_world.c
   src/prof.c
   src/toast.c
   src/bundle.c

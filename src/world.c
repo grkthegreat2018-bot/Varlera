@@ -1,7 +1,6 @@
-#include "world.h"
+﻿#include "world.h"
 #include <string.h>
 #include <stdio.h>
-#include "toast.h"
 #include <stdlib.h>
 #include <time.h>
 #ifdef _WIN32
@@ -14,7 +13,7 @@ Block g_blocks[MAX_BLOCKS];
 int g_nb;
 uint32_t g_nextid = 1;
 
-/* shared 16-color palette — panel swatches and ACT_COLOR actParam both index it */
+/* shared 16-color palette â€” panel swatches and ACT_COLOR actParam both index it */
 const float g_palette[16][3] = {
     {0.90f,0.92f,0.95f},{0.55f,0.58f,0.62f},{0.24f,0.26f,0.29f},{0.95f,0.85f,0.30f},
     {0.94f,0.45f,0.20f},{0.85f,0.20f,0.25f},{0.75f,0.25f,0.60f},{0.45f,0.35f,0.85f},
@@ -317,150 +316,3 @@ int world_load(const char *path, char *nameOut) {
     return 1;
 }
 
-/* ---------------- play-mode physics ---------------- */
-
-static float g_velY[MAX_BLOCKS];
-static uint16_t s_prevHeld;           /* last frame's trigHeld -> edge detect */
-static Block g_playBackup[MAX_BLOCKS];
-static int g_playBackupN = -1;
-
-void world_reset_physics(void) {
-    memset(g_velY, 0, sizeof g_velY);
-    s_prevHeld = 0;
-}
-
-void world_snapshot_play(void) {
-    g_playBackupN = g_nb;
-    memcpy(g_playBackup, g_blocks, sizeof(Block) * g_nb);
-    world_reset_physics();
-}
-
-void world_restore_play(void) {
-    if (g_playBackupN < 0) return;
-    g_nb = g_playBackupN;
-    memcpy(g_blocks, g_playBackup, sizeof(Block) * g_nb);
-    g_playBackupN = -1;
-    world_reset_physics();
-}
-
-/* XZ broadphase for support_y: cell size = max XZ extent, so any pair that
- * can overlap has centers at most one cell apart (checked 3x3 window). */
-static v3     g_es[MAX_BLOCKS];
-static float  g_cellInv;
-static int    g_cellN;
-typedef struct { int cz, cx, i; } SupCell;
-static SupCell g_cell[MAX_BLOCKS];
-
-static int cmp_cell(const void *pa, const void *pb) {
-    const SupCell *a = pa, *b = pb;
-    return a->cz != b->cz ? a->cz - b->cz : a->cx - b->cx;
-}
-
-static void support_build(void) {
-    float cs = 1.0f;
-    for (int i = 0; i < g_nb; i++) {
-        g_es[i] = block_eff_size(&g_blocks[i]);
-        if (g_es[i].x > cs) cs = g_es[i].x;
-        if (g_es[i].z > cs) cs = g_es[i].z;
-    }
-    if (cs < 4.0f) cs = 4.0f;
-    g_cellInv = 1.0f / cs;
-    for (int i = 0; i < g_nb; i++) {
-        g_cell[i].cx = (int)floorf(g_blocks[i].pos.x * g_cellInv);
-        g_cell[i].cz = (int)floorf(g_blocks[i].pos.z * g_cellInv);
-        g_cell[i].i = i;
-    }
-    g_cellN = g_nb;
-    qsort(g_cell, (size_t)g_cellN, sizeof g_cell[0], cmp_cell);
-}
-
-/* support height under block i: ground or top face of any overlapping block */
-static float support_y(int i) {
-    Block *b = &g_blocks[i];
-    v3 es = g_es[i];
-    float sup = 0.0f;
-    float myBot = b->pos.y - es.y * 0.5f;
-    int cx = (int)floorf(b->pos.x * g_cellInv);
-    int cz = (int)floorf(b->pos.z * g_cellInv);
-    for (int dz = -1; dz <= 1; dz++) for (int dx = -1; dx <= 1; dx++) {
-        int tx = cx + dx, tz = cz + dz;
-        int lo = 0, hi = g_cellN;              /* first entry in cell (tx,tz) */
-        while (lo < hi) {
-            int m = (lo + hi) >> 1;
-            int d = g_cell[m].cz - tz;
-            if (!d) d = g_cell[m].cx - tx;
-            if (d < 0) lo = m + 1; else hi = m;
-        }
-        for (int k = lo; k < g_cellN &&
-                        g_cell[k].cz == tz && g_cell[k].cx == tx; k++) {
-            int j = g_cell[k].i;
-            if (j == i) continue;
-            Block *o = &g_blocks[j];
-            if (o->flags & BF_NOCOLLIDE) continue;   /* can't support anything */
-            v3 oe = g_es[j];
-            if (!aabb_overlap_xz(b->pos, es, o->pos, oe, 0.0f)) continue;
-            float top = o->pos.y + oe.y * 0.5f;
-            if (top <= myBot + 0.6f && top > sup) sup = top; /* must be below us */
-        }
-    }
-    return sup;
-}
-
-/* does script action on `src` reach block `b`? (tgt scoping) */
-static int tgt_match(const Block *src, const Block *b) {
-    switch (src->tgt & 3) {
-    case TGT_ASSET: return b->shape == src->shape;
-    case TGT_NAME:  return src->name[0] && !strcmp(b->name, src->name);
-    case TGT_ALL:   return 1;
-    default:        return b == src;
-    }
-}
-
-void world_physics(float dt, uint16_t trigHeld) {
-    if (dt > 0.05f) dt = 0.05f;
-    /* discrete actions (COLOR/TEX/DEL) fire on the trigger edge; continuous
-       acts (SPIN/GLOW render-side, BOOST below) key off the held bit */
-    uint16_t edge = trigHeld & ~s_prevHeld;
-    s_prevHeld = trigHeld;
-    static uint8_t delMark[MAX_BLOCKS];
-    memset(delMark, 0, (size_t)g_nb);
-    for (int i = 0; i < g_nb; i++) {
-        Block *s = &g_blocks[i];
-        if (s->act < ACT_COLOR || !((edge >> s->trig) & 1)) continue;
-        if (s->act >= ACT_SAY) {                 /* text acts: global */
-            const char *m = g_msgs[s->actParam & (MSG_MAX - 1)];
-            if (*m) toast_say(m);              /* TITLE styling later */
-            continue;
-        }
-        for (int t = 0; t < g_nb; t++) {
-            Block *b = &g_blocks[t];
-            if (!tgt_match(s, b)) continue;
-            if (s->act == ACT_COLOR) memcpy(b->col, g_palette[s->actParam & 15], sizeof b->col);
-            else if (s->act == ACT_TEX) b->tex = s->actParam;
-            else if (s->act == ACT_DEL) delMark[t] = 1;
-        }
-    }
-    int ndel = 0;
-    for (int i = g_nb - 1; i >= 0; i--)     /* descending: swap-removes pull */
-        if (delMark[i]) { world_delete(i); ndel++; }   /* from >i (consumed) */
-    if (ndel) memset(g_velY, 0, sizeof(float) * g_nb);
-
-    support_build();
-    for (int i = 0; i < g_nb; i++) {
-        Block *b = &g_blocks[i];
-        if (b->flags & (BF_NOPHYS | BF_LOCKED)) continue;
-        v3 es = g_es[i];
-        /* BOOST: thruster while its trigger is held */
-        if (b->act == ACT_BOOST && ((trigHeld >> b->trig) & 1)) {
-            g_velY[i] = fminf(g_velY[i] + 30.0f * dt, 10.0f);
-            b->pos.y += g_velY[i] * dt;
-            continue;
-        }
-        float sup = (b->flags & BF_NOCOLLIDE) ? es.y * 0.5f
-                                            : support_y(i) + es.y * 0.5f;
-        if (b->pos.y <= sup + 0.001f) { b->pos.y = sup; g_velY[i] = 0; continue; }
-        g_velY[i] -= 22.0f * dt;
-        b->pos.y += g_velY[i] * dt;
-        if (b->pos.y <= sup) { b->pos.y = sup; g_velY[i] = 0; }
-    }
-}

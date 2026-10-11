@@ -23,6 +23,7 @@
 #include "log.h"
 #include "settings.h"
 #include "bundle.h"
+#include "physics.h"
 #include "world.h"
 #include "math3d.h"
 

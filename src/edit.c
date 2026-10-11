@@ -488,7 +488,7 @@ void edit_lmb_motion(void) {            /* click -> move once past threshold */
     }
 }
 
-static void save_all(void) {
+void edit_quicksave(void) {
     worlds_ensure();
     world_save(worlds_file(A.worldName, "bw"), A.worldName);
     tex_save("textures.bw");
@@ -563,7 +563,7 @@ void edit_key(int key, int mods) {
         break;
     case GLFW_KEY_Z: if (ctrl && world_undo()) { sel_clear(); } break;
     case GLFW_KEY_Y: if (ctrl && world_redo()) { sel_clear(); } break;
-    case GLFW_KEY_S: if (ctrl) save_all(); break;
+    case GLFW_KEY_S: if (ctrl) edit_quicksave(); break;
     case GLFW_KEY_LEFT: case GLFW_KEY_RIGHT:
     case GLFW_KEY_UP:   case GLFW_KEY_DOWN:
         /* nudge selection 0.5 in view-relative horizontal direction */
@@ -578,7 +578,7 @@ void edit_key(int key, int mods) {
                 g_blocks[i].pos = v3_add(g_blocks[i].pos, v3_scale(d, SIZE_SNAP));
         }
         break;
-    case GLFW_KEY_F5: save_all(); break;
+    case GLFW_KEY_F5: edit_quicksave(); break;
     case GLFW_KEY_F9:
         if (world_load(worlds_file(A.worldName, "bw"), A.worldName) ||
             world_load("world.bw", A.worldName))

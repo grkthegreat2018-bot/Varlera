@@ -7,6 +7,7 @@ void edit_lmb_release(int mods);
 void edit_lmb_motion(void);         /* click->drag threshold promotion */
 void edit_rmb_up(float dx, float dy); /* RMB release (click = eyedropper) */
 void edit_key(int key, int mods);   /* R, Del, Ctrl+Z/Y/D/A, F5/F9, F, Esc */
+void edit_quicksave(void);          /* world+atlas+thumb to current save dir */
 void edit_update(void);             /* per-frame ghost/move/resize/hover */
 void edit_draw_world(void);         /* push blocks, ghosts, lines, handles */
 
