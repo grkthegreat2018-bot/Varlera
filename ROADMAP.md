@@ -69,6 +69,7 @@ largest CPU cost in an empty scene. Re-measure after each perf item.
 |---|---|---|---|
 | Full occlusion culling | L | `rk.c`, `rk_vk.c`, new shader | Vulkan path: depth-pyramid (Hi-Z) build + `vkCmdDrawIndexedIndirectCount` with per-instance visibility. CPU path (cheaper): block PVS per cell for indoor scenes. Do frustum culling first. |
 | Code blocks + scripting v2 | L | `world.c` (trig/act rows exist), `panel.c`, `main.c` | Conditions (IF trig THEN act), per-world variables, wire-mode link UI, event bus, timers/sensors/counters/loops. "Massive expansion" = this done fully + a script debugger overlay in F3. |
+| Global scripts | M (after scripting v2) | `world.c`, `panel.c` | World-scope scripts not bound to a block: list UI in WORLD tab, each entry minimizable + independently enabled (multiple active at once); accepts code-block scripts now, text-code scripts when the text language lands. |
 | Shader effects via code blocks | L | `world.c`, `rk.c`, shaders | Cheap version lands with material flags (M): effect id + params in instance bits → glow pulse, dissolve, wave, blink. Full version rides scripting v2: actions bind effects to triggers, script vars drive params (speed/intensity), per-world effect table. |
 | Overhauled building | L | `edit.c`, `panel.c`, `world.c` | Rework of the place/move state machine: mirror-symmetry build mode, line/plane fills, arbitrary-axis rotate (current is 90° steps + rot90 flags), structural stress preview, smart attach (auto-snap to stud/edge lattices), clipboard templates library. |
 | Math/algorithm blocks | L | scripting v2 surface | Expression nodes: arithmetic, lerp/clamp/remap, random/chance, min/max, sort/list ops, distance/raycast queries. The "complex systems" tier of the block language. |
@@ -99,7 +100,10 @@ largest CPU cost in an empty scene. Re-measure after each perf item.
 | Full game-dev toolset | XL | Umbrella: prefabs, cutscene/camera tracks, game-mode templates, publish→standalone exe bundling world+atlas+models. Lands piecewise after scene/entity + scripting. |
 | Modding / file-format docs | M | Public spec for `.bw` + texture PNG strip. |
 | Multiplayer | XL | Everything above first; deterministic lockstep vs server-auth is its own design. |
-| Cloud backup (Drive/Dropbox/OneDrive) | L | Cheap version ships free via Save-As: point saves at the provider's synced folder. Real API upload (GDrive REST + OAuth) needs an HTTPS client dep — defer until `libcurl`-style dep is accepted. |
+| Local identity/profile | M | `author.c`, settings | Offline account: display name, avatar color, signing keypair (the identity provenance signs with), per-profile settings + customization. No server — this is the account layer everything else plugs into. |
+| GitHub project integration | XL | HTTPS dep + git | Manage a project's repo from Varlera: clone/push/pull .bwx sources, release tags, collaborator list with owner-set permission levels (GitHub's own repo ACLs do the enforcing — Varlera mirrors roles). Needs the HTTPS client gate + bundling libgit2 or shelling to git. |
+| Cloud backup (Drive/Dropbox/OneDrive) | L | Cheap version ships free via Save-As: point saves at the provider's synced folder. Real API upload (GDrive REST + OAuth) needs an HTTPS client dep — defer until `libcurl`-style dep is accepted. Shares the ACL model with GitHub: folder-level share permissions map to owner-set roles. |
+| Online accounts | XL | server + HTTPS dep | Login accounts for real permission enforcement, community features, ownership registry across machines. Everything local-first: offline profile works standalone, online layers on top when a service exists. |
 | Localization | M→L | Font is a 5x7 ASCII bitmap baked into one atlas tile — i18n needs a real font path (SDF/MSDF or system font bake) plus a string table. Do when the UI text set stabilizes. |
 
 ## Suggested order
@@ -117,10 +121,11 @@ largest CPU cost in an empty scene. Re-measure after each perf item.
 6. Collision overhaul → building overhaul → rigid-body physics +
    joints + physics stats runtime → player controller
    (gameplay unlock).
-7. Scene/entity refactor → chunked world layout + LOD → provenance
-   metadata → scripting v2 (the "engine" pivot) → math/dialog/
-   compound blocks → rig support → 3D anim creator → NPCs →
-   sound/music tools (all ride on it).
+7. Scene/entity refactor → chunked world layout + LOD → local
+   profile + provenance metadata → scripting v2 (the "engine"
+   pivot) → global scripts → math/dialog/compound blocks → rig
+   support → 3D anim creator → NPCs → sound/music tools (all
+   ride on it).
 8. Occlusion culling + threading only when `prof` shows sim/submit
    zones actually limiting fps at real world sizes.
 
