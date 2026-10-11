@@ -1,6 +1,11 @@
 /* rk_vk.c - Vulkan device/swapchain/pipeline init, image+buffer
  * resources, texture atlas + model-mesh uploads. Frame path lives
  * in rk.c; shared state is in rk_int.h. */
+#define _CRT_SECURE_NO_WARNINGS
+#ifdef _WIN32
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
+#endif
 #include "rk_int.h"
 /* ---------------- memory & buffer helpers ---------------- */
 
@@ -383,6 +388,62 @@ static void make_pipelines(void) {
     vkDestroyShaderModule(G.dev, gf, NULL); vkDestroyShaderModule(G.dev, uv, NULL);
     vkDestroyShaderModule(G.dev, uf, NULL);
     vkDestroyShaderModule(G.dev, kv, NULL); vkDestroyShaderModule(G.dev, kf, NULL);
+}
+
+/* ---------------- hot reload (F8): glslc sources -> spv, rebuild pipelines --- */
+
+static const char *SHADER_NAMES[] = {
+    "world.vert","world_i.vert","world.frag","grid.frag","shadow.vert",
+    "ui.vert","ui.frag","sky.vert","sky.frag"
+};
+
+/* run glslc without a console flash on the WIN32 app */
+static int run_glslc(const char *src, const char *dst) {
+#if defined(_WIN32) && defined(GLSLC)
+    char cmd[1024];
+    snprintf(cmd, sizeof cmd, "\"%s\" \"%s\" -o \"%s\"", GLSLC, src, dst);
+    STARTUPINFOA si = {sizeof si}; si.dwFlags = STARTF_USESHOWWINDOW;
+    si.wShowWindow = SW_HIDE;
+    PROCESS_INFORMATION pi = {0};
+    if (!CreateProcessA(NULL, cmd, NULL, NULL, FALSE, CREATE_NO_WINDOW,
+                        NULL, NULL, &si, &pi)) return 1;
+    WaitForSingleObject(pi.hProcess, 30000);
+    DWORD rc = 1; GetExitCodeProcess(pi.hProcess, &rc);
+    CloseHandle(pi.hProcess); CloseHandle(pi.hThread);
+    return rc != 0;
+#elif defined(GLSLC)
+    char cmd[1024];
+    snprintf(cmd, sizeof cmd, "\"%s\" \"%s\" -o \"%s\"", GLSLC, src, dst);
+    return system(cmd) != 0;
+#else
+    (void)src; (void)dst; return 1;
+#endif
+}
+
+/* recompile all shaders from source dir into SHADER_DIR, then rebuild every
+   pipeline in place. Returns 1 when all compiles succeeded. Failed compiles
+   leave the previous .spv in place (glslc writes only on success). */
+int rk_reload_shaders(void) {
+#if defined(GLSLC) && defined(SHADER_SRC)
+    int fail = 0;
+    for (int i = 0; i < (int)(sizeof SHADER_NAMES / sizeof SHADER_NAMES[0]); i++) {
+        char src[1024], dst[1024];
+        snprintf(src, sizeof src, "%s/%s", SHADER_SRC, SHADER_NAMES[i]);
+        snprintf(dst, sizeof dst, "%s/%s.spv", SHADER_DIR, SHADER_NAMES[i]);
+        if (run_glslc(src, dst)) { fail++; fprintf(stderr, "glslc failed: %s\n", src); }
+    }
+    vkDeviceWaitIdle(G.dev);
+    VkPipeline *pp[] = {&G.pGrid, &G.pWorld, &G.pWorldInst, &G.pGhostInst,
+                        &G.pLinesInst, &G.pMeshLine, &G.pShadow, &G.pUI, &G.pSky};
+    for (int i = 0; i < (int)(sizeof pp / sizeof pp[0]); i++)
+        vkDestroyPipeline(G.dev, *pp[i], NULL);
+    make_pipelines();
+    fprintf(stderr, "shader reload: %s\n", fail ? "COMPILE ERRORS" : "ok");
+    return !fail;
+#else
+    fprintf(stderr, "shader reload unavailable (GLSLC/SHADER_SRC not defined)\n");
+    return 0;
+#endif
 }
 
 /* ---------------- swapchain ---------------- */

@@ -133,6 +133,7 @@ void rk_set_env(const float sky[3], const float ground[3]);
 
 void rk_extent(int *w, int *h);
 void rk_screenshot(const char *path);       /* .bmp captured after present */
+int  rk_reload_shaders(void);               /* F8: glslc + pipeline rebuild */
 
 /* --- profiling --- */
 typedef struct { int draws, insts, uiVerts, meshVerts, models; } RkStats;

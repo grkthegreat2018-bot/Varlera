@@ -88,6 +88,11 @@ links m/dl/pthread. Win32-only code (file dialog, DPI awareness) is `_WIN32`
   build_all off[] + panel ASSETS/CATS row.
 - Screenshot: F12 or `VARLERA_SHOT=out.bmp` (auto at frame 45) —
   swapchain TRANSFER_SRC copy -> staging -> 24bpp BMP next frame.
+- Shader hot-reload: F8 or `VARLERA_RELOAD=1` (fires once at frame 60).
+  `rk_reload_shaders` re-runs glslc per shader (GLSLC + SHADER_SRC baked as
+  compile defines; CreateProcess CREATE_NO_WINDOW on Win32, system() on
+  Linux), failed compiles keep the old .spv, then all 9 pipelines are
+  destroyed/recreated under vkDeviceWaitIdle.
 - Frustum culling: `aabb_in_frustum` (math3d) in edit_draw_world;
   off-camera opaque blocks go to `rk_caster` (K_CASTER = shadow pass
   only) via `rk_can_shadow_cast` (light-space ortho rect extruded).

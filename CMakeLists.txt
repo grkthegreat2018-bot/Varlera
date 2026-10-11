@@ -61,7 +61,10 @@ target_link_libraries(varlera PRIVATE glfw ${VULKAN_LIBRARY})
 if(UNIX AND NOT APPLE)
   target_link_libraries(varlera PRIVATE m dl pthread)
 endif()
-target_compile_definitions(varlera PRIVATE SHADER_DIR="${SHADER_BIN_DIR}")
+target_compile_definitions(varlera PRIVATE
+  SHADER_DIR="${SHADER_BIN_DIR}"
+  SHADER_SRC="${SHADER_SRC_DIR}"
+  GLSLC="${GLSLC}")
 
 # Copy shaders next to the exe so it runs from any cwd
 add_custom_command(TARGET varlera POST_BUILD

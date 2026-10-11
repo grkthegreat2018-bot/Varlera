@@ -187,6 +187,11 @@ static void on_key(GLFWwindow *w, int key, int sc, int action, int mods) {
     }
     if (key == GLFW_KEY_F3 && action == GLFW_PRESS) { prof_toggle(); settings_save(); return; }
     if (key == GLFW_KEY_F11 && action == GLFW_PRESS) { toggle_fullscreen(); return; }
+    if (key == GLFW_KEY_F8 && action == GLFW_PRESS) {
+        toast_say(rk_reload_shaders() ? "shaders reloaded"
+                                      : "shader reload: compile errors");
+        return;
+    }
     if (key == GLFW_KEY_F12 && action == GLFW_PRESS) {
         static int shotN;
         char p[64]; snprintf(p, sizeof p, "shot_%d.bmp", ++shotN);
@@ -271,6 +276,7 @@ int main(void) {
     /* scripted capture: VARLERA_SHOT=out.bmp writes a screenshot at
        frame 45 then continues (handy for agent/CI verification) */
     const char *envShot = getenv("VARLERA_SHOT");
+    const char *envReload = getenv("VARLERA_RELOAD");   /* test hook: F8 path */
     int frameNo = 0;
 
     puts("Varlera controls:");
@@ -334,7 +340,12 @@ int main(void) {
         prof_zone_begin(PZ_END);
         rk_end_frame();
         prof_zone_end(PZ_END);
-        if (envShot && ++frameNo == 45) rk_screenshot(envShot);
+        ++frameNo;
+        if (envShot && frameNo == 45) rk_screenshot(envShot);
+        if (envReload && frameNo == 60) {
+            toast_say(rk_reload_shaders() ? "shaders reloaded"
+                                          : "shader reload: compile errors");
+        }
         if (A.setDirty) { A.setDirty = 0; settings_save(); }
 
         prof_count(PC_BLOCKS, g_nb);
