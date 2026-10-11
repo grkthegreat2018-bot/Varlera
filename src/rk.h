@@ -86,14 +86,13 @@ void rk_draw_icon(RkMesh m, int px, int py, int pw, int ph,
                   float r, float g, float b, const float size[3]);
 
 /* --- baked custom-model meshes (fused blocks) ---
- * rk_gen_shape: emit a built-in unit mesh into caller memory (CPU bake).
+ * meshgen_shape (meshgen.h): emit a built-in unit mesh into caller memory.
  * rk_model_mesh_add: append baked verts, returns mesh id (RK_MESH_BASE_MODEL+i).
  * rk_models_commit: (re)uploads the model vertex buffer — call after adds. */
 /* tex: per-vertex atlas material id (-1 = use the instance/block tex).
    verts sharing a tex id shade seamless across touching faces (box
    projection is continuous where verts coincide). */
 typedef struct { float pos[3], nrm[3], col[3], tex; } Vert;
-int  rk_gen_shape(int shape, Vert *dst, int maxverts);
 int  rk_model_mesh_add(const Vert *v, int n);
 void rk_models_commit(void);
 void rk_models_reset(void);     /* drop all baked verts (for rebuild) */

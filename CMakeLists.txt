@@ -40,6 +40,8 @@ add_custom_target(shaders ALL DEPENDS ${SPV_FILES})
 add_executable(varlera WIN32
   src/main.c
   src/rk.c
+  src/rk_vk.c
+  src/meshgen.c
   src/world.c
   src/camera.c
   src/edit.c
@@ -48,6 +50,7 @@ add_executable(varlera WIN32
   src/tex.c
   src/art.c
   src/sculpt.c
+  src/marching.c
 )
 add_dependencies(varlera shaders)
 target_include_directories(varlera PRIVATE src ${VULKAN_INCLUDE_DIR})

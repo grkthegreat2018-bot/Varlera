@@ -4,6 +4,7 @@
 #include "app.h"
 #include "edit.h"
 #include "sculpt.h"
+#include "meshgen.h"
 #include "math3d.h"
 #include <string.h>
 #include <stdio.h>
@@ -90,7 +91,7 @@ static void bake_cube(const Block *ch, v3 pivot, const Block *rel, int n, int se
 
 static void bake_shape(const Block *ch, v3 pivot) {
     static Vert tmp[8192];
-    int tn = rk_gen_shape(ch->shape, tmp, 8192);
+    int tn = meshgen_shape(ch->shape, tmp, 8192);
     v3 rp = v3_sub(ch->pos, pivot);
     int rot = ch->rot & 3;
     for (int i = 0; i < tn; i++) {
