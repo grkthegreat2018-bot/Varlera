@@ -12,7 +12,9 @@ typedef struct {
     uint32_t magic, ver;
     float    speed, fov;
     int32_t  invertY, profOn, fullscreen, winX, winY, winW, winH;
-    uint8_t  pad[64];
+    int32_t  guideOff;
+    uint64_t guideSeen;
+    uint8_t  pad[52];
 } Settings;
 
 static Settings s_cur;
@@ -38,6 +40,8 @@ void settings_apply(void) {
     A.speed   = s_cur.speed > 0.0f ? s_cur.speed : 14.0f;
     A.fov     = s_cur.fov > 0.3f && s_cur.fov < 2.4f ? s_cur.fov : 1.05f;
     A.invertY = s_cur.invertY ? 1 : 0;
+    A.guideOn = !s_cur.guideOff;
+    A.guideSeen = s_cur.guideSeen;
     if (!!s_cur.profOn != prof_shown()) prof_toggle();
 }
 
@@ -49,6 +53,8 @@ void settings_save(void) {
     s_cur.fullscreen = A.fullscreen;
     s_cur.winX = A.winX; s_cur.winY = A.winY;
     s_cur.winW = A.winW; s_cur.winH = A.winH;
+    s_cur.guideOff = !A.guideOn;
+    s_cur.guideSeen = A.guideSeen;
     FILE *f = fopen("settings.bw", "wb");
     if (!f) return;
     fwrite(&s_cur, sizeof s_cur, 1, f);

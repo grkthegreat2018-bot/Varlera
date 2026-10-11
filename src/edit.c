@@ -4,6 +4,7 @@
 #include "camera.h"
 #include "panel.h"
 #include "model.h"
+#include "toast.h"
 #include "tex.h"
 #include "rk.h"
 #include "math3d.h"
@@ -63,6 +64,7 @@ void fuse_selection(void) {
     if (ni >= 0) { A.sel[ni] = 1; A.nsel = 1; }
     models_save(NULL);
     printf("fused %d blocks -> %s\n", n, g_models[mid].name);
+    toast_tip(TIP_FUSE);
 }
 
 void unfuse_block(int i) {
@@ -245,6 +247,10 @@ static void place_commit(void) {
         g_blocks[ni].texm = (uint8_t)A.paintTexM;
         g_blocks[ni].alpha = A.paintAlpha;
         if (A.paintAlpha < 1.0f) g_blocks[ni].flags |= BF_GLASS;
+        static const int catTip[4] = {TIP_PLACE_BASIC, TIP_PLACE_RAMP,
+                                      TIP_PLACE_SPECIAL, TIP_PLACE_MODEL};
+        int cat = panel_asset_cat(A.armedAsset);
+        if (cat >= 0) toast_tip(catTip[cat]);
     }
 }
 

@@ -19,6 +19,7 @@
 #include "tex.h"
 #include "rk.h"
 #include "prof.h"
+#include "toast.h"
 #include "settings.h"
 #include "world.h"
 #include "math3d.h"
@@ -31,6 +32,7 @@ void app_toggle_mode(void) {
         world_snapshot_play();
         A.drag = M_IDLE;
         A.armedAsset = -1;
+        toast_tip(TIP_PLAY);
     } else {
         A.app = APP_EDIT;
         world_restore_play();
@@ -192,6 +194,10 @@ static void on_key(GLFWwindow *w, int key, int sc, int action, int mods) {
                        0.55f, 2.2f);
         settings_save(); return;
     }
+    if (key == GLFW_KEY_G && action == GLFW_PRESS && !(mods & GLFW_MOD_CONTROL)) {
+        A.guideOn = !A.guideOn; A.setDirty = 1;
+        toast_say(A.guideOn ? "guide tips ON" : "guide tips OFF"); return;
+    }
     if (key == GLFW_KEY_ESCAPE && panel_del_pending()) { panel_del_cancel(); return; }
     if (key == GLFW_KEY_ESCAPE && A.app == APP_PLAY) { app_toggle_mode(); return; }
     if (A.app == APP_EDIT) edit_key(key, mods);
@@ -313,6 +319,8 @@ int main(void) {
         else if (A.modal == 2) sculpt_draw();
         else panel_draw();                               /* modal overlays editor */
         prof_draw();
+        toast_frame(dt);
+        toast_draw();
         rk_ui_flush();
         prof_zone_end(PZ_QUEUE);
 

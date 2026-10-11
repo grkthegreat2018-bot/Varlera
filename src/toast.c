@@ -1,0 +1,89 @@
+/* toast.c - guide toasts: rotating tips + one-shot contextual tips.
+ * When A.guideOn: an idle cycler surfaces TIPS every ~10s; toast_tip(id)
+ * fires once per install via A.guideSeen bitmask (settings.bw). */
+#include "toast.h"
+#include "app.h"
+#include "font.h"
+#include "rk.h"
+#include <stdio.h>
+#include <string.h>
+
+#define TOAST_HOLD 4.5f
+#define TOAST_FADE 0.35f
+#define CYCLE_EVERY 10.0f
+
+static const char *TIPS[] = {
+    "RMB-drag looks, WASD+QE flies, wheel zooms to cursor",
+    "Drag a shape onto the world - it stays armed for more clicks",
+    "LMB selects, shift adds, drag on empty space marquees",
+    "ctrl+B fuses a selection into a reusable model",
+    "TAB toggles PLAY - gravity and block scripts come alive",
+    "Select a block, then set TRIG/ACT in the docked menu",
+    "ctrl+wheel changes fly speed; F focuses the selection",
+    "RMB on the world eyedrops color + texture",
+    "The TEX tab's art tool paints new atlas textures",
+    "SCULPT (top-left) carves models vertex-by-vertex",
+    "- / = adjust FOV, Y inverts look, F11 toggles fullscreen",
+    "F3 shows the profiler; F12 saves a screenshot",
+};
+#define N_TIPS ((int)(sizeof TIPS / sizeof TIPS[0]))
+
+/* first-time contextual tips, indexed by TIP_* */
+static const char *TIP_MSG[TIP_COUNT] = {
+    "Basic shape placed - drag stays armed, RMB disarms",
+    "Ramps snap to the block lattice; R/T rotates them",
+    "Special shapes shine with textures - try the TEX tab",
+    "Models are fused groups - ctrl+U unfuses back to blocks",
+    "Sculpt mode: LMB grabs verts, short RMB splits edges",
+    "Play mode: TRIG keys fire block actions; Esc returns",
+    "Fused! Find it under MODELS - place it like any block",
+    "Armed: each world click places; wheel rotates the ghost",
+};
+
+static char  s_msg[160];
+static float s_t           = -1.0f;   /* <0 idle, else time since show */
+static float s_cycleT;
+static int   s_cycleI;
+
+void toast_tip(int id) {
+    if (!A.guideOn || id < 0 || id >= TIP_COUNT) return;
+    uint64_t bit = 1ull << id;
+    if (A.guideSeen & bit) return;
+    A.guideSeen |= bit;
+    A.setDirty = 1;
+    toast_say(TIP_MSG[id]);
+}
+
+void toast_say(const char *msg) {
+    snprintf(s_msg, sizeof s_msg, "%s", msg);
+    s_t = 0.0f;
+}
+
+void toast_frame(float dt) {
+    if (s_t >= 0.0f) {
+        s_t += dt;
+        if (s_t > TOAST_HOLD + TOAST_FADE) s_t = -1.0f;
+    }
+    if (A.guideOn && s_t < 0.0f) {          /* idle cycler */
+        s_cycleT += dt;
+        if (s_cycleT > CYCLE_EVERY) {
+            s_cycleT = 0.0f;
+            toast_say(TIPS[s_cycleI]);
+            s_cycleI = (s_cycleI + 1) % N_TIPS;
+        }
+    } else s_cycleT = 0.0f;
+}
+
+void toast_draw(void) {
+    if (s_t < 0.0f || !s_msg[0]) return;
+    float a = 1.0f;
+    if (s_t < TOAST_FADE) a = s_t / TOAST_FADE;
+    else if (s_t > TOAST_HOLD) a = (TOAST_HOLD + TOAST_FADE - s_t) / TOAST_FADE;
+    int sc = 1;
+    float tw = (float)ui_text_w(s_msg, sc);
+    float x = (float)A.fbw * 0.5f - tw * 0.5f - 12.0f;
+    float y = (float)A.fbh - 64.0f;
+    rk_ui_rect(x, y, tw + 24.0f, 22.0f, 0.10f, 0.11f, 0.14f, 0.88f * a);
+    rk_ui_rect(x, y, tw + 24.0f, 2.0f, 0.95f, 0.75f, 0.30f, 0.9f * a);
+    ui_text(x + 12, y + 7, s_msg, sc, 1.0f, 0.96f, 0.85f, a);
+}

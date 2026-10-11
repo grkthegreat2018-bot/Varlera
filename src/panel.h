@@ -12,6 +12,7 @@ typedef struct {
 } Asset;
 
 const Asset *panel_asset(int i);    /* NULL if out of range */
+int panel_asset_cat(int i);         /* 0 basic,1 ramps,2 special,3 model, -1 none */
 const float *panel_color(int i);    /* palette rgb */
 
 void panel_init(void);

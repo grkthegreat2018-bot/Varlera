@@ -16,6 +16,7 @@
 #include "font.h"
 #include "rk.h"
 #include "meshgen.h"
+#include "toast.h"
 #include "tex.h"
 #include "world.h"
 #include <math.h>
@@ -1007,6 +1008,7 @@ void sculpt_open(void) {
     s_editMid = -1;
     init_preset(s_start);
     sculpt_enter();
+    toast_tip(TIP_SCULPT);
 }
 
 /* re-open an existing sculpted model for editing */

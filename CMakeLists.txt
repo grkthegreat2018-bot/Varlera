@@ -52,6 +52,7 @@ add_executable(varlera WIN32
   src/sculpt.c
   src/marching.c
   src/prof.c
+  src/toast.c
   src/settings.c
 )
 add_dependencies(varlera shaders)

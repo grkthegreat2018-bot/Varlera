@@ -95,6 +95,8 @@ typedef struct {
     /* borderless fullscreen (F11): saved windowed rect for restore */
     int winX, winY, winW, winH, fullscreen;
     int setDirty;                       /* settings changed -> save next frame */
+    int guideOn;                        /* guide toasts (G toggles) */
+    uint64_t guideSeen;                 /* TIP_* ids already shown */
 } App;
 
 extern App A;

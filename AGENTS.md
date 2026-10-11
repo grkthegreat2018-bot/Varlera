@@ -72,8 +72,12 @@ links m/dl/pthread. Win32-only code (file dialog, DPI awareness) is `_WIN32`
   shadow pass, main pass, total). `prof_frame()` accumulates a 120-frame
   ring; `prof_draw()` renders the overlay. Add zones, not printf spam.
 - `src/settings.c` — settings.bw v1: window rect/fullscreen, cam speed/fov/
-  invertY, prof overlay. `settings_load` pre-window, `apply` post-cam_init,
-  `save` on toggle + dirty flag. Keys: Y invert, -/= fov.
+  invertY, prof overlay, guide toggle + seen bitmask (pad-carved, same size).
+  `settings_load` pre-window, `apply` post-cam_init,
+  `save` on toggle + dirty flag. Keys: Y invert, -/= fov, G guide.
+- `src/toast.c` — guide toasts: 10s idle tip cycler when `A.guideOn`,
+  `toast_tip(id)` = one-shot contextual tips (place per category, arm, fuse,
+  sculpt, play) persisted via `A.guideSeen`; `toast_say` = transient message.
 - `src/font.h` — glyphs baked into reserved atlas tile (7,7) at tex_init
   (`font_bake`); `ui_text` = one tinted `rk_ui_texrect_col` quad per char.
 - `src/meshgen.c` — `meshgen_shape()` emits flat Vert soups per RK_MESH_*

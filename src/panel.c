@@ -6,6 +6,7 @@
 #include "tex.h"
 #include "art.h"
 #include "sculpt.h"
+#include "toast.h"
 #include "font.h"
 #include "math3d.h"
 #include <string.h>
@@ -129,6 +130,14 @@ const Asset *panel_asset(int i) {
     return NULL;
 }
 const float *panel_color(int i) { return PALETTE[i >= 0 && i < N_COLORS ? i : 0]; }
+
+int panel_asset_cat(int ai) {
+    if (ai < 0) return -1;
+    if (ai >= N_ASSETS) return 3;               /* model (fused/sculpted/adv) */
+    for (int c = 0; c < 3; c++)
+        if (ai >= CATS[c].first && ai < CATS[c].first + CATS[c].count) return c;
+    return -1;
+}
 
 void panel_init(void) {
     A.panelOpen = 1; A.panelTab = 0; A.panelScroll = 0;
@@ -420,7 +429,10 @@ int panel_press(double x, double y) {
             if (A.catOpen[c]) yy += ((cat_count(c) + COLS-1)/COLS) * CELL + 6.0f;
         }
         int ai = asset_at(fx, fy);
-        if (ai >= 0) { A.armedAsset = ai; A.drag = M_PLACE; }
+        if (ai >= 0) {
+            A.armedAsset = ai; A.drag = M_PLACE;
+            toast_tip(TIP_ARMED);
+        }
         return 1;
     }
 
@@ -508,7 +520,8 @@ int panel_press(double x, double y) {
     if (A.panelTab == 4 || A.panelTab == 5) {  /* MODELS / PROPS grids */
         int kind = A.panelTab - 4;
         int m = model_at(kind, fx, fy);
-        if (m >= 0) { A.armedAsset = N_ASSETS + m; A.drag = M_PLACE; }
+        if (m >= 0) { A.armedAsset = N_ASSETS + m; A.drag = M_PLACE;
+                      toast_tip(TIP_ARMED); }
         return 1;
     }
 
