@@ -52,6 +52,7 @@ add_executable(varlera WIN32
   src/sculpt.c
   src/marching.c
   src/prof.c
+  src/settings.c
 )
 add_dependencies(varlera shaders)
 target_include_directories(varlera PRIVATE src ${VULKAN_INCLUDE_DIR})

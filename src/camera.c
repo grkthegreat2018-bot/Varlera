@@ -9,6 +9,7 @@ void cam_init(void) {
     A.yaw = 0.785398f;   /* look toward origin */
     A.pitch = -0.45f;
     A.speed = 14.0f;
+    A.fov = 1.05f;
 }
 
 CamBasis cam_basis(void) {
@@ -25,7 +26,7 @@ void cam_update_vp(void) {
     m4 v, p;
     m4_look_at(v, A.camPos, v3_add(A.camPos, c.f), c.u);
     float aspect = A.fbh > 0 ? (float)A.fbw / A.fbh : 1.0f;
-    m4_perspective_rz(p, 1.05f, aspect, 0.1f, 500.0f);
+    m4_perspective_rz(p, A.fov, aspect, 0.1f, 500.0f);
     m4_mul(A.viewProj, p, v);
 }
 
@@ -33,7 +34,7 @@ void cam_ray(double mx, double my, v3 *ro, v3 *rd) {
     float ndcx = (float)(mx / A.fbw * 2.0 - 1.0);
     float ndcy = (float)(my / A.fbh * 2.0 - 1.0);
     CamBasis c = cam_basis();
-    float t = tanf(1.05f * 0.5f);
+    float t = tanf(A.fov * 0.5f);
     float aspect = (float)A.fbw / (float)A.fbh;
     *rd = v3_norm(v3_add(c.f, v3_add(v3_scale(c.r, ndcx*t*aspect),
                                    v3_scale(c.u, -ndcy*t))));
@@ -42,6 +43,7 @@ void cam_ray(double mx, double my, v3 *ro, v3 *rd) {
 
 void cam_look(float dx, float dy) {
     A.yaw -= dx * 0.0042f;               /* mouse right -> look right */
+    if (A.invertY) dy = -dy;
     A.pitch = clampf(A.pitch - dy * 0.0042f, -1.55f, 1.55f);
 }
 
@@ -55,6 +57,7 @@ void cam_pan(float dx, float dy) {
 void cam_speed_step(float dy) {
     A.speed = clampf(A.speed * (dy > 0 ? 1.15f : 0.87f), 1.0f, 120.0f);
     A.speedMsgT = glfwGetTime();
+    A.setDirty = 1;
 }
 
 void cam_zoom_cursor(float dy, double mx, double my) {

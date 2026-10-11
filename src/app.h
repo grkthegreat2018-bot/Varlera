@@ -28,7 +28,8 @@ typedef struct {
 
     /* freecam */
     v3 camPos, camVel;
-    float yaw, pitch, speed;
+    float yaw, pitch, speed, fov;
+    int invertY;
     m4 viewProj;
 
     AppMode app;
@@ -93,6 +94,7 @@ typedef struct {
 
     /* borderless fullscreen (F11): saved windowed rect for restore */
     int winX, winY, winW, winH, fullscreen;
+    int setDirty;                       /* settings changed -> save next frame */
 } App;
 
 extern App A;

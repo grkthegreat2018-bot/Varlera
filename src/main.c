@@ -19,6 +19,7 @@
 #include "tex.h"
 #include "rk.h"
 #include "prof.h"
+#include "settings.h"
 #include "world.h"
 #include "math3d.h"
 
@@ -62,6 +63,7 @@ static void toggle_fullscreen(void) {
         glfwSetWindowMonitor(A.win, NULL, A.winX, A.winY, A.winW, A.winH, GLFW_DONT_CARE);
         A.fullscreen = 0;
     }
+    settings_save();
 }
 
 static void on_cursor(GLFWwindow *w, double x, double y) {
@@ -174,7 +176,7 @@ static void on_key(GLFWwindow *w, int key, int sc, int action, int mods) {
         }
         return;
     }
-    if (key == GLFW_KEY_F3 && action == GLFW_PRESS) { prof_toggle(); return; }
+    if (key == GLFW_KEY_F3 && action == GLFW_PRESS) { prof_toggle(); settings_save(); return; }
     if (key == GLFW_KEY_F11 && action == GLFW_PRESS) { toggle_fullscreen(); return; }
     if (key == GLFW_KEY_F12 && action == GLFW_PRESS) {
         static int shotN;
@@ -182,6 +184,14 @@ static void on_key(GLFWwindow *w, int key, int sc, int action, int mods) {
         rk_screenshot(p); return;
     }
     if (key == GLFW_KEY_TAB && (action == GLFW_PRESS)) { app_toggle_mode(); return; }
+    if (key == GLFW_KEY_Y && !(mods & GLFW_MOD_CONTROL)) {
+        A.invertY = !A.invertY; settings_save(); return;
+    }
+    if (key == GLFW_KEY_MINUS || key == GLFW_KEY_EQUAL) {
+        A.fov = clampf(A.fov + (key == GLFW_KEY_EQUAL ? -0.05f : 0.05f),
+                       0.55f, 2.2f);
+        settings_save(); return;
+    }
     if (key == GLFW_KEY_ESCAPE && panel_del_pending()) { panel_del_cancel(); return; }
     if (key == GLFW_KEY_ESCAPE && A.app == APP_PLAY) { app_toggle_mode(); return; }
     if (A.app == APP_EDIT) edit_key(key, mods);
@@ -205,11 +215,17 @@ int main(void) {
     glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
     A.win = glfwCreateWindow(1280, 720, "Varlera", NULL, NULL);
     if (!A.win) { fputs("window failed\n", stderr); return 1; }
-    /* start in borderless fullscreen: swap the window onto the primary
-       monitor at desktop resolution; F11 restores the windowed rect */
-    glfwGetWindowPos(A.win, &A.winX, &A.winY);
-    glfwGetWindowSize(A.win, &A.winW, &A.winH);
-    {
+    /* borderless fullscreen by default; settings.bw may restore the
+       windowed rect instead (F11 toggles, rect + mode persist) */
+    settings_load();
+    if (A.winW > 0 && !A.fullscreen) {
+        glfwSetWindowPos(A.win, A.winX, A.winY);
+        glfwSetWindowSize(A.win, A.winW, A.winH);
+    } else {
+        if (A.winW <= 0) {          /* first run: remember this rect for F11 */
+            glfwGetWindowPos(A.win, &A.winX, &A.winY);
+            glfwGetWindowSize(A.win, &A.winW, &A.winH);
+        }
         GLFWmonitor *m = glfwGetPrimaryMonitor();
         const GLFWvidmode *vm = glfwGetVideoMode(m);
         glfwSetWindowMonitor(A.win, m, 0, 0, vm->width, vm->height,
@@ -229,6 +245,7 @@ int main(void) {
     if (!rk_init(A.win)) { fputs("rk_init failed\n", stderr); return 1; }
 
     cam_init();
+    settings_apply();            /* speed/fov/invertY/profOn from file */
     panel_init();
     tex_init();                  /* atlas: built-ins + textures.bw */
     models_init();               /* reload saved custom models */
@@ -302,6 +319,7 @@ int main(void) {
         rk_end_frame();
         prof_zone_end(PZ_END);
         if (envShot && ++frameNo == 45) rk_screenshot(envShot);
+        if (A.setDirty) { A.setDirty = 0; settings_save(); }
 
         prof_count(PC_BLOCKS, g_nb);
         RkStats rs; rk_query_stats(&rs);
@@ -313,6 +331,7 @@ int main(void) {
         prof_frame();
     }
 
+    settings_save();
     tex_save("textures.bw");
     rk_shutdown();
     glfwDestroyWindow(A.win);
