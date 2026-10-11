@@ -66,6 +66,11 @@ links m/dl/pthread. Win32-only code (file dialog, DPI awareness) is `_WIN32`
   rot/tex/texm/flags/trig/act/actParam/tgt), undo/redo stacks, `world.bw`
   binary save/load (v3; reads v1/v2), play-mode gravity settle (XZ uniform
   grid broadphase) + snapshot/restore.
+- `src/prof.c` / `prof.h` — frame cost logging. `prof_zone_begin/end(PZ_*)`
+  around frame phases; `prof_count(PC_*)` for draws/insts/verts/blocks.
+  GPU times come from `rk_gpu_times` (per-in-flight timestamp query pools:
+  shadow pass, main pass, total). `prof_frame()` accumulates a 120-frame
+  ring; `prof_draw()` renders the overlay. Add zones, not printf spam.
 - `src/font.h` — 5x7 bitmap font rendered as UI rects (`ui_text`/`ui_text_clip`).
 - `src/math3d.h` — `v3` union (`{x,y,z}` / `.e[3]`), column-major `m4` float[16],
   `m4_perspective_rz`/`m4_ortho_rz` reversed-Z variants.
@@ -86,7 +91,9 @@ R/T rotate +-90 | arrows nudge 0.5 view-relative | PgUp/PgDn nudge Y |
 ctrl+C/X/V clipboard | ctrl+D dup | ctrl+A all | ctrl+Z/Y | ctrl+S or F5 save |
 ctrl+B fuse sel -> custom model | ctrl+U unfuse | F9 load | Del delete |
 TAB or PLAY toggles play mode (gravity + script triggers + restore) |
-Esc cancel/edit.
+Esc cancel/edit | F3 prof overlay (stderr `prof |` report every 4s:
+fps/frame avg,p95,max + wait/sim/queue/submit CPU zones + GPU
+shadow/main ms + draws/inst/ui-verts/blocks/models).
 
 Scripting (BW-style): select a block -> docked menu -> cycle TRIG
 (ALWAYS/SPACE/W/A/S/D/E/Q/CLICK) and ACT (NONE/SPIN/GLOW/BOOST). In play mode
