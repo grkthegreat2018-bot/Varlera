@@ -23,6 +23,7 @@ largest CPU cost in an empty scene. Re-measure after each perf item.
 | User settings + controls | S→M | `main.c`, `camera.c`, new `settings.c` | Extends settings file: rebindable keys, theme tint, UI scale, camera presets, autosave interval. |
 | QOL pass | S | `panel.c`, `edit.c`, `main.c` | Hotkey hints bar, action toasts, drag multi-select in MODELS, block search, ghost preview in panel tooltips. |
 | Debugging v1 | S | `prof.c`, `main.c` | Overlay page 2 (per-zone sparklines + counters), `varlera.log` file mirror of stderr, Win32 crash minidump (`_WIN32` guard), `VK_VALIDATION` hotkey toggle. |
+| Guide toasts | S | `panel.c`, `settings.c`, `main.c` | Cycling tip toast (settings toggle); contextual tips fire on first-time actions — placing a never-placed shape, opening sculpt, entering play mode. Seen-set persists in settings.bw v2. |
 | Material flags | S→M | `world.c`, `tex.c`, shader | Rough/metal/emissive bits into `texm`/instance flags + shader branches (matte vs glossy, glow feeds bloom). Foundation for shader effects. |
 | Shader hot-reload | S | `rk_vk.c`, `CMakeLists.txt` | F8: re-run glslc + recreate pipelines in place. Dev-velocity win for every shader item below; pipelines are already isolated creation code. |
 
@@ -41,6 +42,11 @@ largest CPU cost in an empty scene. Re-measure after each perf item.
 | Better sculpted object rendering | M | `sculpt.c`, `model.c` bake, shader | Smooth/flat shading toggle per model, better facet normals, cheap LOD (decimate topo at distance). |
 | Memory handling | M | all | Arena allocators for per-frame UI verts + bake buffers (kills malloc churn), pool for `Block`s, `prof_count` hook for peak/alloc counts. |
 | Better sculpt mode | M | `sculpt.c` | Brush sizes/falloff, mirror symmetry, smooth/relax vertex op, rotate/scale gizmo, undo already exists. Incremental on the 71KB module. |
+| Assembly sculpt mode | M | new `build.c` modal | Second sculpt flavor for non-mesh-editors: place basic shapes as mini-blocks inside a model volume — per-block size + rotation (reuses placement/ghost logic + `model.c` bake). Sculpt stays the "pro" path; this is the accessible one. |
+| Material layers in sculpt | M | `sculpt.c`, `build.c`, `model.c` | Extends existing `s_vtex`/`s_vlock` layer machinery: mark parts as material layers, each layer its own color/texture; works in both sculpt modes; assembly mode gets per-mini-block layer assign. |
+| Assembly auto-merge on save | M | `build.c`, `model.c` bake | Greedy merge same-material/same-shape touching mini-blocks into bigger meshes at save (sibling of the play-mode greedy mesh). Catches "user built a big cube out of small cubes" — collapses to one box. |
+| Premade object packs | M | `model.c` (`models_bake_builtins`), `panel.c` | Grow `adv` PROPS: doors, buttons, levers, signs, vehicles, characters, platforms. Static ones land now; mechanical ones (motors etc.) become real when joints/scripting ship — bake the shells early. |
+| Dialog/text blocks (basic) | M | `world.c` ACT_* rows, `panel.c`, `font.h` | `ACT_SAY`/`ACT_TITLE` script actions show toasts/subtitles in play mode. Dialog trees + player choice wait for scripting v2. |
 | Auto mesh optimize | M | `model.c`, `sculpt.c` | Quadric-error edge collapse decimation with a target-tri-count or error-budget knob, aggressive weld dedupe. Run at bake + as a manual OPTIMIZE button; sculpted LOD variant reuses it. |
 | Blender auto-conversion | M | `model.c`, `sculpt.c`, new `import.c` | OBJ/GLB import → weld → normalize-to-unit-box → bake (`import.obj` path already exists; extend to drag-drop + GLB). Optional Blender-side exporter script for direct `.bw` write. |
 | 2D animation (flipbook) | M | `tex.c`, `art.c`, `world.c`, shader | Atlas strips = frames; blocks/materials get frame-count+fps bits; shader or CPU-side UV offset. Art tool gets onion-skin + frame timeline. Feeds particles + shader effects. |
@@ -61,6 +67,8 @@ largest CPU cost in an empty scene. Re-measure after each perf item.
 | Code blocks + scripting v2 | L | `world.c` (trig/act rows exist), `panel.c`, `main.c` | Conditions (IF trig THEN act), per-world variables, wire-mode link UI, event bus, timers/sensors/counters/loops. "Massive expansion" = this done fully + a script debugger overlay in F3. |
 | Shader effects via code blocks | L | `world.c`, `rk.c`, shaders | Cheap version lands with material flags (M): effect id + params in instance bits → glow pulse, dissolve, wave, blink. Full version rides scripting v2: actions bind effects to triggers, script vars drive params (speed/intensity), per-world effect table. |
 | Overhauled building | L | `edit.c`, `panel.c`, `world.c` | Rework of the place/move state machine: mirror-symmetry build mode, line/plane fills, arbitrary-axis rotate (current is 90° steps + rot90 flags), structural stress preview, smart attach (auto-snap to stud/edge lattices), clipboard templates library. |
+| Math/algorithm blocks | L | scripting v2 surface | Expression nodes: arithmetic, lerp/clamp/remap, random/chance, min/max, sort/list ops, distance/raycast queries. The "complex systems" tier of the block language. |
+| Compound code groups | L | `world.c`, scripting v2, `panel.c` | User-named macro blocks containing visible child blocks — shareable functions like "rigid body physics", "sound physics", "2D platformer", "3D platformer". Ships as premade packs + user-creatable. Needs scripting v2 + nested serialization. |
 | Model rig support | L | `model.c`, `sculpt.c`, `rk.c`, shader | Named bones/joints stored per model (joint planes from sculpt mark attach points), per-vert bone weights baked in (`Vert` gets bone idx+weight), GPU skinning in the world VS or CPU skin for low-vert models. Foundation for NPCs + 3D anim. |
 | 3D animation creator | L | `sculpt.c`/new `anim.c`, `model.c` | Keyframe pose editor on rigged models (rot/pos per joint, timeline, ease curves, play preview); clip library saved per model; runtime blends poses on instances. Depends on rig support. |
 | BW rigid-body play physics | L | `world.c`, new `physics.c` | Connected-component rigid bodies (fused/touching blocks move as one mass — reuses greedy-mesh grouping), drag bodies with the mouse in play, torque/momentum. World-settings toggle: arcade settle (current) vs rigid body. Needs collision overhaul first. |
@@ -95,14 +103,14 @@ largest CPU cost in an empty scene. Re-measure after each perf item.
 4. World data v4 (incl. file-size compression) + better I/O + menus
    (app-state refactor is the gateway to everything UI).
 5. Greedy-mesh play mode + mesh cache + material flags + particle
-   system + bloom/AO + flipbook anim + mesh auto-optimize
-   (perf and look, needed at scale).
+   system + bloom/AO + flipbook anim + assembly sculpt mode +
+   auto-merge (perf and content, needed at scale).
 6. Collision overhaul → building overhaul → rigid-body physics +
    joints + physics stats runtime → player controller
    (gameplay unlock).
 7. Scene/entity refactor → scripting v2 (the "engine" pivot) →
-   rig support → 3D anim creator → NPCs → sound/music tools
-   (all ride on it).
+   math/dialog/compound blocks → rig support → 3D anim creator →
+   NPCs → sound/music tools (all ride on it).
 8. Occlusion culling + threading only when `prof` shows sim/submit
    zones actually limiting fps at real world sizes.
 
