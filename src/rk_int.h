@@ -41,7 +41,7 @@ void rk_swapchain_recreate(void);
 VkBuffer buf_create(VkDeviceSize size, VkBufferUsageFlags usage,
                     VkMemoryPropertyFlags props, VkDeviceMemory *outMem, void **mapped);
 
-enum { K_GRID, K_WORLD, K_OVERLAY, K_GHOST, K_MESH, K_MLINES, K_LINES, K_UI, K_ICON, K_CASTER };
+enum { K_GRID, K_WORLD, K_OVERLAY, K_GHOST, K_MESH, K_MLINES, K_LINES, K_UI, K_ICON, K_CASTER, K_SKY };
 typedef struct {
     int kind, mesh;
     uint32_t first, count;
@@ -87,7 +87,7 @@ typedef struct {
     VkDescriptorPool pool;
     VkDescriptorSet set1;
     VkPipelineLayout pipeLayout;
-    VkPipeline pGrid, pWorld, pWorldInst, pGhostInst, pLinesInst, pShadow, pUI;
+    VkPipeline pGrid, pWorld, pWorldInst, pGhostInst, pLinesInst, pShadow, pUI, pSky;
     VkPipeline pMeshLine;            /* non-instanced LINE_LIST (wireframe) */
     VkCommandPool cmdPool;
 

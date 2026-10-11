@@ -76,6 +76,7 @@ void rk_end_frame(void);
 /* vp: camera view-proj, eye: camera pos, focus: point shadows/light center on */
 void rk_set_camera(const float vp[16], const float eye[3], const float focus[3]);
 
+void rk_draw_sky(void);               /* gradient dome + sun (draw first) */
 void rk_draw_grid(void);
 void rk_world(RkMesh m, const RkInst *inst, uint32_t n);    /* lit, casts shadow  */
 void rk_caster(RkMesh m, const RkInst *inst, uint32_t n);   /* shadow pass only  */

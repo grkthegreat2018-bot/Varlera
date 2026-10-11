@@ -12,6 +12,7 @@ static void qu(int kind, int mesh, uint32_t first, uint32_t count) {
         G.q[G.qn++] = (QEnt){kind, mesh, first, count, 0,0,0,0, 0,0,0};
 }
 
+void rk_draw_sky(void)  { qu(K_SKY,  0, 0, 0); }
 void rk_draw_grid(void) { qu(K_GRID, 0, 0, 0); }
 
 static uint32_t push_insts(const RkInst *inst, uint32_t n) {
@@ -360,6 +361,11 @@ void rk_end_frame(void) {
     for (int i = 0; i < G.qn; i++) {
         QEnt *e = &G.q[i];
         switch (e->kind) {
+        case K_SKY:
+            vkCmdBindPipeline(G.cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, G.pSky);
+            bind_sets_and_mesh();
+            vkCmdDraw(G.cmd, 3, 1, 0, 0);
+            break;
         case K_GRID: {
             m4 m;
             v3 t = v3_make(snapf(G.ubo.camPos[0], 1.0f), -0.02f, snapf(G.ubo.camPos[2], 1.0f));

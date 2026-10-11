@@ -23,7 +23,7 @@ find_program(GLSLC glslc HINTS "$ENV{VULKAN_SDK}/Bin" "$ENV{VULKAN_SDK}/bin" REQ
 set(SHADER_SRC_DIR ${CMAKE_SOURCE_DIR}/shaders)
 set(SHADER_BIN_DIR ${CMAKE_BINARY_DIR}/shaders)
 file(MAKE_DIRECTORY ${SHADER_BIN_DIR})
-set(SHADERS world.vert world_i.vert world.frag grid.frag shadow.vert ui.vert ui.frag)
+set(SHADERS world.vert world_i.vert world.frag grid.frag shadow.vert ui.vert ui.frag sky.vert sky.frag)
 set(SPV_FILES "")
 foreach(S ${SHADERS})
   set(IN  ${SHADER_SRC_DIR}/${S})

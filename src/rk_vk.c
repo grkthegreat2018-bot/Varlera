@@ -317,6 +317,8 @@ static void make_pipelines(void) {
     VkShaderModule gf = load_shader("grid.frag");
     VkShaderModule uv = load_shader("ui.vert");
     VkShaderModule uf = load_shader("ui.frag");
+    VkShaderModule kv = load_shader("sky.vert");
+    VkShaderModule kf = load_shader("sky.frag");
 
     PipeDesc d = {0};
 
@@ -370,10 +372,17 @@ static void make_pipelines(void) {
     d.cull=VK_CULL_MODE_NONE; d.samples=G.samples;
     G.pUI = make_pipeline(&d);
 
+    /* sky: fullscreen triangle, no vertex input, no depth touch */
+    memset(&d, 0, sizeof d);
+    d.vs=kv; d.fs=kf; d.topo=VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+    d.cull=VK_CULL_MODE_NONE; d.samples=G.samples;
+    G.pSky = make_pipeline(&d);
+
     vkDestroyShaderModule(G.dev, wv, NULL); vkDestroyShaderModule(G.dev, wi, NULL);
     vkDestroyShaderModule(G.dev, sv, NULL); vkDestroyShaderModule(G.dev, wf, NULL);
     vkDestroyShaderModule(G.dev, gf, NULL); vkDestroyShaderModule(G.dev, uv, NULL);
     vkDestroyShaderModule(G.dev, uf, NULL);
+    vkDestroyShaderModule(G.dev, kv, NULL); vkDestroyShaderModule(G.dev, kf, NULL);
 }
 
 /* ---------------- swapchain ---------------- */
@@ -771,6 +780,7 @@ void rk_shutdown(void) {
     vkDestroyPipeline(G.dev, G.pMeshLine, NULL);
     vkDestroyPipeline(G.dev, G.pShadow, NULL);
     vkDestroyPipeline(G.dev, G.pUI, NULL);
+    vkDestroyPipeline(G.dev, G.pSky, NULL);
     vkDestroyPipelineLayout(G.dev, G.pipeLayout, NULL);
     vkDestroyDescriptorPool(G.dev, G.pool, NULL);
     vkDestroyDescriptorSetLayout(G.dev, G.setLayout0, NULL);

@@ -305,6 +305,7 @@ int main(void) {
 
         prof_zone_begin(PZ_QUEUE);
         if (A.modal != 2) {                    /* sculpt = own mini-world */
+            rk_draw_sky();
             rk_draw_grid();
             edit_draw_world();
         }
