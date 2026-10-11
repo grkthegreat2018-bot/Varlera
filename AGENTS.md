@@ -76,10 +76,15 @@ links m/dl/pthread. Win32-only code (file dialog, DPI awareness) is `_WIN32`
   nextid, created, modified, name[32]) then per-block packed records —
   flag byte, id, metadata bytes, u8 color/alpha, 6xi16 quantized pos/size
   (1/16 grid, raw f32 when off-grid), optional name[12]; ~30B vs 64B v3.
-  Readers migrate v1/v2/v3. `worlds_file(name,ext)` -> `worlds/<san>.bw`;
-  saves also write `worlds/<name>.bmp` thumbnail; autosave every 90s to
-  `worlds/<name>.auto.bw` when `world_rev()` changed. `tests/world_v4.c`
-  is a ctest target covering round-trip + v3 migration.
+  Readers migrate v1/v2/v3. `worlds_file(name,ext)` -> `<dir>/<san>.bw`
+  (dir = `worlds_dir`, default "worlds", user-picked via WORLD tab DIR;
+  persisted in settings.bw v2). Saves also write `worlds/<name>.bmp`
+  thumbnail; autosave every 90s to `worlds/<name>.auto.bw` when
+  `world_rev()` changed. v4 files end with an optional 32B `WSet`
+  settings trailer (phys mode / chunkShape+Size / lod / advRender /
+  gravMul / skyAssets) — `world_wset()` is the live record, WORLD tab
+  edits it and dangerous rows (`!`) get an APPLY/CANCEL wipe-warning
+  dialog. `tests/world_v4.c` (ctest) covers round-trip + v3 migration.
 - `src/prof.c` / `prof.h` — frame cost logging. `prof_zone_begin/end(PZ_*)`
   around frame phases; `prof_count(PC_*)` for draws/insts/verts/blocks.
   GPU times come from `rk_gpu_times` (per-in-flight timestamp query pools:

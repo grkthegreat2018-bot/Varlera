@@ -193,6 +193,34 @@ static int s_delModel = -1;
 int panel_del_pending(void) { return s_delModel >= 0; }
 void panel_del_cancel(void) { s_delModel = -1; }
 
+/* pending world-setting change that needs the wipe-warning confirm */
+static int s_wConfirm = -1;
+static void wset_cycle(int i) {
+    WSet *w = world_wset();
+    switch (i) {
+    case 0: w->phys = (uint8_t)((w->phys + 1) % 2); break;
+    case 1: w->chunkShape = (uint8_t)((w->chunkShape + 1) % 3); break;
+    case 2: w->chunkSize = w->chunkSize == 8 ? 16 :
+                          w->chunkSize == 16 ? 32 : 8; break;
+    case 3: w->lod ^= 1; break;
+    case 4: w->advRender ^= 1; break;
+    }
+    world_wset_dirty();
+}
+static const char *wset_val(int i, const WSet *w, char *b) {
+    static const char *PH[] = {"SETTLE","RIGID"};
+    static const char *CH[] = {"NONE","COLUMN","CUBIC"};
+    static const char *ON[] = {"OFF","ON"};
+    switch (i) {
+    case 0: return PH[w->phys & 1];
+    case 1: return CH[w->chunkShape % 3];
+    case 2: snprintf(b, 8, "%d", w->chunkSize ? w->chunkSize : 16); return b;
+    case 3: return ON[w->lod & 1];
+    case 4: return ON[w->advRender & 1];
+    }
+    return "";
+}
+
 /* ---- environment: sky + ground presets (world.bw-independent env.bw) ---- */
 static const float ENV_SKY[][3] = {
     {0.56f,0.66f,0.82f}, {0.94f,0.60f,0.40f}, {0.36f,0.32f,0.56f},
@@ -453,6 +481,15 @@ int panel_press(double x, double y) {
         s_delModel = -1;                    /* any click dismisses */
         return 1;
     }
+    /* world-setting wipe-warning confirm captures clicks while open */
+    if (s_wConfirm >= 0) {
+        float cx = ((float)A.fbw - 320.0f) * 0.5f;
+        float cy2 = (float)A.fbh * 0.5f - 55.0f;
+        if (in_rect((float)x,(float)y, cx + 30, cy2 + 72, 110, 26))
+            wset_cycle(s_wConfirm);         /* APPLY */
+        s_wConfirm = -1;                    /* any click dismisses */
+        return 1;
+    }
     if (x < px) { A.textMode = 0; return 0; }
     /* clicks anywhere but the search box defocus text input */
     if (!in_rect((float)x,(float)y, px + 8, SRCHY, PW - 16, SRCHH)) A.textMode = 0;
@@ -624,6 +661,14 @@ int panel_press(double x, double y) {
             if (i == 0) s_sky = (s_sky + 1) % ENV_NSKY;
             else        s_ground = (s_ground + 1) % ENV_NGROUND;
             env_apply(); env_save();
+            return 1;
+        }
+    }
+    /* world settings — rows 1/2/4 are dangerous: confirm first */
+    for (int i = 0; i < 5; i++) {
+        if (in_rect(fx, fy, px + 8, 312.0f + i * 28.0f, PW - 16, 24)) {
+            if (i == 1 || i == 2 || i == 4) s_wConfirm = i;
+            else wset_cycle(i);
             return 1;
         }
     }
@@ -991,6 +1036,26 @@ static void draw_world(float px) {
         const float *ec = i == 0 ? ENV_SKY[s_sky] : ENV_GROUND[s_ground];
         rk_ui_rect(px + PW - 32, ey + 5, 18, 16, ec[0],ec[1],ec[2], 1);
     }
+
+    /* world settings — ! marks rows that warn before changing */
+    ui_text(px + 12, 296, "WORLD SETTINGS", 1, 0.7f,0.72f,0.8f, 1);
+    {
+        static const char *WLBL[] = {"PHYS","CHUNK","CHUNK SZ","LOD","ADV RENDER"};
+        const WSet *w = world_wset();
+        for (int i = 0; i < 5; i++) {
+            float wy = 312.0f + i * 28.0f;
+            int hov = in_rect((float)A.mx,(float)A.my, px+8, wy, PW-16, 24);
+            int danger = (i == 1 || i == 2 || i == 4);
+            rk_ui_rect(px+8, wy, PW-16, 24,
+                       0.20f + hov*0.07f, 0.24f + hov*0.07f, 0.32f + hov*0.07f, 1);
+            char wb[48], vb[8];
+            snprintf(wb, sizeof wb, "%s%s: %s",
+                     danger ? "! " : "", WLBL[i], wset_val(i, w, vb));
+            ui_text(px + 14, wy + 8, wb, 1,
+                    danger ? 1.0f : 0.85f, danger ? 0.75f : 0.85f,
+                    danger ? 0.55f : 0.9f, 1);
+        }
+    }
     rk_ui_flush();
 }
 
@@ -1117,6 +1182,39 @@ void panel_draw(void) {
                    0.22f + hovN*0.08f, 0.26f + hovN*0.08f, 0.34f + hovN*0.08f, 1);
         ui_text(cx + 170 + (100 - ui_text_w("KEEP",1)) * 0.5f, cy2 + 70,
                 "KEEP", 1, 1,1,1, 1);
+        rk_ui_flush();
+    }
+
+    /* world-setting wipe-warning dialog */
+    if (s_wConfirm >= 0) {
+        static const char *WLBL[] = {"PHYS","CHUNK","CHUNK SZ","LOD","ADV RENDER"};
+        static const char *WWARN[] = {
+            "PHYSICS MODE CHANGES PLAY BEHAVIOR",
+            "CHUNK LAYOUT MAY RESHAPE OR WIPE THIS WORLD",
+            "CHUNK SIZE MAY RESHAPE OR WIPE THIS WORLD",
+            "LOD ALTERS DRAW DISTANCE QUALITY",
+            "EXPERIMENTAL RENDER FLAGS CAN CAUSE BUGS",
+        };
+        float cx = ((float)A.fbw - 320.0f) * 0.5f;
+        float cy2 = (float)A.fbh * 0.5f - 55.0f;
+        rk_ui_rect(0, 0, (float)A.fbw, (float)A.fbh, 0,0,0, 0.45f);
+        rk_ui_rect(cx, cy2, 320, 110, 0.13f,0.14f,0.17f, 1);
+        rk_ui_rect(cx, cy2, 320, 2, 1.0f,0.6f,0.2f, 1);
+        char db[48];
+        snprintf(db, sizeof db, "CHANGE %s?", WLBL[s_wConfirm]);
+        ui_text(cx + (320 - ui_text_w(db,2)) * 0.5f, cy2 + 14, db, 2, 1,1,1, 1);
+        ui_text(cx + (320 - ui_text_w(WWARN[s_wConfirm],1)) * 0.5f, cy2 + 44,
+                WWARN[s_wConfirm], 1, 1.0f,0.7f,0.4f, 1);
+        int hovY = in_rect((float)A.mx,(float)A.my, cx + 30, cy2 + 72, 110, 26);
+        rk_ui_rect(cx + 30, cy2 + 72, 110, 26,
+                   0.65f + hovY*0.15f, 0.22f, 0.20f, 1);
+        ui_text(cx + 30 + (110 - ui_text_w("APPLY",1)) * 0.5f, cy2 + 80,
+                "APPLY", 1, 1,1,1, 1);
+        int hovN = in_rect((float)A.mx,(float)A.my, cx + 180, cy2 + 72, 110, 26);
+        rk_ui_rect(cx + 180, cy2 + 72, 110, 26,
+                   0.22f + hovN*0.08f, 0.26f + hovN*0.08f, 0.34f + hovN*0.08f, 1);
+        ui_text(cx + 180 + (110 - ui_text_w("CANCEL",1)) * 0.5f, cy2 + 80,
+                "CANCEL", 1, 1,1,1, 1);
         rk_ui_flush();
     }
 }

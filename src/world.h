@@ -88,6 +88,25 @@ void worlds_set_dir(const char *d);     /* user-chosen save folder */
 void worlds_ensure(void);               /* mkdir save dir if missing */
 void world_block_migrate(Block *b, const uint8_t *rec, int ver); /* old rec sizes */
 
+/* per-world settings — v4 trailer after block records (older readers stop
+ * at EOF and get defaults). Fields marked dangerous in the UI reshape or
+ * invalidate world data; the panel warns before changing them. */
+typedef struct {
+    uint32_t magic;          /* 'BWS4' */
+    uint8_t  phys;           /* WS_PHYS_* : 0 arcade settle, 1 rigid bodies */
+    uint8_t  chunkShape;     /* 0 none, 1 column (MC-style), 2 cubic */
+    uint8_t  chunkSize;      /* cells per axis: 0/8/16/32 */
+    uint8_t  lod;            /* 0 off, 1 on */
+    uint8_t  advRender;      /* EXPERIMENTAL render-flag gate */
+    uint8_t  gravMul;        /* gravity scale in eighths (8 = 1.0x) */
+    uint8_t  skyAssets;      /* 0 preset sky, 1 user skybox objects */
+    uint8_t  pad[21];
+} WSet;
+#define WS_PHYS_SETTLE 0
+#define WS_PHYS_RIGID  1
+WSet *world_wset(void);          /* live record; edit in place */
+void world_wset_dirty(void);     /* call after edits -> autosave notices */
+
 /* play-mode gravity settle + script actions; call each frame while playing */
 void world_physics(float dt, uint16_t trigHeld);
 void world_reset_physics(void); /* restores pre-play transforms */

@@ -38,6 +38,11 @@ int main(void) {
     b.alpha = 1.0f; b.shape = 200;
     CHECK(world_addb(&b) == 1);
 
+    /* world-settings trailer: set non-defaults, verify round-trip */
+    world_wset()->chunkShape = 2;
+    world_wset()->chunkSize  = 32;
+    world_wset()->lod        = 1;
+    world_wset()->gravMul    = 4;                    /* 0.5x gravity */
     CHECK(world_save("test_v4_tmp.bw", "myworld"));
 
     /* v4 file must be smaller than the v3 flat dump for these 2 blocks */
@@ -50,6 +55,8 @@ int main(void) {
     CHECK(world_load("test_v4_tmp.bw", name));
     CHECK(g_nb == 2);
     CHECK(strcmp(name, "myworld") == 0);
+    CHECK(world_wset()->chunkShape == 2 && world_wset()->chunkSize == 32);
+    CHECK(world_wset()->lod == 1 && world_wset()->gravMul == 4);
 
     Block *p = &g_blocks[0];
     CHECK(p->pos.x == 2.5f && p->pos.z == -4.0f && p->size.z == 2.0f);
@@ -81,6 +88,7 @@ int main(void) {
     CHECK(g_blocks[0].id == 77 && g_blocks[0].shape == 5);
     CHECK(g_blocks[0].alpha == 1.0f);
     CHECK(g_nextid >= 100);
+    CHECK(world_wset()->chunkShape == 0 && world_wset()->gravMul == 8);
     remove("test_v3_tmp.bw");
 
     /* corrupt-version rejection */

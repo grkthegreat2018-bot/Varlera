@@ -109,6 +109,15 @@ void world_delete(int i) {
 
 static uint32_t s_created;    /* from v4 header; now() if absent */
 
+#define WS_MAGIC 0x34535742u    /* 'BWS4' settings trailer */
+static WSet s_wset;
+static void wset_defaults(void) {
+    memset(&s_wset, 0, sizeof s_wset);
+    s_wset.gravMul = 8;                        /* 1.0x gravity */
+}
+WSet *world_wset(void)     { return &s_wset; }
+void  world_wset_dirty(void) { g_rev++; }
+
 /* ---- save dir paths: <dir>/<san>.<ext>; san = [a-z0-9_-] ---- */
 static char s_dir[384] = "worlds";   /* user-chosen via WORLD tab DIR */
 
@@ -191,6 +200,8 @@ int world_save(const char *path, const char *name) {
         }
         if (fl & BF4_NAME) ok &= fwrite(b->name, 12, 1, f) == 1;
     }
+    s_wset.magic = WS_MAGIC;                 /* settings trailer (v4) */
+    ok &= fwrite(&s_wset, sizeof s_wset, 1, f) == 1;
     fclose(f);
     return ok;
 }
@@ -221,6 +232,7 @@ int world_load(const char *path, char *nameOut) {
     int ver = (int)hdr[1];
     g_nb = (int)hdr[2];
     s_created = 0;
+    wset_defaults();
     if (ver >= 3 && fread(&g_nextid, 4, 1, f) != 1) g_nextid = 1;
     int ok = 1;
     if (ver == BW_VER) {                       /* v4: meta header + packed */
@@ -254,6 +266,10 @@ int world_load(const char *path, char *nameOut) {
             if (b->id >= g_nextid) g_nextid = b->id + 1;
             if (!b->id) b->id = g_nextid++;
         }
+        /* settings trailer is optional: absent on pre-trailer v4 files */
+        WSet ws;
+        if (ok && fread(&ws, sizeof ws, 1, f) == 1 && ws.magic == WS_MAGIC)
+            s_wset = ws;
     } else if (ver < 3) {                      /* v1/v2 fixed-size records */
         int rec = ver == 1 ? BW_VER1_BLKSZ : BW_VER2_BLKSZ;
         uint8_t buf[BW_VER2_BLKSZ];
