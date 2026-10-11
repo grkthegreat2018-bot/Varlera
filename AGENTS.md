@@ -69,13 +69,17 @@ links m/dl/pthread. Win32-only code (file dialog, DPI awareness) is `_WIN32`
   NAME (textMode 3 rename, tracked by `Block.id`) + TRIG/ACT/TGT/PARAM
   cycle rows (full BW script row) + UNFUSE/RESCULPT. The SHAPES search box
   also sits on MODELS/PROPS and filters those grids (`model_matches`).
-- `src/world.c` — block store (`Block` 64B: pos/size/col/alpha/id/name/shape/
-  rot/tex/texm/flags/trig/act/actParam/tgt), undo/redo stacks, `world.bw`
+- `src/world.c` — block store (`Block` 68B: pos/size/col/alpha/id/name/shape/
+  rot/tex/texm/flags/trig/act/actParam/tgt/traction/bounce/weight —
+  stats are u8 0-15, defaults BS_TRACT 12 / BS_BOUNCE 0 / BS_WEIGHT 8,
+  editable via script-menu TRAC/BOUNCE/WEIGHT rows), undo/redo stacks,
+  `world.bw`
   binary save/load, play-mode gravity settle (XZ uniform grid broadphase)
-  + snapshot/restore. Format v4: 56B header (magic BWLB, ver, nBlocks,
+  + snapshot/restore. Format v5: 56B header (magic BWLB, ver, nBlocks,
   nextid, created, modified, name[32]) then per-block packed records —
-  flag byte, id, metadata bytes, u8 color/alpha, 6xi16 quantized pos/size
-  (1/16 grid, raw f32 when off-grid), optional name[12]; ~30B vs 64B v3.
+  flag byte, id, 9 metadata bytes, u8 color/alpha, traction/bounce/weight
+  (v5; v4 heads are 3B shorter), 6xi16 quantized pos/size (1/16 grid, raw
+  f32 when off-grid), optional name[12]; ~30B vs 68B v3.
   Readers migrate v1/v2/v3. `worlds_file(name,ext)` -> `<dir>/<san>.bw`
   (dir = `worlds_dir`, default "worlds", user-picked via WORLD tab DIR;
   persisted in settings.bw v2). Saves also write `worlds/<name>.bmp`

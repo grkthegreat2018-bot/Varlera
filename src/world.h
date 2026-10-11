@@ -17,8 +17,12 @@ typedef struct {
     uint8_t tex, texm;          /* tex: atlas id; texm: TEXM_* mode|type bits */
     uint8_t flags;
     uint8_t trig, act, actParam, tgt;  /* BW-style script row */
-    uint8_t pad[3];
-} Block;                        /* 64 bytes */
+    uint8_t traction, bounce, weight;  /* physics stats, 0..15 (defaults
+                                          BS_TRACT/BS_BOUNCE/BS_WEIGHT) */
+} Block;
+#define BS_TRACT  12            /* grippy by default */
+#define BS_BOUNCE  0
+#define BS_WEIGHT 8
 
 /* Block.flags bits */
 #define BF_LOCKED   1           /* can't be selected/moved/edited */

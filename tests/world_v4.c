@@ -29,6 +29,7 @@ int main(void) {
     b.shape = 3; b.rot = 1; b.tex = 7; b.texm = (uint8_t)((TEXM_METAL << 3) | TEXM_OVR);
     b.flags = BF_GLASS; b.trig = TRIG_SPACE; b.act = ACT_COLOR;
     b.actParam = 5; b.tgt = TGT_NAME; snprintf(b.name, sizeof b.name, "engine");
+    b.traction = 3; b.bounce = 15; b.weight = 9;
     int i0 = world_addb(&b);
     CHECK(i0 == 0 && g_blocks[0].id == 1);
 
@@ -64,6 +65,7 @@ int main(void) {
     CHECK((p->texm >> 3) == TEXM_METAL && (p->texm & TEXM_OVR));
     CHECK(p->trig == TRIG_SPACE && p->act == ACT_COLOR &&
           p->actParam == 5 && p->tgt == TGT_NAME);
+    CHECK(p->traction == 3 && p->bounce == 15 && p->weight == 9);
     CHECK(strcmp(p->name, "engine") == 0);
     CHECK(fabsf(p->alpha - 0.75f) < 0.005f);
     CHECK(fabsf(p->col[0] - 0.8f) < 0.005f);

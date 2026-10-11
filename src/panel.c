@@ -1221,9 +1221,10 @@ void panel_draw(void) {
 
 /* ---- block script menu: floats above the selection ---- */
 enum { SM_GRAV, SM_COLL, SM_LOCK, SM_NAME, SM_TRIG, SM_ACT, SM_TGT, SM_PARAM,
-       SM_UNFUSE, SM_FUSE, SM_EDIT };
+       SM_TRACT, SM_BOUNCE, SM_WEIGHT, SM_UNFUSE, SM_FUSE, SM_EDIT };
 static const char *SM_LABEL[] = {"GRAVITY","COLLIDE","LOCKED","NAME","TRIG","ACT",
-                                 "TGT","PARAM","UNFUSE","FUSE ALL","RESCULPT"};
+                                 "TGT","PARAM","TRAC","BOUNCE","WEIGHT",
+                                 "UNFUSE","FUSE ALL","RESCULPT"};
 static const char *TRIG_NAME[N_TRIGS] = {"ALWAYS","SPACE","W","A","S","D","E","Q","CLICK"};
 static const char *ACT_NAME[N_ACTS] = {"NONE","SPIN","GLOW","BOOST","COLOR","TEX","DELETE"};
 static const char *TGT_LBL[4] = {"SELF","ASSET","NAME","ALL"};
@@ -1243,7 +1244,7 @@ static const char *mesh_display_name(int mesh) {
     return "SHAPE";
 }
 
-static int script_layout(float *bx, float *by, int acts[12]) {
+static int script_layout(float *bx, float *by, int acts[16]) {
     if (A.app != APP_EDIT || !A.nsel || A.drag != M_IDLE) return 0;
     int nr = 0;
     if (A.nsel == 1) {
@@ -1251,6 +1252,7 @@ static int script_layout(float *bx, float *by, int acts[12]) {
         acts[nr++] = SM_NAME;
         acts[nr++] = SM_TRIG; acts[nr++] = SM_ACT; acts[nr++] = SM_TGT;
         acts[nr++] = SM_PARAM;
+        acts[nr++] = SM_TRACT; acts[nr++] = SM_BOUNCE; acts[nr++] = SM_WEIGHT;
         int si0 = sel_first();
         int sh = g_blocks[si0].shape;
         if (sh >= RK_MESH_BASE_MODEL) {
@@ -1278,7 +1280,7 @@ static int script_state(int act, const Block *b) {
 }
 
 static void draw_script_menu(void) {
-    int acts[12]; float bx, by;
+    int acts[16]; float bx, by;
     int nr = script_layout(&bx, &by, acts);
     if (!nr) return;
     float hdr = A.nsel == 1 ? 66.0f : 26.0f;
@@ -1309,7 +1311,8 @@ static void draw_script_menu(void) {
         int hov = in_rect((float)A.mx,(float)A.my, bx+4, ry, SM_W-8, 19);
         int btn = acts[r] == SM_FUSE || acts[r] == SM_UNFUSE ||
                   acts[r] == SM_TRIG || acts[r] == SM_ACT || acts[r] == SM_EDIT ||
-                  acts[r] == SM_NAME || acts[r] == SM_TGT || acts[r] == SM_PARAM;
+                  acts[r] == SM_NAME || acts[r] == SM_TGT || acts[r] == SM_PARAM ||
+                  acts[r] >= SM_TRACT && acts[r] <= SM_WEIGHT;
         rk_ui_rect(bx+4, ry, SM_W-8, 19,
                    btn ? 0.25f : 0.16f+hov*0.08f,
                    btn ? 0.42f : 0.17f+hov*0.08f,
@@ -1320,6 +1323,9 @@ static void draw_script_menu(void) {
         else if (b && acts[r] == SM_ACT) { snprintf(lab, sizeof lab, "ACT: %s", ACT_NAME[b->act]); txt = lab; }
         else if (b && acts[r] == SM_TGT) { snprintf(lab, sizeof lab, "TGT: %s", TGT_LBL[b->tgt & 3]); txt = lab; }
         else if (b && acts[r] == SM_PARAM) { snprintf(lab, sizeof lab, "PARAM: %d", b->actParam); txt = lab; }
+        else if (b && acts[r] == SM_TRACT) { snprintf(lab, sizeof lab, "TRAC: %d", b->traction); txt = lab; }
+        else if (b && acts[r] == SM_BOUNCE) { snprintf(lab, sizeof lab, "BOUNCE: %d", b->bounce); txt = lab; }
+        else if (b && acts[r] == SM_WEIGHT) { snprintf(lab, sizeof lab, "WEIGHT: %d", b->weight); txt = lab; }
         else if (b && acts[r] == SM_NAME) {
             if (A.textMode == 3)
                 snprintf(lab, sizeof lab, "NAME: %s_", A.renBuf);
@@ -1368,7 +1374,7 @@ void panel_rename_commit(void) {
 }
 
 int panel_script_click(double x, double y) {
-    int acts[12]; float bx, by;
+    int acts[16]; float bx, by;
     int nr = script_layout(&bx, &by, acts);
     if (!nr) return 0;
     float hdr = A.nsel == 1 ? 66.0f : 26.0f;
@@ -1391,7 +1397,10 @@ int panel_script_click(double x, double y) {
             g_blocks[i].flags &= ~BF_SPIN;   /* migrated to trig/act */
             break;
         case SM_TGT:   g_blocks[i].tgt = (g_blocks[i].tgt + 1) & 3; break;
-        case SM_PARAM: g_blocks[i].actParam = (g_blocks[i].actParam + 1) & 15; break;
+        case SM_PARAM:  g_blocks[i].actParam = (g_blocks[i].actParam + 1) & 15; break;
+        case SM_TRACT:  g_blocks[i].traction = (g_blocks[i].traction + 1) & 15; break;
+        case SM_BOUNCE: g_blocks[i].bounce  = (g_blocks[i].bounce + 1) & 15; break;
+        case SM_WEIGHT: g_blocks[i].weight  = (g_blocks[i].weight + 1) & 15; break;
         case SM_LOCK:
             for (int j = 0; j < g_nb; j++) if (A.sel[j]) {
                 g_blocks[j].flags ^= BF_LOCKED;

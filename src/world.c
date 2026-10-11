@@ -77,6 +77,7 @@ int world_add(v3 pos, v3 size, int shape, int rot, const float col[3]) {
     b->pos = pos; b->size = size; b->shape = (uint8_t)shape; b->rot = (uint8_t)rot;
     b->alpha = 1.0f;
     b->id = g_nextid++;
+    b->traction = BS_TRACT; b->bounce = BS_BOUNCE; b->weight = BS_WEIGHT;
     memcpy(b->col, col, sizeof(float)*3);
     g_rev++;
     return g_nb++;
@@ -102,7 +103,7 @@ void world_delete(int i) {
 /* ---------------- save/load ---------------- */
 
 #define BW_MAGIC 0x42574C42u  /* 'BWLB' */
-#define BW_VER   4
+#define BW_VER   5              /* v5 = v4 + 3 stat bytes in block head */
 #define BW_VER1_BLKSZ 40      /* v1: no trig/act */
 #define BW_VER2_BLKSZ 44      /* v2: +trig/act; no texm/alpha/id/name */
 #define BW_VER3_BLKSZ 64      /* v3: raw Block */
@@ -179,16 +180,17 @@ int world_save(const char *path, const char *name) {
         int raw = !(quant_ok(b->pos.x) && quant_ok(b->pos.y) && quant_ok(b->pos.z) &&
                     quant_ok(b->size.x) && quant_ok(b->size.y) && quant_ok(b->size.z));
         if (raw) fl |= BF4_RAWPOS;
-        uint8_t head[16] = { fl };
+        uint8_t head[18] = { fl };
         memcpy(head + 1, &b->id, 4);
         head[5] = b->shape; head[6] = b->rot; head[7] = b->tex;
         head[8] = b->texm;  head[9] = b->flags; head[10] = b->trig;
         head[11] = b->act;  head[12] = b->actParam; head[13] = b->tgt;
         head[14] = (uint8_t)(clampf(b->alpha, 0.0f, 1.0f) * 255.0f + 0.5f);
+        head[15] = b->traction; head[16] = b->bounce; head[17] = b->weight;
         uint8_t col3[3];
         for (int c = 0; c < 3; c++)
             col3[c] = (uint8_t)(clampf(b->col[c], 0.0f, 1.0f) * 255.0f + 0.5f);
-        ok = fwrite(head, 15, 1, f) == 1 && fwrite(col3, 3, 1, f) == 1;
+        ok = fwrite(head, 18, 1, f) == 1 && fwrite(col3, 3, 1, f) == 1;
         if (raw) ok &= fwrite(b->pos.e, 4, 6, f) == 6;      /* pos+size are contiguous */
         else {
             int16_t q[6];
@@ -209,6 +211,7 @@ int world_save(const char *path, const char *name) {
 static void block_defaults(Block *b) {
     b->alpha = 1.0f;
     b->id = g_nextid++;
+    b->traction = BS_TRACT; b->bounce = BS_BOUNCE; b->weight = BS_WEIGHT;
 }
 
 /* v1/v2 record: pos,size,col (36B) + shape,rot,tex,flags (4B) [+trig,act in v2] */
@@ -235,22 +238,28 @@ int world_load(const char *path, char *nameOut) {
     wset_defaults();
     if (ver >= 3 && fread(&g_nextid, 4, 1, f) != 1) g_nextid = 1;
     int ok = 1;
-    if (ver == BW_VER) {                       /* v4: meta header + packed */
+    if (ver >= 4) {                            /* v4/v5: meta header + packed */
         uint8_t rest[40];                      /* created, modified, name[32] */
         if (fread(rest, 1, 40, f) != 40) { fclose(f); g_nb = 0; return 0; }
         memcpy(&s_created, rest, 4);
         if (nameOut && rest[8]) { memcpy(nameOut, rest + 8, 32); nameOut[31] = 0; }
+        int hsz = ver >= 5 ? 18 : 15;          /* v5 adds stat bytes */
         for (int i = 0; i < g_nb && ok; i++) {
             Block *b = &g_blocks[i];
             memset(b, 0, sizeof *b);
-            uint8_t head[15], col3[3];
-            ok = fread(head, 15, 1, f) == 1 && fread(col3, 3, 1, f) == 1;
+            uint8_t head[18], col3[3];
+            ok = fread(head, (size_t)hsz, 1, f) == 1 && fread(col3, 3, 1, f) == 1;
             if (!ok) break;
             memcpy(&b->id, head + 1, 4);
             b->shape = head[5];  b->rot = head[6];  b->tex = head[7];
             b->texm = head[8];   b->flags = head[9]; b->trig = head[10];
             b->act = head[11];   b->actParam = head[12]; b->tgt = head[13];
             b->alpha = head[14] / 255.0f;
+            if (ver >= 5) {
+                b->traction = head[15]; b->bounce = head[16]; b->weight = head[17];
+            } else {                           /* v4 predates stats */
+                b->traction = BS_TRACT; b->bounce = BS_BOUNCE; b->weight = BS_WEIGHT;
+            }
             for (int c = 0; c < 3; c++) b->col[c] = col3[c] / 255.0f;
             if (head[0] & BF4_RAWPOS) ok = fread(b->pos.e, 4, 6, f) == 6;
             else {
@@ -283,6 +292,9 @@ int world_load(const char *path, char *nameOut) {
             if (g_blocks[i].alpha <= 0.0f) g_blocks[i].alpha = 1.0f;
             if (g_blocks[i].id >= g_nextid) g_nextid = g_blocks[i].id + 1;
             if (!g_blocks[i].id) g_blocks[i].id = g_nextid++;
+            /* v3 predates stats (pad bytes were 0) -> defaults */
+            g_blocks[i].traction = BS_TRACT; g_blocks[i].bounce = BS_BOUNCE;
+            g_blocks[i].weight = BS_WEIGHT;
         }
     }
     fclose(f);
