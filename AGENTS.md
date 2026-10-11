@@ -71,8 +71,15 @@ links m/dl/pthread. Win32-only code (file dialog, DPI awareness) is `_WIN32`
   also sits on MODELS/PROPS and filters those grids (`model_matches`).
 - `src/world.c` — block store (`Block` 64B: pos/size/col/alpha/id/name/shape/
   rot/tex/texm/flags/trig/act/actParam/tgt), undo/redo stacks, `world.bw`
-  binary save/load (v3; reads v1/v2), play-mode gravity settle (XZ uniform
-  grid broadphase) + snapshot/restore.
+  binary save/load, play-mode gravity settle (XZ uniform grid broadphase)
+  + snapshot/restore. Format v4: 56B header (magic BWLB, ver, nBlocks,
+  nextid, created, modified, name[32]) then per-block packed records —
+  flag byte, id, metadata bytes, u8 color/alpha, 6xi16 quantized pos/size
+  (1/16 grid, raw f32 when off-grid), optional name[12]; ~30B vs 64B v3.
+  Readers migrate v1/v2/v3. `worlds_file(name,ext)` -> `worlds/<san>.bw`;
+  saves also write `worlds/<name>.bmp` thumbnail; autosave every 90s to
+  `worlds/<name>.auto.bw` when `world_rev()` changed. `tests/world_v4.c`
+  is a ctest target covering round-trip + v3 migration.
 - `src/prof.c` / `prof.h` — frame cost logging. `prof_zone_begin/end(PZ_*)`
   around frame phases; `prof_count(PC_*)` for draws/insts/verts/blocks.
   GPU times come from `rk_gpu_times` (per-in-flight timestamp query pools:

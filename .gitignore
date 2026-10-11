@@ -3,6 +3,7 @@ shot*.png
 *.bmp
 varlera.log
 crash_*.dmp
+worlds/
 *_err.log
 tee_check.log
 .devin/scratchpad.md

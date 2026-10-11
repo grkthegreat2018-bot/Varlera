@@ -79,8 +79,11 @@ void world_push_undo(void);
 int  world_undo(void);
 int  world_redo(void);
 
-int  world_save(const char *path);
-int  world_load(const char *path);
+int  world_save(const char *path, const char *name);
+int  world_load(const char *path, char *nameOut /*32, may be NULL*/);
+uint64_t world_rev(void);        /* mutation counter -> autosave dirty check */
+const char *worlds_file(const char *name, const char *ext); /* worlds/<san>.<ext> */
+void worlds_ensure(void);        /* mkdir worlds/ if missing */
 void world_block_migrate(Block *b, const uint8_t *rec, int ver); /* old rec sizes */
 
 /* play-mode gravity settle + script actions; call each frame while playing */

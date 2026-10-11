@@ -538,6 +538,7 @@ int panel_press(double x, double y) {
 
     /* WORLD tab */
     if (A.panelTab != 3) return 1;
+    if (in_rect(fx, fy, px + 8, 58, PW - 16, 20)) { A.textMode = 4; return 1; }
     float by = 80;
     struct { float x; const char *n; } btns[] = {
         {px+8, "SAVE"}, {px+76, "LOAD"}, {px+144, "UNDO"},
@@ -547,8 +548,12 @@ int panel_press(double x, double y) {
         float bx = btns[i].x, byy = by + (i/3)*30;
         if (in_rect(fx, fy, bx, byy, 62, 24)) {
             switch (i) {
-            case 0: world_save("world.bw"); tex_save("textures.bw"); break;
-            case 1: if (world_load("world.bw")) sel_clear(); break;
+            case 0: worlds_ensure();
+                    world_save(worlds_file(A.worldName, "bw"), A.worldName);
+                    tex_save("textures.bw");
+                    rk_screenshot(worlds_file(A.worldName, "bmp")); break;
+            case 1: if (world_load(worlds_file(A.worldName, "bw"), A.worldName) ||
+                        world_load("world.bw", A.worldName)) sel_clear(); break;
             case 2: if (world_undo()) sel_clear(); break;
             case 3: if (world_redo()) sel_clear(); break;
             case 4: world_push_undo(); g_nb = 0; sel_clear(); break;
@@ -888,6 +893,15 @@ static void draw_tex(float px) {
 }
 
 static void draw_world(float px) {
+    /* world name field -> worlds/<name>.bw (textMode 4) */
+    int foc = A.textMode == 4;
+    rk_ui_rect(px + 8, 58, PW - 16, 20,
+               foc ? 0.24f : 0.15f, foc ? 0.26f : 0.16f, foc ? 0.34f : 0.21f, 1);
+    rk_ui_rect(px + 8, 58, PW - 16, 1.5f, 0.4f,0.6f,0.9f, foc ? 0.9f : 0.4f);
+    char nb[56];
+    snprintf(nb, sizeof nb, "NAME: %s%s", A.worldName, foc ? "_" : "");
+    ui_text(px + 14, 64, nb, 1,
+            foc ? 1.0f : 0.75f, foc ? 1.0f : 0.78f, foc ? 1.0f : 0.85f, 1);
     const char *names[] = {"SAVE","LOAD","UNDO","REDO","CLEAR"};
     for (int i = 0; i < 5; i++) {
         float bx = px + 8 + (i%3)*68;

@@ -75,6 +75,19 @@ add_custom_command(TARGET varlera POST_BUILD
   COMMAND ${CMAKE_COMMAND} -E copy_directory
           ${SHADER_BIN_DIR} $<TARGET_FILE_DIR:varlera>/shaders)
 
+# --- unit tests (link only what they need; no Vulkan/glfw) ---
+enable_testing()
+add_executable(world_v4_test tests/world_v4.c src/world.c)
+target_include_directories(world_v4_test PRIVATE src)
+if(MSVC)
+  target_compile_options(world_v4_test PRIVATE /W4 /wd4201)
+endif()
+if(UNIX AND NOT APPLE)
+  target_link_libraries(world_v4_test PRIVATE m)
+endif()
+add_test(NAME world_v4 COMMAND world_v4_test
+         WORKING_DIRECTORY ${CMAKE_BINARY_DIR})
+
 if(MSVC)
   target_compile_options(varlera PRIVATE /W4 /wd4201)
   # GUI subsystem but keep main() (stderr still works when redirected)

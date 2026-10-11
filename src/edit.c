@@ -489,7 +489,11 @@ void edit_lmb_motion(void) {            /* click -> move once past threshold */
 }
 
 static void save_all(void) {
-    world_save("world.bw"); tex_save("textures.bw"); puts("saved");
+    worlds_ensure();
+    world_save(worlds_file(A.worldName, "bw"), A.worldName);
+    tex_save("textures.bw");
+    rk_screenshot(worlds_file(A.worldName, "bmp"));   /* world thumbnail */
+    fprintf(stderr, "saved -> %s\n", worlds_file(A.worldName, "bw"));
 }
 
 void edit_key(int key, int mods) {
@@ -576,7 +580,9 @@ void edit_key(int key, int mods) {
         break;
     case GLFW_KEY_F5: save_all(); break;
     case GLFW_KEY_F9:
-        if (world_load("world.bw")) puts("loaded world.bw"); else puts("no world.bw");
+        if (world_load(worlds_file(A.worldName, "bw"), A.worldName) ||
+            world_load("world.bw", A.worldName))
+            puts("loaded world"); else puts("no saved world");
         sel_clear();
         break;
     case GLFW_KEY_F: cam_focus_sel(); break;

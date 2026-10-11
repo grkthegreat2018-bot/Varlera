@@ -54,6 +54,9 @@ static void on_char(GLFWwindow *w, unsigned int cp) {
     } else if (A.textMode == 3) {
         int n = (int)strlen(A.renBuf);
         if (n < 11) { A.renBuf[n] = (char)cp; A.renBuf[n+1] = 0; }
+    } else if (A.textMode == 4) {
+        int n = (int)strlen(A.worldName);
+        if (n < 24) { A.worldName[n] = (char)cp; A.worldName[n+1] = 0; }
     }
 }
 
@@ -183,6 +186,7 @@ static void on_key(GLFWwindow *w, int key, int sc, int action, int mods) {
             if (A.textMode == 1) { int n = (int)strlen(A.search); if (n) A.search[n-1] = 0; }
             else if (A.textMode == 2 && A.cmdLen) A.cmdBuf[--A.cmdLen] = 0;
             else if (A.textMode == 3) { int n = (int)strlen(A.renBuf); if (n) A.renBuf[n-1] = 0; }
+            else if (A.textMode == 4) { int n = (int)strlen(A.worldName); if (n) A.worldName[n-1] = 0; }
         }
         return;
     }
@@ -269,7 +273,11 @@ int main(void) {
     panel_init();
     tex_init();                  /* atlas: built-ins + textures.bw */
     models_init();               /* reload saved custom models */
-    world_load("world.bw");      /* auto-load last world if present */
+    worlds_ensure();
+    snprintf(A.worldName, sizeof A.worldName, "world");
+    /* autoload: worlds/world.bw first, legacy world.bw fallback */
+    if (!world_load(worlds_file(A.worldName, "bw"), A.worldName))
+        world_load("world.bw", A.worldName);
     A.app = APP_EDIT;
     A.drag = M_IDLE;
     A.hoverBlock = A.hoverAxis = A.hoverAsset = -1;
@@ -279,6 +287,7 @@ int main(void) {
        frame 45 then continues (handy for agent/CI verification) */
     const char *envShot = getenv("VARLERA_SHOT");
     const char *envReload = getenv("VARLERA_RELOAD");   /* test hook: F8 path */
+    const char *envSave  = getenv("VARLERA_SAVE");      /* test hook: v4 save */
     int frameNo = 0;
 
     puts("Varlera controls:");
@@ -344,11 +353,24 @@ int main(void) {
         prof_zone_end(PZ_END);
         ++frameNo;
         if (envShot && frameNo == 45) rk_screenshot(envShot);
+        if (envSave && frameNo == 50) {
+            worlds_ensure();
+            world_save(worlds_file(A.worldName, "bw"), A.worldName);
+        }
         if (envReload && frameNo == 60) {
             toast_say(rk_reload_shaders() ? "shaders reloaded"
                                           : "shader reload: compile errors");
         }
         if (A.setDirty) { A.setDirty = 0; settings_save(); }
+        /* autosave: world mutated + 90s since last write -> .auto.bw */
+        static uint64_t s_lastRev; static double s_lastAuto;
+        if (world_rev() != s_lastRev && t - s_lastAuto > 90.0) {
+            worlds_ensure();
+            if (world_save(worlds_file(A.worldName, "auto.bw"), A.worldName)) {
+                s_lastRev = world_rev(); s_lastAuto = t;
+                fprintf(stderr, "autosaved -> %s\n", worlds_file(A.worldName, "auto.bw"));
+            }
+        }
 
         prof_count(PC_BLOCKS, g_nb);
         RkStats rs; rk_query_stats(&rs);

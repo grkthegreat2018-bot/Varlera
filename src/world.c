@@ -2,6 +2,12 @@
 #include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <time.h>
+#ifdef _WIN32
+#include <direct.h>
+#else
+#include <sys/stat.h>
+#endif
 
 Block g_blocks[MAX_BLOCKS];
 int g_nb;
@@ -22,6 +28,10 @@ typedef struct { int n; Block blocks[MAX_BLOCKS]; } Snapshot;
 static Snapshot g_undo[UNDO_DEPTH], g_redo[UNDO_DEPTH];
 static int g_un, g_re;
 
+static uint64_t g_rev;               /* bumped on every mutating op */
+
+uint64_t world_rev(void) { return g_rev; }
+
 void world_push_undo(void) {
     if (g_un == UNDO_DEPTH) {        /* drop oldest */
         memmove(&g_undo[0], &g_undo[1], sizeof g_undo - sizeof g_undo[0]);
@@ -31,6 +41,7 @@ void world_push_undo(void) {
     memcpy(g_undo[g_un].blocks, g_blocks, sizeof(Block) * g_nb);
     g_un++;
     g_re = 0;                         /* new edit clears redo */
+    g_rev++;
 }
 
 static int undo_apply(Snapshot *from, Snapshot *to, int *toN) {
@@ -41,6 +52,7 @@ static int undo_apply(Snapshot *from, Snapshot *to, int *toN) {
     }
     g_nb = from->n;
     memcpy(g_blocks, from->blocks, sizeof(Block) * g_nb);
+    g_rev++;
     return 1;
 }
 
@@ -66,6 +78,7 @@ int world_add(v3 pos, v3 size, int shape, int rot, const float col[3]) {
     b->alpha = 1.0f;
     b->id = g_nextid++;
     memcpy(b->col, col, sizeof(float)*3);
+    g_rev++;
     return g_nb++;
 }
 
@@ -76,27 +89,101 @@ int world_addb(const Block *src) {
     if (g_blocks[i].alpha <= 0.0f) g_blocks[i].alpha = 1.0f;
     if (!g_blocks[i].id) g_blocks[i].id = g_nextid++;
     if (g_blocks[i].id >= g_nextid) g_nextid = g_blocks[i].id + 1;
+    g_rev++;
     return i;
 }
 
 void world_delete(int i) {
     g_blocks[i] = g_blocks[g_nb-1];
     g_nb--;
+    g_rev++;
 }
 
 /* ---------------- save/load ---------------- */
 
 #define BW_MAGIC 0x42574C42u  /* 'BWLB' */
-#define BW_VER   3
+#define BW_VER   4
 #define BW_VER1_BLKSZ 40      /* v1: no trig/act */
 #define BW_VER2_BLKSZ 44      /* v2: +trig/act; no texm/alpha/id/name */
+#define BW_VER3_BLKSZ 64      /* v3: raw Block */
 
-int world_save(const char *path) {
+static uint32_t s_created;    /* from v4 header; now() if absent */
+
+/* ---- worlds/ dir paths: worlds/<san>.<ext>; san = [a-z0-9_-] ---- */
+const char *worlds_file(const char *name, const char *ext) {
+    static char s_path[160];
+    char san[25]; int n = 0;
+    for (const char *p = name; *p && n < 24; p++) {
+        char c = *p;
+        if (c >= 'A' && c <= 'Z') c += (char)('a' - 'A');
+        if (!((c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') ||
+              c == '-' || c == '_')) c = '_';
+        san[n++] = c;
+    }
+    if (!n) { san[0] = 'w'; san[1] = 0; } else san[n] = 0;
+    snprintf(s_path, sizeof s_path, "worlds/%s.%s", san, ext);
+    return s_path;
+}
+
+void worlds_ensure(void) {
+#ifdef _WIN32
+    _mkdir("worlds");
+#else
+    mkdir("worlds", 0755);
+#endif
+}
+
+/* v4 per-block record: flag byte + id + 9 meta bytes + u8 col + u8 alpha
+   + 6xi16 quantized pos/size (or 6xf32 when out of the 1/16 grid/range)
+   + optional name[12]. ~28B vs the v3 64B dump. */
+#define BF4_RAWPOS  1
+#define BF4_NAME    2
+
+static int quant_ok(float v) {
+    float q = v * 16.0f;
+    return fabsf(q - floorf(q + 0.5f)) < 0.02f && fabsf(q) < 32700.0f;
+}
+
+int world_save(const char *path, const char *name) {
     FILE *f = fopen(path, "wb");
     if (!f) return 0;
-    uint32_t hdr[4] = {BW_MAGIC, BW_VER, (uint32_t)g_nb, g_nextid};
-    int ok = fwrite(hdr, 4, 4, f) == 4 &&
-             fwrite(g_blocks, sizeof(Block), (size_t)g_nb, f) == (size_t)g_nb;
+    if (!s_created) s_created = (uint32_t)time(NULL);
+    struct { uint32_t magic, ver, nblocks, nextid, created, modified;
+             uint8_t name[32]; } hdr;
+    memset(&hdr, 0, sizeof hdr);
+    hdr.magic = BW_MAGIC; hdr.ver = BW_VER;
+    hdr.nblocks = (uint32_t)g_nb; hdr.nextid = g_nextid;
+    hdr.created = s_created; hdr.modified = (uint32_t)time(NULL);
+    snprintf((char *)hdr.name, 32, "%s", name && name[0] ? name : "world");
+    if (fwrite(&hdr, sizeof hdr, 1, f) != 1) { fclose(f); return 0; }
+    int ok = 1;
+    for (int i = 0; i < g_nb && ok; i++) {
+        const Block *b = &g_blocks[i];
+        uint8_t fl = b->name[0] ? BF4_NAME : 0;
+        int raw = !(quant_ok(b->pos.x) && quant_ok(b->pos.y) && quant_ok(b->pos.z) &&
+                    quant_ok(b->size.x) && quant_ok(b->size.y) && quant_ok(b->size.z));
+        if (raw) fl |= BF4_RAWPOS;
+        uint8_t head[16] = { fl };
+        memcpy(head + 1, &b->id, 4);
+        head[5] = b->shape; head[6] = b->rot; head[7] = b->tex;
+        head[8] = b->texm;  head[9] = b->flags; head[10] = b->trig;
+        head[11] = b->act;  head[12] = b->actParam; head[13] = b->tgt;
+        head[14] = (uint8_t)(clampf(b->alpha, 0.0f, 1.0f) * 255.0f + 0.5f);
+        uint8_t col3[3];
+        for (int c = 0; c < 3; c++)
+            col3[c] = (uint8_t)(clampf(b->col[c], 0.0f, 1.0f) * 255.0f + 0.5f);
+        ok = fwrite(head, 15, 1, f) == 1 && fwrite(col3, 3, 1, f) == 1;
+        if (raw) ok &= fwrite(b->pos.e, 4, 6, f) == 6;      /* pos+size are contiguous */
+        else {
+            int16_t q[6];
+            for (int c = 0; c < 3; c++) {
+                q[c]   = (int16_t)floorf(b->pos.e[c] * 16.0f + 0.5f);
+                q[c+3] = (int16_t)floorf(b->size.e[c] * 16.0f + 0.5f);
+            }
+            ok &= fwrite(q, 12, 1, f) == 1;
+        }
+        if (fl & BF4_NAME) ok &= fwrite(b->name, 12, 1, f) == 1;
+    }
     fclose(f);
     return ok;
 }
@@ -116,26 +203,58 @@ void world_block_migrate(Block *b, const uint8_t *rec, int ver) {
     block_defaults(b);
 }
 
-int world_load(const char *path) {
+int world_load(const char *path, char *nameOut) {
     FILE *f = fopen(path, "rb");
     if (!f) return 0;
     uint32_t hdr[4] = {0};
     if (fread(hdr, 4, 3, f) != 3 || hdr[0] != BW_MAGIC ||
-        (hdr[1] != 1 && hdr[1] != 2 && hdr[1] != BW_VER) || hdr[2] > MAX_BLOCKS) {
+        hdr[1] < 1 || hdr[1] > BW_VER || hdr[2] > MAX_BLOCKS) {
         fclose(f); return 0;
     }
     int ver = (int)hdr[1];
     g_nb = (int)hdr[2];
-    if (ver == BW_VER && fread(&g_nextid, 4, 1, f) != 1) g_nextid = 1;
+    s_created = 0;
+    if (ver >= 3 && fread(&g_nextid, 4, 1, f) != 1) g_nextid = 1;
     int ok = 1;
-    if (ver < BW_VER) {                       /* legacy fixed-size records */
+    if (ver == BW_VER) {                       /* v4: meta header + packed */
+        uint8_t rest[40];                      /* created, modified, name[32] */
+        if (fread(rest, 1, 40, f) != 40) { fclose(f); g_nb = 0; return 0; }
+        memcpy(&s_created, rest, 4);
+        if (nameOut && rest[8]) { memcpy(nameOut, rest + 8, 32); nameOut[31] = 0; }
+        for (int i = 0; i < g_nb && ok; i++) {
+            Block *b = &g_blocks[i];
+            memset(b, 0, sizeof *b);
+            uint8_t head[15], col3[3];
+            ok = fread(head, 15, 1, f) == 1 && fread(col3, 3, 1, f) == 1;
+            if (!ok) break;
+            memcpy(&b->id, head + 1, 4);
+            b->shape = head[5];  b->rot = head[6];  b->tex = head[7];
+            b->texm = head[8];   b->flags = head[9]; b->trig = head[10];
+            b->act = head[11];   b->actParam = head[12]; b->tgt = head[13];
+            b->alpha = head[14] / 255.0f;
+            for (int c = 0; c < 3; c++) b->col[c] = col3[c] / 255.0f;
+            if (head[0] & BF4_RAWPOS) ok = fread(b->pos.e, 4, 6, f) == 6;
+            else {
+                int16_t q[6];
+                ok = fread(q, 12, 1, f) == 1;
+                for (int c = 0; c < 3; c++) {
+                    b->pos.e[c]  = q[c]   / 16.0f;
+                    b->size.e[c] = q[c+3] / 16.0f;
+                }
+            }
+            if (head[0] & BF4_NAME) ok &= fread(b->name, 12, 1, f) == 1;
+            if (b->alpha <= 0.0f) b->alpha = 1.0f;
+            if (b->id >= g_nextid) g_nextid = b->id + 1;
+            if (!b->id) b->id = g_nextid++;
+        }
+    } else if (ver < 3) {                      /* v1/v2 fixed-size records */
         int rec = ver == 1 ? BW_VER1_BLKSZ : BW_VER2_BLKSZ;
         uint8_t buf[BW_VER2_BLKSZ];
         for (int i = 0; i < g_nb; i++) {
             if (fread(buf, rec, 1, f) != 1) { ok = 0; break; }
             world_block_migrate(&g_blocks[i], buf, ver);
         }
-    } else {
+    } else {                                   /* v3: raw Block dump */
         ok = fread(g_blocks, sizeof(Block), g_nb, f) == (size_t)g_nb;
         for (int i = 0; i < g_nb; i++) {
             if (g_blocks[i].alpha <= 0.0f) g_blocks[i].alpha = 1.0f;
@@ -146,6 +265,7 @@ int world_load(const char *path) {
     fclose(f);
     if (!ok) { g_nb = 0; return 0; }
     g_un = g_re = 0;
+    g_rev++;
     return 1;
 }
 
