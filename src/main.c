@@ -64,6 +64,7 @@ static void toggle_fullscreen(void) {
 
 static void on_cursor(GLFWwindow *w, double x, double y) {
     double dx = x - A.mx, dy = y - A.my;
+    (void)w;
     A.mx = x; A.my = y;
     if (A.modal == 1) { art_motion(); return; }
     if (A.modal == 2) {

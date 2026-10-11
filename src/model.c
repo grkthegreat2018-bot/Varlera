@@ -127,7 +127,7 @@ static int bake_mesh(const Block *rel, int n, v3 size) {
    so touching faces box-project continuously and read as one piece */
 static int bake_topo(const float (*vx)[3], const uint8_t (*vc)[3],
                      const int8_t *vt,
-                     const uint16_t (*fc)[3], int nv, int nf, v3 size) {
+                     const uint16_t (*fc)[3], int nf, v3 size) {
     static Vert buf[MODEL_MAX_FACES * 3];
     int n = 0;
     for (int f = 0; f < nf && n + 3 <= MODEL_MAX_FACES * 3; f++) {
@@ -162,7 +162,7 @@ static int bake_topo(const float (*vx)[3], const uint8_t (*vc)[3],
 static int model_rebake(const Model *m) {
     if (m->vox)
         return bake_topo(m->mv, m->mvcol, m->mvtex, m->mf,
-                         m->nvert, m->nface, m->size);
+                         m->nface, m->size);
     return bake_mesh(m->ch, m->nch, m->size);
 }
 
@@ -224,7 +224,7 @@ int model_sculpt_topo(const float (*vx)[3], const uint8_t (*vc)[3],
     else    memset(m->mvtex, -1, (size_t)nv);
     if (vl) memcpy(m->mvlock, vl, (size_t)nv);
     memcpy(m->mf, fc, (size_t)nf * sizeof m->mf[0]);
-    m->mesh = bake_topo(m->mv, m->mvcol, m->mvtex, m->mf, nv, nf, m->size);
+    m->mesh = bake_topo(m->mv, m->mvcol, m->mvtex, m->mf, nf, m->size);
     if (m->mesh < 0) return -1;
     return g_nmodels++;
 }

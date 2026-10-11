@@ -63,7 +63,7 @@ add_custom_command(TARGET varlera POST_BUILD
           ${SHADER_BIN_DIR} $<TARGET_FILE_DIR:varlera>/shaders)
 
 if(MSVC)
-  target_compile_options(varlera PRIVATE /W3 /wd4201)
+  target_compile_options(varlera PRIVATE /W4 /wd4201)
   # GUI subsystem but keep main() (stderr still works when redirected)
   target_link_options(varlera PRIVATE /ENTRY:mainCRTStartup)
   set_property(TARGET varlera PROPERTY VS_DEBUGGER_WORKING_DIRECTORY $<TARGET_FILE_DIR:varlera>)

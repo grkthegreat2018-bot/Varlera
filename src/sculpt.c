@@ -323,10 +323,10 @@ static void resolve_intersections(void) {
 /* distance between ray (ro+rd*t) and segment a-b; returns dist, on-seg pt */
 static float ray_seg(v3 ro, v3 rd, v3 a, v3 b, v3 *onSeg, float *rt) {
     v3 u = v3_sub(b,a), w0 = v3_sub(a,ro);
-    float A = v3_dot(u,u), B = v3_dot(u,rd), D = v3_dot(u,w0), E = v3_dot(rd,w0);
+    float uu = v3_dot(u,u), B = v3_dot(u,rd), D = v3_dot(u,w0), E = v3_dot(rd,w0);
     float s, t;
-    float den = A - B*B;                       /* |rd| = 1 */
-    if (A < 1e-8f || fabsf(den) < 1e-8f) { s = 0; t = E; }
+    float den = uu - B*B;                      /* |rd| = 1 */
+    if (uu < 1e-8f || fabsf(den) < 1e-8f) { s = 0; t = E; }
     else {
         s = (B*E - D) / den;
         if (s < 0) s = 0; else if (s > 1) s = 1;
@@ -397,8 +397,11 @@ static void edge_split_at(int mx, int my) {
 
 /* starting-shape presets: CUBE / PYRAMID / BALL / WEDGE / CYL / SHEET */
 static const char *START_NAMES[] = {"CUBE","PYRA","BALL","WEDGE","CYL","SHEET"};
-static void push_f(uint16_t a, uint16_t b, uint16_t c) {
-    if (s_nf < SC_MAX_F) { s_fc[s_nf][0]=a; s_fc[s_nf][1]=b; s_fc[s_nf][2]=c; s_nf++; }
+static void push_f(int a, int b, int c) {
+    if (s_nf < SC_MAX_F) {
+        s_fc[s_nf][0]=(uint16_t)a; s_fc[s_nf][1]=(uint16_t)b; s_fc[s_nf][2]=(uint16_t)c;
+        s_nf++;
+    }
 }
 static void push_v(float x, float y, float z) {
     if (s_nv < SC_MAX_V) {
@@ -1584,7 +1587,7 @@ void sculpt_draw(void) {
     {
         float w3 = (SB_W - 16 - 8) / 3;
         float hw = (SB_W - 16) * 0.5f - 2;
-        const char *tn[3] = {"MOVE", "ADDV", "PART"};
+        const char *tbn[3] = {"MOVE", "ADDV", "PART"};
         const char *en[3] = {"DEL V", "SMOOTH", "WELD"};
         const char *sn[3] = {"0.125", "0.25", "0.5"};
         const float sv[3] = {0.125f, 0.25f, 0.5f};
@@ -1599,7 +1602,7 @@ void sculpt_draw(void) {
                     0.55f, 0.6f, 0.7f, 1);
         for (int i = 0; i < 3; i++) {
             sb_btn(sbx() + 8 + i * (w3 + 4), srow_y(SROW_TOOL), w3,
-                   tn[i], s_tool == i, 0);
+                   tbn[i], s_tool == i, 0);
             sb_btn(sbx() + 8 + i * (w3 + 4), srow_y(SROW_EDIT), w3,
                    en[i], 0, 0);
             sb_btn(sbx() + 8 + i * (w3 + 4), srow_y(SROW_SNAP), w3,
@@ -1678,11 +1681,11 @@ void sculpt_draw(void) {
         ui_text(x0 + 16, y0 + 14, "START SHAPE", 2, 1, 1, 1, 1);
         for (int i = 0; i < 6; i++) {
             float px, py; picker_cell(i, &px, &py);
-            int hov = A.mx >= px && A.mx < px + PICK_CELL_W &&
-                      A.my >= py && A.my < py + 106;
+            int phov = A.mx >= px && A.mx < px + PICK_CELL_W &&
+                       A.my >= py && A.my < py + 106;
             rk_ui_rect(px, py, PICK_CELL_W, 106,
-                       0.19f + hov*0.08f, 0.21f + hov*0.08f,
-                       0.27f + hov*0.08f, 1);
+                       0.19f + phov*0.08f, 0.21f + phov*0.08f,
+                       0.27f + phov*0.08f, 1);
             ui_text(px + (PICK_CELL_W - ui_text_w(START_NAMES[i], 2)) * 0.5f,
                     py + 82, START_NAMES[i], 2, 1, 1, 1, 1);
         }

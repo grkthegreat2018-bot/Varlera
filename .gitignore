@@ -1,3 +1,4 @@
 build*/
 shot*.png
 .devin/scratchpad.md
+.devin_*.txt

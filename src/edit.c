@@ -586,8 +586,8 @@ void edit_update(void) {
         A.hoverAxis = (sel_single() && pick_handle(ro, rd, &ax, &sg)) ? ax*2 + (sg>0) : -1;
         A.hoverBlock = -1;
         if (A.hoverAxis < 0) {
-            int idx, a2; float t, sg;
-            if (pick_block(ro, rd, &idx, &t, &a2, &sg)) A.hoverBlock = idx;
+            int idx, a2; float t, sg2;
+            if (pick_block(ro, rd, &idx, &t, &a2, &sg2)) A.hoverBlock = idx;
         }
     }
 }

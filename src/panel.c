@@ -649,9 +649,9 @@ static void draw_shapes(float px) {
             float ix = px + 8 + (i % COLS) * CELL;
             float iy = cy(yy + (i / COLS) * CELL);
             int ai = cat_ai(c, i);
-            int hov = in_rect((float)A.mx,(float)A.my, ix, iy, CELL-4, CELL-4);
-            if (hov) A.hoverAsset = ai;
-            float bg = (A.armedAsset == ai) ? 0.30f : (hov ? 0.26f : 0.19f);
+            int ihov = in_rect((float)A.mx,(float)A.my, ix, iy, CELL-4, CELL-4);
+            if (ihov) A.hoverAsset = ai;
+            float bg = (A.armedAsset == ai) ? 0.30f : (ihov ? 0.26f : 0.19f);
             ui_rect_clipped(ix, iy, CELL-4, CELL-4, bg, bg+0.02f, bg+0.07f, 1, cy0, cy1);
         }
         yy += ((cat_count(c) + COLS-1)/COLS) * CELL + 6.0f;
