@@ -295,6 +295,30 @@ int main(void) {
     /* scripted capture: VARLERA_SHOT=out.bmp writes a screenshot at
        frame 45 then continues (handy for agent/CI verification) */
     const char *envShot = getenv("VARLERA_SHOT");
+    /* stress generator: VARLERA_GEN=N scatters N mixed blocks (grid +
+       jitter) for profiling at real world sizes */
+    const char *envGen = getenv("VARLERA_GEN");
+    if (envGen) {
+        int n = atoi(envGen);
+        if (n > MAX_BLOCKS) n = MAX_BLOCKS;
+        uint32_t rng = 0x9E3779B9u;
+        for (int i = 0; i < n; i++) {
+            rng = rng * 1664525u + 1013904223u;
+            float fx = (float)((rng >> 8) & 0x3FF) / 16.0f - 32.0f;
+            rng = rng * 1664525u + 1013904223u;
+            float fz = (float)((rng >> 8) & 0x3FF) / 16.0f - 32.0f;
+            rng = rng * 1664525u + 1013904223u;
+            float fy = (float)((rng >> 8) & 0x3F) / 8.0f;
+            rng = rng * 1664525u + 1013904223u;
+            float s = 0.25f + (float)((rng >> 8) & 7) * 0.25f;
+            float col[3] = {(float)((rng>>12)&15)/15.0f,
+                            (float)((rng>>16)&15)/15.0f,
+                            (float)((rng>>20)&15)/15.0f};
+            world_add(v3_make(fx, fy, fz), v3_make(s, s, s),
+                      (int)(rng % 16), (int)((rng >> 5) & 3), col);
+        }
+        fprintf(stderr, "gen: %d blocks\n", g_nb);
+    }
     const char *envReload = getenv("VARLERA_RELOAD");   /* test hook: F8 path */
     const char *envSave  = getenv("VARLERA_SAVE");      /* test hook: v4 save */
     const char *envBwx   = getenv("VARLERA_BWX");       /* test hook: export */
