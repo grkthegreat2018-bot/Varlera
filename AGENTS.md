@@ -51,9 +51,12 @@ links m/dl/pthread. Win32-only code (file dialog, DPI awareness) is `_WIN32`
   (`Vert.tex` float, -1 = inherit), internal cube face culling, `models.bw`
   persistence + `rk_model_mesh_add` upload. v7 stores per-vert material id
   (`mvtex`, int8 -1 = inherit) + layer lock (`mvlock`) + `adv` flag; v6 and
-  older migrate. `models_bake_builtins()` seeds the 10 premade PROPS assets
-  (CRATE/TABLE/CHAIR/PERSON/TREE/FLOWER/ARCH/LAMP/FENCE/PILLAR) on first run
-  or after loading a pre-v7 file.
+  older migrate. `models_bake_builtins()` seeds pack 1
+  (CRATE/TABLE/CHAIR/PERSON/TREE/FLOWER/ARCH/LAMP/FENCE/PILLAR) at v7 and
+  `models_bake_pack2()` seeds 12 game-dev props (DOOR/BUTTON/LEVER/SIGN/
+  CAR/BARREL/LADDER/COIN/SPIKES/PLATFORM/CANNON/GEAR) at v8 — each pack
+  bakes once per save-version bump; `dedupe_adv()` drops same-named
+  premade dupes on init so upgrades never double them.
 - `src/panel.c` — right panel with 6 tabs: SHAPES (categories BASIC/RAMPS/
   SPECIAL/SCULPTED, 15 assets + sculpted models, scrollable, tooltips), PAINT
   (16 presets + HSV picker + custom swatches + ALPHA slider -> `A.paintAlpha`

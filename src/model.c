@@ -270,7 +270,7 @@ static int s_lastver = 0;               /* file format of the loaded save */
 int models_save(const char *path) {
     FILE *f = fopen(path ? path : def_path(), "wb");
     if (!f) return 0;
-    uint32_t hdr[3] = {0x44574D42u /* 'BWMD' */, 7, (uint32_t)g_nmodels};
+    uint32_t hdr[3] = {0x44574D42u /* 'BWMD' */, 8, (uint32_t)g_nmodels};
     fwrite(hdr, 4, 3, f);
     for (int i = 0; i < g_nmodels; i++) {
         Model *m = &g_models[i];
@@ -364,9 +364,8 @@ int models_load(const char *path) {
     if (!f) return 0;
     uint32_t hdr[3];
     if (fread(hdr, 4, 3, f) != 3 || hdr[0] != 0x44574D42u ||
-        (hdr[1] < 1 || hdr[1] > 7)) { fclose(f); return 0; }
+        (hdr[1] < 1 || hdr[1] > 8)) { fclose(f); return 0; }
     int ver = (int)hdr[1];
-    s_lastver = ver;
     int n = (int)hdr[2];
     if (n > RK_MAX_MODELS) n = RK_MAX_MODELS;
     for (int i = 0; i < n; i++) {
@@ -554,12 +553,136 @@ void models_bake_builtins(void) {
     rk_models_commit();
 }
 
+/* pack 2 (models.bw v8): mechanical / game-dev props. Static shells now;
+   they pick up joints + script bindings when the physics rows land. */
+void models_bake_pack2(void) {
+    static const float METAL[3] = {0.45f, 0.48f, 0.55f};
+    static const float WOOD[3]  = {0.55f, 0.35f, 0.20f};
+    static const float DARK[3]  = {0.24f, 0.26f, 0.29f};
+    static const float RED[3]   = {0.90f, 0.20f, 0.18f};
+    static const float GOLD[3]  = {0.95f, 0.80f, 0.25f};
+    static const float BODY[3]  = {0.85f, 0.30f, 0.25f};
+    static const float GLASSC[3]= {0.55f, 0.75f, 0.95f};
+    static const float RUST[3]  = {0.60f, 0.40f, 0.25f};
+    Block ch[16];
+#define NCH(a) (Block*)ch, (a)
+    int i;
+
+    /* DOOR: frame posts + header + inset panel (hingeable later) */
+    i = 0;
+    mkchild(&ch[i++],-0.50f, 0, 0,     0.12f,1.1f, 0.12f, RK_MESH_CUBE, DARK[0],DARK[1],DARK[2]);
+    mkchild(&ch[i++], 0.50f, 0, 0,     0.12f,1.1f, 0.12f, RK_MESH_CUBE, DARK[0],DARK[1],DARK[2]);
+    mkchild(&ch[i++], 0, 0.55f, 0,     1.1f, 0.12f,0.12f, RK_MESH_CUBE, DARK[0],DARK[1],DARK[2]);
+    mkchild(&ch[i++], 0, 0.05f, 0,     0.88f,0.95f,0.08f, RK_MESH_CUBE, WOOD[0],WOOD[1],WOOD[2]);
+    mkchild(&ch[i++], 0.30f, 0.05f, 0.06f,0.08f,0.08f,0.06f,RK_MESH_SPHERE, GOLD[0],GOLD[1],GOLD[2]);
+    i = model_bake(NCH(i)); if (i >= 0) { g_models[i].adv = 1; snprintf(g_models[i].name,16,"DOOR"); }
+
+    /* BUTTON: plate + stem + red dome (pair with CLICK triggers) */
+    i = 0;
+    mkchild(&ch[i++], 0,-0.20f, 0,     0.5f, 0.10f,0.5f,  RK_MESH_CUBE, DARK[0],DARK[1],DARK[2]);
+    mkchild(&ch[i++], 0,-0.05f, 0,     0.2f, 0.20f,0.2f,  RK_MESH_CYLINDER, METAL[0],METAL[1],METAL[2]);
+    mkchild(&ch[i++], 0, 0.12f, 0,     0.3f, 0.18f,0.3f,  RK_MESH_DOME, RED[0],RED[1],RED[2]);
+    i = model_bake(NCH(i)); if (i >= 0) { g_models[i].adv = 1; snprintf(g_models[i].name,16,"BUTTON"); }
+
+    /* LEVER: base + stick + knob */
+    i = 0;
+    mkchild(&ch[i++], 0,-0.18f, 0,     0.4f, 0.12f,0.4f,  RK_MESH_CUBE, DARK[0],DARK[1],DARK[2]);
+    mkchild(&ch[i++], 0, 0.10f, 0,     0.08f,0.55f,0.08f, RK_MESH_CYLINDER, METAL[0],METAL[1],METAL[2]);
+    mkchild(&ch[i++], 0, 0.42f, 0,     0.14f,0.14f,0.14f, RK_MESH_SPHERE, RED[0],RED[1],RED[2]);
+    i = model_bake(NCH(i)); if (i >= 0) { g_models[i].adv = 1; snprintf(g_models[i].name,16,"LEVER"); }
+
+    /* SIGN: post + board */
+    i = 0;
+    mkchild(&ch[i++], 0,-0.30f, 0,     0.08f,0.8f, 0.08f, RK_MESH_CUBE, DARK[0],DARK[1],DARK[2]);
+    mkchild(&ch[i++], 0, 0.30f, 0,     0.9f, 0.4f, 0.06f, RK_MESH_CUBE, WOOD[0],WOOD[1],WOOD[2]);
+    i = model_bake(NCH(i)); if (i >= 0) { g_models[i].adv = 1; snprintf(g_models[i].name,16,"SIGN"); }
+
+    /* CAR: body + cabin + 4 wheels */
+    i = 0;
+    mkchild(&ch[i++], 0,-0.10f, 0,     1.6f, 0.3f, 0.8f,  RK_MESH_ROUNDC, BODY[0],BODY[1],BODY[2]);
+    mkchild(&ch[i++],-0.1f, 0.18f, 0,  0.8f, 0.3f, 0.7f,  RK_MESH_CUBE, GLASSC[0],GLASSC[1],GLASSC[2]);
+    mkchild(&ch[i++],-0.55f,-0.28f,-0.42f,0.3f, 0.3f, 0.12f,RK_MESH_WHEEL, DARK[0],DARK[1],DARK[2]);
+    mkchild(&ch[i++], 0.55f,-0.28f,-0.42f,0.3f, 0.3f, 0.12f,RK_MESH_WHEEL, DARK[0],DARK[1],DARK[2]);
+    mkchild(&ch[i++],-0.55f,-0.28f, 0.42f,0.3f, 0.3f, 0.12f,RK_MESH_WHEEL, DARK[0],DARK[1],DARK[2]);
+    mkchild(&ch[i++], 0.55f,-0.28f, 0.42f,0.3f, 0.3f, 0.12f,RK_MESH_WHEEL, DARK[0],DARK[1],DARK[2]);
+    i = model_bake(NCH(i)); if (i >= 0) { g_models[i].adv = 1; snprintf(g_models[i].name,16,"CAR"); }
+
+    /* BARREL: body + top/bottom rims */
+    i = 0;
+    mkchild(&ch[i++], 0, 0, 0,         0.6f, 0.9f, 0.6f,  RK_MESH_CYLINDER, RUST[0],RUST[1],RUST[2]);
+    mkchild(&ch[i++], 0, 0.36f, 0,     0.66f,0.08f,0.66f, RK_MESH_CYLINDER, DARK[0],DARK[1],DARK[2]);
+    mkchild(&ch[i++], 0,-0.36f, 0,     0.66f,0.08f,0.66f, RK_MESH_CYLINDER, DARK[0],DARK[1],DARK[2]);
+    mkchild(&ch[i++], 0, 0, 0,         0.65f,0.06f,0.65f, RK_MESH_CYLINDER, DARK[0],DARK[1],DARK[2]);
+    i = model_bake(NCH(i)); if (i >= 0) { g_models[i].adv = 1; snprintf(g_models[i].name,16,"BARREL"); }
+
+    /* LADDER: rails + rungs */
+    i = 0;
+    mkchild(&ch[i++],-0.3f, 0, 0,      0.07f,1.2f, 0.07f, RK_MESH_CUBE, WOOD[0],WOOD[1],WOOD[2]);
+    mkchild(&ch[i++], 0.3f, 0, 0,      0.07f,1.2f, 0.07f, RK_MESH_CUBE, WOOD[0],WOOD[1],WOOD[2]);
+    for (int r = 0; r < 4; r++)
+        mkchild(&ch[i++], 0,-0.45f + r*0.3f, 0, 0.6f,0.06f,0.06f, RK_MESH_CUBE, WOOD[0],WOOD[1],WOOD[2]);
+    i = model_bake(NCH(i)); if (i >= 0) { g_models[i].adv = 1; snprintf(g_models[i].name,16,"LADDER"); }
+
+    /* COIN: gold disc + rim (spin/pickup candidate) */
+    i = 0;
+    mkchild(&ch[i++], 0, 0, 0,         0.5f, 0.5f, 0.08f, RK_MESH_CYLINDER, GOLD[0],GOLD[1],GOLD[2]);
+    i = model_bake(NCH(i)); if (i >= 0) { g_models[i].adv = 1; snprintf(g_models[i].name,16,"COIN"); }
+
+    /* SPIKES: dark base + 3 cones */
+    i = 0;
+    mkchild(&ch[i++], 0,-0.10f, 0,     0.9f, 0.12f,0.9f,  RK_MESH_CUBE, DARK[0],DARK[1],DARK[2]);
+    mkchild(&ch[i++],-0.25f,0.15f, 0,  0.2f, 0.4f, 0.2f,  RK_MESH_CONE, METAL[0],METAL[1],METAL[2]);
+    mkchild(&ch[i++], 0.25f,0.15f, 0,  0.2f, 0.4f, 0.2f,  RK_MESH_CONE, METAL[0],METAL[1],METAL[2]);
+    mkchild(&ch[i++], 0, 0.15f, 0.3f,  0.2f, 0.4f, 0.2f,  RK_MESH_CONE, METAL[0],METAL[1],METAL[2]);
+    mkchild(&ch[i++], 0, 0.15f,-0.3f,  0.2f, 0.4f, 0.2f,  RK_MESH_CONE, METAL[0],METAL[1],METAL[2]);
+    i = model_bake(NCH(i)); if (i >= 0) { g_models[i].adv = 1; snprintf(g_models[i].name,16,"SPIKES"); }
+
+    /* PLATFORM: slab + edge rails */
+    i = 0;
+    mkchild(&ch[i++], 0, 0, 0,         1.6f, 0.12f,1.0f,  RK_MESH_CUBE, METAL[0],METAL[1],METAL[2]);
+    mkchild(&ch[i++], 0, 0.10f,-0.46f, 1.6f, 0.10f,0.08f, RK_MESH_CUBE, DARK[0],DARK[1],DARK[2]);
+    mkchild(&ch[i++], 0, 0.10f, 0.46f, 1.6f, 0.10f,0.08f, RK_MESH_CUBE, DARK[0],DARK[1],DARK[2]);
+    i = model_bake(NCH(i)); if (i >= 0) { g_models[i].adv = 1; snprintf(g_models[i].name,16,"PLATFORM"); }
+
+    /* CANNON: base + barrel */
+    i = 0;
+    mkchild(&ch[i++], 0,-0.15f, 0,     0.7f, 0.35f,0.7f,  RK_MESH_CUBE, DARK[0],DARK[1],DARK[2]);
+    mkchild(&ch[i++], 0, 0.15f, 0,     0.28f,0.28f,1.0f,  RK_MESH_CYLINDER, METAL[0],METAL[1],METAL[2]);
+    mkchild(&ch[i++], 0, 0.15f,-0.55f, 0.34f,0.34f,0.12f, RK_MESH_TORUS, GOLD[0],GOLD[1],GOLD[2]);
+    i = model_bake(NCH(i)); if (i >= 0) { g_models[i].adv = 1; snprintf(g_models[i].name,16,"CANNON"); }
+
+    /* GEAR: torus ring + hub + cross spokes */
+    i = 0;
+    mkchild(&ch[i++], 0, 0, 0,         0.9f, 0.9f, 0.16f, RK_MESH_TORUS, METAL[0],METAL[1],METAL[2]);
+    mkchild(&ch[i++], 0, 0, 0,         0.2f, 0.2f, 0.2f,  RK_MESH_CYLINDER, DARK[0],DARK[1],DARK[2]);
+    mkchild(&ch[i++], 0, 0, 0,         0.8f, 0.12f,0.10f, RK_MESH_CUBE, RUST[0],RUST[1],RUST[2]);
+    mkchild(&ch[i++], 0, 0, 0,         0.12f,0.8f, 0.10f, RK_MESH_CUBE, RUST[0],RUST[1],RUST[2]);
+    i = model_bake(NCH(i)); if (i >= 0) { g_models[i].adv = 1; snprintf(g_models[i].name,16,"GEAR"); }
+#undef NCH
+    rk_models_commit();
+}
+
+/* drop same-named premade duplicates (packs re-bake on version upgrades) */
+static int dedupe_adv(void) {
+    int removed = 0;
+    for (int i = g_nmodels - 1; i >= 0; i--) {
+        if (!g_models[i].adv) continue;
+        for (int j = 0; j < i; j++)
+            if (g_models[j].adv && !strcmp(g_models[j].name, g_models[i].name)) {
+                model_delete(i); removed++;
+                break;
+            }
+    }
+    return removed;
+}
+
 void models_init(void) {
     models_load(NULL);
-    /* stock the PROPS tab: fresh install, or a pre-v7 save upgrading once
-       (v7 saves with deleted premades stay deleted) */
-    if (s_lastver < 7) {
-        models_bake_builtins();
-        models_save(NULL);
-    }
+    /* stock the PROPS tab: fresh install gets both packs; upgrading saves
+       get only the packs they haven't seen (deleted premades stay gone) */
+    int baked = 0;
+    if (s_lastver < 7) { models_bake_builtins(); baked = 1; }
+    if (s_lastver < 8) { models_bake_pack2();    baked = 1; }
+    int removed = dedupe_adv();            /* also cleans polluted saves */
+    if (baked || removed) models_save(NULL);
 }
