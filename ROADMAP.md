@@ -23,6 +23,7 @@ largest CPU cost in an empty scene. Re-measure after each perf item.
 | QOL pass | S | `panel.c`, `edit.c`, `main.c` | Hotkey hints bar, action toasts, drag multi-select in MODELS, block search, ghost preview in panel tooltips. |
 | Debugging v1 | S | `prof.c`, `main.c` | Overlay page 2 (per-zone sparklines + counters), `varlera.log` file mirror of stderr, Win32 crash minidump (`_WIN32` guard), `VK_VALIDATION` hotkey toggle. |
 | Material flags | S→M | `world.c`, `tex.c`, shader | Rough/metal/emissive bits into `texm`/instance flags + shader branches (matte vs glossy, glow feeds bloom). Foundation for shader effects. |
+| Shader hot-reload | S | `rk_vk.c`, `CMakeLists.txt` | F8: re-run glslc + recreate pipelines in place. Dev-velocity win for every shader item below; pipelines are already isolated creation code. |
 
 ## Tier 2 — medium (one subsystem each)
 
@@ -39,6 +40,10 @@ largest CPU cost in an empty scene. Re-measure after each perf item.
 | Better sculpted object rendering | M | `sculpt.c`, `model.c` bake, shader | Smooth/flat shading toggle per model, better facet normals, cheap LOD (decimate topo at distance). |
 | Memory handling | M | all | Arena allocators for per-frame UI verts + bake buffers (kills malloc churn), pool for `Block`s, `prof_count` hook for peak/alloc counts. |
 | Better sculpt mode | M | `sculpt.c` | Brush sizes/falloff, mirror symmetry, smooth/relax vertex op, rotate/scale gizmo, undo already exists. Incremental on the 71KB module. |
+| Auto mesh optimize | M | `model.c`, `sculpt.c` | Quadric-error edge collapse decimation with a target-tri-count or error-budget knob, aggressive weld dedupe. Run at bake + as a manual OPTIMIZE button; sculpted LOD variant reuses it. |
+| Blender auto-conversion | M | `model.c`, `sculpt.c`, new `import.c` | OBJ/GLB import → weld → normalize-to-unit-box → bake (`import.obj` path already exists; extend to drag-drop + GLB). Optional Blender-side exporter script for direct `.bw` write. |
+| 2D animation (flipbook) | M | `tex.c`, `art.c`, `world.c`, shader | Atlas strips = frames; blocks/materials get frame-count+fps bits; shader or CPU-side UV offset. Art tool gets onion-skin + frame timeline. Feeds particles + shader effects. |
+| Asset manifest | M | new `assets.c` | One index file (paths, hashes, version) for worlds/models/atlas/scripts — basis for modding + per-world texture packs later. |
 | Particle system | M | new `particles.c`, `rk.c`, `tex.c`, `world.c` | Fixed pool (~4k): billboard sprites sampling atlas art (2D) + instanced sculpted-mesh particles via the `RkInst` path (3D). Emitters keyed by `trig`/`act` rows (SPIN→sparks, BOOST→smoke); gravity/fade params; `prof_count` a `PC_PARTICLES` slot. No new draw infrastructure needed. |
 | Post chain: bloom + tonemap | M | `rk.c`, `rk_vk.c`, new shaders | Downsample+blur+composite after MSAA resolve (resolve pass already exists); emissive material flags feed the bright pass. Adds filmic tonemap — current output is clamped sRGB. |
 | Per-vertex AO bake | M | `model.c` bake, `meshgen.c` | Raycast occlusion per baked vert (blocks + sculpted), stored in vert color multiplier — soft contact shading for free at draw time. |
@@ -52,6 +57,9 @@ largest CPU cost in an empty scene. Re-measure after each perf item.
 | Code blocks + scripting v2 | L | `world.c` (trig/act rows exist), `panel.c`, `main.c` | Conditions (IF trig THEN act), per-world variables, wire-mode link UI, event bus, timers/sensors/counters/loops. "Massive expansion" = this done fully + a script debugger overlay in F3. |
 | Shader effects via code blocks | L | `world.c`, `rk.c`, shaders | Cheap version lands with material flags (M): effect id + params in instance bits → glow pulse, dissolve, wave, blink. Full version rides scripting v2: actions bind effects to triggers, script vars drive params (speed/intensity), per-world effect table. |
 | Overhauled building | L | `edit.c`, `panel.c`, `world.c` | Rework of the place/move state machine: mirror-symmetry build mode, line/plane fills, arbitrary-axis rotate (current is 90° steps + rot90 flags), structural stress preview, smart attach (auto-snap to stud/edge lattices), clipboard templates library. |
+| Model rig support | L | `model.c`, `sculpt.c`, `rk.c`, shader | Named bones/joints stored per model (joint planes from sculpt mark attach points), per-vert bone weights baked in (`Vert` gets bone idx+weight), GPU skinning in the world VS or CPU skin for low-vert models. Foundation for NPCs + 3D anim. |
+| 3D animation creator | L | `sculpt.c`/new `anim.c`, `model.c` | Keyframe pose editor on rigged models (rot/pos per joint, timeline, ease curves, play preview); clip library saved per model; runtime blends poses on instances. Depends on rig support. |
+| Scene/entity model | L | `world.c`, `main.c`, new `scene.c` | Generalize Block→Entity (transform + components: mesh/collider/script/emitter) so triggers, NPCs, particles, props share one update path. The pivot from "blocks world" to "engine" — do before scripting v2 explodes `Block` further. |
 | Custom NPCs (sculpt + joint planes) | L | `sculpt.c`, `model.c`, `world.c`, new anim | Sculpted limb pieces + joint-plane attachment points → articulated hierarchies; anim state machine; NPC AI hooks into scripting v2. Depends on joints/physics groundwork from live-collision item. |
 | Threading + GPU compute | L | `world.c`, `meshgen.c`, `rk_vk.c` | Job pool for mesh bakes + broadphase (Win32 threads, `_WIN32` guarded). Vulkan compute for physics queries — prefer compute over CUDA (no new dep, works on all GPUs); CUDA only if a profiling-measured kernel justifies it. |
 
@@ -63,6 +71,8 @@ largest CPU cost in an empty scene. Re-measure after each perf item.
 | Day/night + env animation | M | Sun/light dir lerped on a world-time var; scripting v2 can drive it (ALWAYS + SET_TIME). |
 | Player/avatar controller | M | Needs collision overhaul first. Walk/jump/interact in play mode. |
 | Game objects (health, respawn, goals) | M | On top of scripting v2. |
+| Deterministic replay | M | Fixed-dt sim + recorded input stream — free regression tests once scripting exists; also the basis of any future netcode. |
+| Editor/runtime split | L | Separate `editor.c` from the play loop; packaged game loads scenes without edit UI. Do after scene/entity model. |
 | Modding / file-format docs | M | Public spec for `.bw` + texture PNG strip. |
 | Multiplayer | XL | Everything above first; deterministic lockstep vs server-auth is its own design. |
 
@@ -75,11 +85,12 @@ largest CPU cost in an empty scene. Re-measure after each perf item.
 4. World data v4 (incl. file-size compression) + better I/O + menus
    (app-state refactor is the gateway to everything UI).
 5. Greedy-mesh play mode + mesh cache + material flags + particle
-   system + bloom/AO (perf and look, needed at scale).
+   system + bloom/AO + flipbook anim + mesh auto-optimize
+   (perf and look, needed at scale).
 6. Collision overhaul → building overhaul → player controller
    (gameplay unlock).
-7. Scripting v2 (the "engine" pivot) → shader effects → NPCs
-   (joints ride on it).
+7. Scene/entity refactor → scripting v2 (the "engine" pivot) →
+   rig support → 3D anim creator → NPCs (all ride on it).
 8. Occlusion culling + threading only when `prof` shows sim/submit
    zones actually limiting fps at real world sizes.
 
