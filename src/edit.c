@@ -614,25 +614,37 @@ void edit_draw_world(void) {
      * translucent blocks (alpha<1 or BF_GLASS) go through rk_ghost last,
      * sorted far->near for roughly correct blending. */
     static RkInst insts[RK_MESH_BASE_MODEL + RK_MAX_MODELS][MAX_BLOCKS];
+    static RkInst cinsts[RK_MESH_BASE_MODEL + RK_MAX_MODELS][MAX_BLOCKS];
     static uint32_t cnt[RK_MESH_BASE_MODEL + RK_MAX_MODELS];
+    static uint32_t ccnt[RK_MESH_BASE_MODEL + RK_MAX_MODELS];
     memset(cnt, 0, sizeof cnt);
+    memset(ccnt, 0, sizeof ccnt);
+    float pl[6][4]; frustum_planes(A.viewProj, pl);
     static int gi[MAX_BLOCKS];
     int gn = 0;
     for (int i = 0; i < g_nb; i++) {
         Block *b = &g_blocks[i];
+        v3 es = block_eff_size(b);
+        v3 half = v3_scale(es, 0.5f);
+        int vis = aabb_in_frustum(pl, b->pos, half);
         float al = (b->flags & BF_GLASS) ? fminf(b->alpha, 0.6f) : b->alpha;
         if (A.modal == 2) al *= 0.18f;      /* sculpt modal: world recedes */
-        if (al < 0.999f) { gi[gn++] = i; continue; }
-        v3 es = block_eff_size(b);
+        if (al < 0.999f) { if (vis) gi[gn++] = i; continue; }
         RkInst in;
         memcpy(in.pos, b->pos.e, 12);
         memcpy(in.scale, es.e, 12);
         in.color = rk_rgba(b->col[0], b->col[1], b->col[2], 1.0f);
         in.flags = block_flag(b);
-        insts[b->shape][cnt[b->shape]++] = in;
+        /* off-camera opaque blocks still feed the shadow pass if they can
+           cast into the shadowed volume; otherwise dropped entirely */
+        if (vis) insts[b->shape][cnt[b->shape]++] = in;
+        else if (rk_can_shadow_cast(b->pos, half))
+            cinsts[b->shape][ccnt[b->shape]++] = in;
     }
-    for (int m = 0; m < RK_MESH_BASE_MODEL + RK_MAX_MODELS; m++)
+    for (int m = 0; m < RK_MESH_BASE_MODEL + RK_MAX_MODELS; m++) {
         if (cnt[m]) rk_world(m, insts[m], cnt[m]);
+        if (ccnt[m]) rk_caster(m, cinsts[m], ccnt[m]);
+    }
 
     /* translucent: sort by view depth, emit runs of same mesh */
     for (int i = 1; i < gn; i++) {            /* insertion sort, far first */

@@ -23,6 +23,22 @@ static uint32_t push_insts(const RkInst *inst, uint32_t n) {
 void rk_world(RkMesh m, const RkInst *inst, uint32_t n) {
     qu(K_WORLD, m, push_insts(inst, n), n);
 }
+void rk_caster(RkMesh m, const RkInst *inst, uint32_t n) {
+    qu(K_CASTER, m, push_insts(inst, n), n);
+}
+/* casters live in the 120x120 shadow ortho rect extruded toward the light
+   (up to its 220 far plane). World AABB -> light-space AABB via |view|*half. */
+int rk_can_shadow_cast(v3 c, v3 half) {
+    v3 lc; m4_mul_v3(&lc, G.shView, c);
+    const float *v = G.shView;
+    v3 lh = v3_make(
+        fabsf(v[0])*half.x + fabsf(v[4])*half.y + fabsf(v[8])*half.z,
+        fabsf(v[1])*half.x + fabsf(v[5])*half.y + fabsf(v[9])*half.z,
+        fabsf(v[2])*half.x + fabsf(v[6])*half.y + fabsf(v[10])*half.z);
+    if (fabsf(lc.x) - lh.x > 60.0f || fabsf(lc.y) - lh.y > 60.0f) return 0;
+    if (lc.z - lh.z > 220.0f) return 0;
+    return 1;
+}
 void rk_overlay(RkMesh m, const RkInst *inst, uint32_t n) {
     qu(K_OVERLAY, m, push_insts(inst, n), n);
 }
@@ -272,7 +288,7 @@ void rk_end_frame(void) {
         bind_inst();
         for (int i = 0; i < G.qn; i++) {
             QEnt *e = &G.q[i];
-            if (e->kind != K_WORLD) continue;
+            if (e->kind != K_WORLD && e->kind != K_CASTER) continue;
             VkDeviceSize off; uint32_t cnt;
             if (!mesh_span(e->mesh, &off, &cnt)) continue;
             bind_mesh_buf(e->mesh);
@@ -411,6 +427,7 @@ void rk_end_frame(void) {
             vkCmdSetViewport(G.cmd, 0, 1, &fullvp);
             vkCmdSetScissor(G.cmd, 0, 1, &fullsc);
             break; }
+        case K_CASTER: break;              /* shadow pass only */
         }
     }
 
@@ -456,6 +473,7 @@ void rk_set_camera(const float vp[16], const float eye[3], const float focus[3])
     v3 le = v3_add(f, v3_scale(l, 100.0f));   /* eye on the light side, above scene */
     m4 v, p;
     m4_look_at(v, le, f, v3_make(0, 1, 0));
+    memcpy(G.shView, v, sizeof(m4));
     float R = 60.0f;
     m4_ortho(p, -R, R, -R, R, 1.0f, 220.0f);
     m4_mul(G.ubo.shadowVP, p, v);

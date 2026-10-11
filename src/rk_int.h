@@ -39,7 +39,7 @@ typedef struct { float x, y, w, h, r, g, b, a;
 v3 rk_light_dir(void);
 void rk_swapchain_recreate(void);
 
-enum { K_GRID, K_WORLD, K_OVERLAY, K_GHOST, K_MESH, K_MLINES, K_LINES, K_UI, K_ICON };
+enum { K_GRID, K_WORLD, K_OVERLAY, K_GHOST, K_MESH, K_MLINES, K_LINES, K_UI, K_ICON, K_CASTER };
 typedef struct {
     int kind, mesh;
     uint32_t first, count;
@@ -125,6 +125,7 @@ typedef struct {
 
     UBO ubo;
     v3 focus;
+    m4 shView;                              /* light-space view (culling) */
     uint32_t fi, imgIdx;
     VkCommandBuffer cmd;
     int inFrame;

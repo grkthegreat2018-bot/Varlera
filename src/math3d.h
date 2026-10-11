@@ -138,4 +138,28 @@ static inline void m4_mul_v4(v3 *out, float *out_w, const m4 m, v3 v) {
 static inline float clampf(float x, float a, float b) { return x < a ? a : (x > b ? b : x); }
 static inline float snapf(float x, float step) { return floorf(x/step + 0.5f) * step; }
 
+/* Gribb-Hartmann frustum planes from a column-major view-proj.
+ * Vulkan clip volume: -w<=x,y<=w, 0<=z<=w (near is row2 for both
+ * forward and reversed Z). pl[i] = {a,b,c,d}; inside => a*x+b*y+c*z+d >= 0. */
+static inline void frustum_planes(const m4 vp, float pl[6][4]) {
+    for (int i = 0; i < 4; i++) {
+        float r0 = vp[i], r1 = vp[4+i], r2 = vp[8+i], r3 = vp[12+i];
+        pl[0][i] = r3 + r0;  /* left   */
+        pl[1][i] = r3 - r0;  /* right  */
+        pl[2][i] = r3 + r1;  /* bottom */
+        pl[3][i] = r3 - r1;  /* top    */
+        pl[4][i] = r2;       /* near/far side:  z_c >= 0 */
+        pl[5][i] = r3 - r2;  /* other depth:    z_c <= w */
+    }
+}
+
+static inline int aabb_in_frustum(const float pl[6][4], v3 c, v3 h) {
+    for (int i = 0; i < 6; i++) {
+        float d = pl[i][0]*c.x + pl[i][1]*c.y + pl[i][2]*c.z + pl[i][3];
+        float r = fabsf(pl[i][0])*h.x + fabsf(pl[i][1])*h.y + fabsf(pl[i][2])*h.z;
+        if (d + r < 0.0f) return 0;
+    }
+    return 1;
+}
+
 #endif /* MATH3D_H */
