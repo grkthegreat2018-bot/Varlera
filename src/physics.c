@@ -16,9 +16,36 @@ static uint16_t s_prevHeld;           /* last frame's trigHeld -> edge detect */
 static Block g_playBackup[MAX_BLOCKS];
 static int g_playBackupN = -1;
 
+/* ---- play-mode LMB drag state ---- */
+static int   s_dragI = -1;            /* dragged block, -1 none */
+static v3    s_dragOff;               /* grab hit point - block center */
+static float s_dragT;                 /* ray distance at grab */
+static v3    s_dragRO, s_dragRD;      /* latest cursor ray (world_drag_move) */
+
+int world_drag_grab(v3 ro, v3 rd) {
+    s_dragI = -1;
+    if (world_wset()->dragOff) return 0;
+    int idx = -1, ax = -1; float t = 0, sg = 0;
+    if (!world_pick_block(ro, rd, &idx, &t, &ax, &sg)) return 0;
+    Block *b = &g_blocks[idx];
+    if (b->flags & BF_NOPHYS) return 0;
+    s_dragI = idx;
+    s_dragT = t;
+    s_dragOff = v3_sub(v3_make(ro.x + rd.x*t, ro.y + rd.y*t, ro.z + rd.z*t),
+                       b->pos);
+    return 1;
+}
+void world_drag_move(v3 ro, v3 rd) { s_dragRO = ro; s_dragRD = rd; }
+void world_drag_release(void) {
+    if (s_dragI >= 0) g_velY[s_dragI] = 0.0f;
+    s_dragI = -1;
+}
+int world_dragging(void) { return s_dragI >= 0; }
+
 void world_reset_physics(void) {
     memset(g_velY, 0, sizeof g_velY);
     s_prevHeld = 0;
+    s_dragI = -1;
 }
 
 void world_snapshot_play(void) {
@@ -135,7 +162,14 @@ void world_physics(float dt, uint16_t trigHeld) {
     int ndel = 0;
     for (int i = g_nb - 1; i >= 0; i--)     /* descending: swap-removes pull */
         if (delMark[i]) { world_delete(i); ndel++; }   /* from >i (consumed) */
-    if (ndel) memset(g_velY, 0, sizeof(float) * g_nb);
+    if (ndel) { memset(g_velY, 0, sizeof(float) * g_nb); s_dragI = -1; }
+
+    /* drag target along the stored ray; Y never sinks below support */
+    v3 dragT = s_dragI >= 0 ? v3_sub(v3_make(s_dragRO.x + s_dragRD.x*s_dragT,
+                                             s_dragRO.y + s_dragRD.y*s_dragT,
+                                             s_dragRO.z + s_dragRD.z*s_dragT),
+                                     s_dragOff)
+                            : v3_make(0,0,0);
 
     /* RIGID world setting: joints are perfect — script actions still fire
        (incl. BOOST below) but nothing settles under gravity */
@@ -143,6 +177,12 @@ void world_physics(float dt, uint16_t trigHeld) {
     if (ws->phys == WS_PHYS_RIGID) {
         for (int i = 0; i < g_nb; i++) {
             Block *b = &g_blocks[i];
+            if (i == s_dragI) {                 /* kinematic drag */
+                v3 es = block_eff_size(b);
+                b->pos.x = dragT.x; b->pos.z = dragT.z;
+                b->pos.y = fmaxf(dragT.y, es.y * 0.5f);
+                continue;
+            }
             if (b->act == ACT_BOOST && !(b->flags & (BF_NOPHYS | BF_LOCKED)) &&
                 ((trigHeld >> b->trig) & 1))
                 b->pos.y += boost_step(i, dt);
@@ -157,6 +197,15 @@ void world_physics(float dt, uint16_t trigHeld) {
         Block *b = &g_blocks[i];
         if (b->flags & (BF_NOPHYS | BF_LOCKED)) continue;
         v3 es = g_es[i];
+        /* kinematic drag: follow cursor ray, can't sink through support */
+        if (i == s_dragI) {
+            float sup = (b->flags & BF_NOCOLLIDE) ? es.y * 0.5f
+                                                : support_y(i) + es.y * 0.5f;
+            b->pos.x = dragT.x; b->pos.z = dragT.z;
+            b->pos.y = fmaxf(dragT.y, sup);
+            g_velY[i] = 0;
+            continue;
+        }
         /* BOOST: thruster while its trigger is held; weight resists lift
            (w0 -> 1.5x, w8 -> 1.0x, w15 -> 0.56x) */
         if (b->act == ACT_BOOST && ((trigHeld >> b->trig) & 1)) {

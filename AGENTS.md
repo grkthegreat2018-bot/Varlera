@@ -91,11 +91,18 @@ links m/dl/pthread. Win32-only code (file dialog, DPI awareness) is `_WIN32`
   gravMul / skyAssets) — `world_wset()` is the live record, WORLD tab
   edits it and dangerous rows (`!`) get an APPLY/CANCEL wipe-warning
   dialog. `tests/world_v4.c` (ctest) covers round-trip + v3 migration.
+  `world_pick_block`/`ray_unit_box` are the shared slab-pick used by
+  edit.c and physics.c.
 - `src/physics.c` — play mode: `world_physics(dt, trigHeld)` gravity settle
   (XZ uniform-grid broadphase over a packed support grid), trigger-edge
   script actions (COLOR/TEX/DEL with `tgt` scoping, SAY/TITLE toasts,
   BOOST thruster), snapshot/restore (`world_snapshot_play`/`_restore_play`,
   `world_reset_physics`). Extracted from world.c; physics.h is the API.
+  Honors WSet: `phys` RIGID freezes gravity settle (script acts still run),
+  `gravMul` scales gravity, `dragOff` gates LMB drag; `weight` resists
+  BOOST thrust, `bounce` gives landing restitution. LMB drag:
+  `world_drag_grab/move/release` — kinematic cursor-ray move clamped to
+  support height (floor clamp only in RIGID mode).
 - `src/filepick.c` — OS pickers shared by panel_world/sculpt: `pick_save_path`/
   `pick_open_path`/`pick_dir` (Win32 common dialogs + SHBrowseForFolder;
   zenity fallback on Linux).

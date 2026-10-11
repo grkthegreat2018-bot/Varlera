@@ -134,11 +134,15 @@ static void on_mouse(GLFWwindow *w, int button, int action, int mods) {
             if (panel_press(A.mx, A.my)) return;
             if (A.app == APP_EDIT && panel_script_click(A.mx, A.my)) return;
             if (A.app == APP_EDIT) edit_lmb_press(mods);
+            else if (A.app == APP_PLAY) {   /* BW-style block drag */
+                v3 ro, rd; cam_ray(A.mx, A.my, &ro, &rd);
+                world_drag_grab(ro, rd);
+            }
         } else {
             if (A.pickDrag == 3) panel_apply_paint();
             A.pickDrag = 0;
             if (A.app == APP_EDIT) edit_lmb_release(mods);
-            else A.drag = M_IDLE;
+            else { world_drag_release(); A.drag = M_IDLE; }
         }
     } else if (button == GLFW_MOUSE_BUTTON_RIGHT) {
         if (action == GLFW_PRESS) {
@@ -357,6 +361,10 @@ int main(void) {
             if (glfwGetMouseButton(A.win, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS)
                 held |= 1u << TRIG_CLICK;
             A.trigHeld = held;
+            {   /* cursor ray feeds the play-mode block drag */
+                v3 ro, rd; cam_ray(A.mx, A.my, &ro, &rd);
+                world_drag_move(ro, rd);
+            }
             world_physics(dt, held);
         }
         else if (A.app == APP_EDIT && !A.modal) { edit_update(); panel_drag_update(); }

@@ -51,15 +51,16 @@ void panel_env_load(void) {
 
 /* pending world-setting change that needs the wipe-warning confirm */
 static int s_wConfirm = -1;
-#define WS_ROWS 6
+#define WS_ROWS 7
 static const char *WLBL[] = {"PHYS","CHUNK","CHUNK SZ","LOD","ADV RENDER",
-                             "GRAVITY"};
+                             "GRAVITY","DRAG"};
 static const char *WWARN[] = {
     "PHYSICS MODE CHANGES PLAY BEHAVIOR",
     "CHUNK LAYOUT MAY RESHAPE OR WIPE THIS WORLD",
     "CHUNK SIZE MAY RESHAPE OR WIPE THIS WORLD",
     "LOD ALTERS DRAW DISTANCE QUALITY",
     "EXPERIMENTAL RENDER FLAGS CAN CAUSE BUGS",
+    "",
     "",
 };
 static const uint8_t GRAV_STEPS[] = {0, 2, 4, 8, 12, 16};   /* 0x..2x */
@@ -77,6 +78,7 @@ static void wset_cycle(int i) {
               while (s < 6 && GRAV_STEPS[s] != w->gravMul) s++;   /* find */
               w->gravMul = GRAV_STEPS[(s + 1) % 6];              /* advance */
               break; }
+    case 6: w->dragOff ^= 1; break;
     }
     world_wset_dirty();
 }
@@ -92,6 +94,7 @@ static const char *wset_val(int i, const WSet *w, char *b) {
     case 4: return ON[w->advRender & 1];
     case 5: snprintf(b, 8, "%.2fx", (w->gravMul ? w->gravMul : 8) / 8.0f);
             return b;
+    case 6: return ON[(w->dragOff ^ 1) & 1];   /* ON = dragging allowed */
     }
     return "";
 }

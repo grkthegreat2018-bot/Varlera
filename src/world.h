@@ -98,6 +98,12 @@ const char *worlds_dir(void);           /* current save dir (default worlds/) */
 void worlds_set_dir(const char *d);     /* user-chosen save folder */
 void worlds_ensure(void);               /* mkdir save dir if missing */
 void world_block_migrate(Block *b, const uint8_t *rec, int ver); /* old rec sizes */
+/* nearest block hit by a ray (scaled unit-AABB slabs; BF_LOCKED skipped).
+ * axis = hit face 0-2 or -1 for inside-origin hits. */
+int  world_pick_block(v3 ro, v3 rd, int *idx, float *tOut,
+                      int *axisOut, float *signOut);
+int  ray_unit_box(v3 ro, v3 rd, float *tOut, int *axisOut,
+                  float *signOut);   /* shared slab test */
 
 /* per-world settings — v4 trailer after block records (older readers stop
  * at EOF and get defaults). Fields marked dangerous in the UI reshape or
@@ -111,7 +117,8 @@ typedef struct {
     uint8_t  advRender;      /* EXPERIMENTAL render-flag gate */
     uint8_t  gravMul;        /* gravity scale in eighths (8 = 1.0x) */
     uint8_t  skyAssets;      /* 0 preset sky, 1 user skybox objects */
-    uint8_t  pad[21];
+    uint8_t  dragOff;        /* 1 disables play-mode LMB block dragging */
+    uint8_t  pad[20];
 } WSet;
 #define WS_PHYS_SETTLE 0
 #define WS_PHYS_RIGID  1

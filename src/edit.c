@@ -124,40 +124,8 @@ static int ray_ground(v3 ro, v3 rd, v3 *out) {
     return 1;
 }
 
-static int ray_unit_box(v3 ro, v3 rd, float *tOut, int *axisOut, float *signOut) {
-    float tmin = -1e30f, tmax = 1e30f;
-    int axis = -1; float sign = 0;
-    for (int i = 0; i < 3; i++) {
-        float inv = 1.0f / rd.e[i];
-        float t0 = (-0.5f - ro.e[i]) * inv;
-        float t1 = ( 0.5f - ro.e[i]) * inv;
-        float s = -1.0f;
-        if (t0 > t1) { float tt=t0; t0=t1; t1=tt; s = 1.0f; }
-        if (t0 > tmin) { tmin = t0; axis = i; sign = s; }
-        if (t1 < tmax) tmax = t1;
-    }
-    if (tmax < tmin || tmax < 0) return 0;
-    if (tmin < 0) { tmin = tmax; axis = -1; }
-    *tOut = tmin; *axisOut = axis; *signOut = sign;
-    return 1;
-}
-
-static int pick_block(v3 ro, v3 rd, int *idx, float *tOut, int *axis, float *sign) {
-    int best = -1; float bt = 1e30f; int ba = -1; float bs = 0;
-    for (int i = 0; i < g_nb; i++) {
-        Block *b = &g_blocks[i];
-        if (b->flags & BF_LOCKED) continue;
-        v3 es = block_eff_size(b);
-        v3 lro = v3_make((ro.x-b->pos.x)/es.x, (ro.y-b->pos.y)/es.y, (ro.z-b->pos.z)/es.z);
-        v3 lrd = v3_make(rd.x/es.x, rd.y/es.y, rd.z/es.z);
-        float t; int ax; float sg;
-        if (ray_unit_box(lro, lrd, &t, &ax, &sg) && t < bt) {
-            bt = t; best = i; ba = ax; bs = sg;
-        }
-    }
-    *idx = best; *tOut = bt; *axis = ba; *sign = bs;
-    return best >= 0;
-}
+/* pick_block moved to world.c (shared with physics.c play-mode drag) */
+#define pick_block world_pick_block
 
 /* 6 face handles: sign -1 = low face, +1 = high face */
 static void handle_center(const Block *b, int axis, int sign, v3 *out) {
