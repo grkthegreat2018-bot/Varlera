@@ -38,6 +38,8 @@ typedef struct { float x, y, w, h, r, g, b, a;
 
 v3 rk_light_dir(void);
 void rk_swapchain_recreate(void);
+VkBuffer buf_create(VkDeviceSize size, VkBufferUsageFlags usage,
+                    VkMemoryPropertyFlags props, VkDeviceMemory *outMem, void **mapped);
 
 enum { K_GRID, K_WORLD, K_OVERLAY, K_GHOST, K_MESH, K_MLINES, K_LINES, K_UI, K_ICON, K_CASTER };
 typedef struct {
@@ -134,6 +136,15 @@ typedef struct {
     int hasTS;
     double tsPeriod;
     float gpuMs[3];                         /* shadow, main, total */
+
+    /* screenshot readback: copy swapchain image -> staging buf this frame,
+       write the .bmp next frame (fence guarantees completion) */
+    char         shotPath[260];
+    int          shotPend, shotW, shotH;
+    VkBuffer     shotBuf;
+    VkDeviceMemory shotMem;
+    void        *shotMap;
+    VkDeviceSize shotCap;
 } RkG;
 
 extern RkG G;                  /* defined in rk.c */

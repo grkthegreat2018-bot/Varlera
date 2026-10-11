@@ -4,6 +4,7 @@
 #include "rk_int.h"
 
 RkG G;
+static void shot_write_bmp(const char *path, const uint8_t *src, int w, int h);
 /* ---------------- draw queue ---------------- */
 
 static void qu(int kind, int mesh, uint32_t first, uint32_t count) {
@@ -194,6 +195,12 @@ int rk_begin_frame(void) {
             G.gpuMs[2] = (float)((ts[2]-ts[0]) * G.tsPeriod / 1e6);
         }
         G.fr[G.fi].tsRec = 0;
+    }
+
+    /* last submit in this slot copied the frame for a screenshot -> write */
+    if (G.shotPend) {
+        shot_write_bmp(G.shotPath, G.shotMap, G.shotW, G.shotH);
+        G.shotPath[0] = 0; G.shotPend = 0;
     }
 
     VkResult r = vkAcquireNextImageKHR(G.dev, G.swap, UINT64_MAX, G.fr[G.fi].acq, VK_NULL_HANDLE, &G.imgIdx);
@@ -434,9 +441,39 @@ void rk_end_frame(void) {
     vkCmdEndRendering(G.cmd);
     if (G.hasTS) vkCmdWriteTimestamp(G.cmd,
         VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, G.fr[G.fi].qp, 2);
+    /* screenshot: copy the resolved swapchain image into staging, then run
+       the normal present transition; the buffer is read next frame */
+    if (G.shotPath[0] && !G.shotPend) {
+        VkDeviceSize need = (VkDeviceSize)G.ext.width * G.ext.height * 4;
+        if (need > G.shotCap) {
+            if (G.shotBuf) {
+                vkUnmapMemory(G.dev, G.shotMem);
+                vkDestroyBuffer(G.dev, G.shotBuf, NULL);
+                vkFreeMemory(G.dev, G.shotMem, NULL);
+            }
+            G.shotBuf = buf_create(need, VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+                                   HOST_MEM, &G.shotMem, &G.shotMap);
+            G.shotCap = need;
+        }
+        img_barrier(G.imgs[G.imgIdx], VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+            VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT,
+            VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_ACCESS_2_TRANSFER_READ_BIT,
+            VK_IMAGE_ASPECT_COLOR_BIT);
+        VkBufferImageCopy rc = {0};
+        rc.imageSubresource = (VkImageSubresourceLayers){VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
+        rc.imageExtent = (VkExtent3D){G.ext.width, G.ext.height, 1};
+        vkCmdCopyImageToBuffer(G.cmd, G.imgs[G.imgIdx],
+            VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, G.shotBuf, 1, &rc);
+        G.shotW = (int)G.ext.width; G.shotH = (int)G.ext.height;
+        G.shotPend = 1;
+        img_barrier(G.imgs[G.imgIdx], VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
+            VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_ACCESS_2_TRANSFER_READ_BIT,
+            VK_PIPELINE_STAGE_2_NONE, 0, VK_IMAGE_ASPECT_COLOR_BIT);
+    } else {
     img_barrier(G.imgs[G.imgIdx], VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
         VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT,
         VK_PIPELINE_STAGE_2_NONE, 0, VK_IMAGE_ASPECT_COLOR_BIT);
+    }
     VKC(vkEndCommandBuffer(G.cmd));
 
     VkPipelineStageFlags wait = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
@@ -482,6 +519,45 @@ void rk_set_camera(const float vp[16], const float eye[3], const float focus[3])
 }
 
 void rk_extent(int *w, int *h) { *w = (int)G.ext.width; *h = (int)G.ext.height; }
+
+void rk_screenshot(const char *path) {
+    snprintf(G.shotPath, sizeof G.shotPath, "%s", path);
+}
+
+/* 24bpp top-down BMP from BGRA8 staging pixels */
+static void shot_write_bmp(const char *path, const uint8_t *src, int w, int h) {
+    FILE *f = fopen(path, "wb");
+    if (!f) { fprintf(stderr, "screenshot: can't open %s\n", path); return; }
+    int rbgr = (G.surfFmt == VK_FORMAT_R8G8B8A8_SRGB ||
+                G.surfFmt == VK_FORMAT_R8G8B8A8_UNORM);
+    int row = (w * 3 + 3) & ~3;
+    uint32_t isz = (uint32_t)(row * h);
+    uint8_t hdr[54] = {0};
+    hdr[0] = 'B'; hdr[1] = 'M';
+    uint32_t fsz = 54 + isz;
+    memcpy(hdr + 2, &fsz, 4);
+    uint32_t off = 54; memcpy(hdr + 10, &off, 4);
+    uint32_t ih = 40;  memcpy(hdr + 14, &ih, 4);
+    memcpy(hdr + 18, &w, 4);
+    int32_t nh = -h;   memcpy(hdr + 22, &nh, 4);   /* top-down */
+    uint16_t pl = 1, bp = 24;
+    memcpy(hdr + 26, &pl, 2); memcpy(hdr + 28, &bp, 2);
+    memcpy(hdr + 34, &isz, 4);
+    fwrite(hdr, 1, 54, f);
+    uint8_t *ln = malloc((size_t)row);
+    for (int y = 0; y < h; y++) {
+        const uint8_t *s = src + (size_t)y * w * 4;
+        for (int x = 0; x < w; x++) {
+            ln[x*3+0] = s[x*4 + (rbgr ? 2 : 0)];
+            ln[x*3+1] = s[x*4+1];
+            ln[x*3+2] = s[x*4 + (rbgr ? 0 : 2)];
+        }
+        fwrite(ln, 1, (size_t)row, f);
+    }
+    free(ln);
+    fclose(f);
+    fprintf(stderr, "screenshot -> %s\n", path);
+}
 
 void rk_query_stats(RkStats *s) {
     s->draws = G.qn; s->insts = G.instN;

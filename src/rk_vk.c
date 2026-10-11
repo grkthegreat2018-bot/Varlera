@@ -23,7 +23,7 @@ static VkDeviceMemory mem_alloc(VkDeviceSize size, uint32_t bits, VkMemoryProper
 }
 
 
-static VkBuffer buf_create(VkDeviceSize size, VkBufferUsageFlags usage,
+VkBuffer buf_create(VkDeviceSize size, VkBufferUsageFlags usage,
                            VkMemoryPropertyFlags props, VkDeviceMemory *outMem, void **mapped) {
     VkBufferCreateInfo bi = {VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};
     bi.size = size; bi.usage = usage; bi.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
@@ -455,7 +455,8 @@ static void swapchain_create(void) {
     ci.surface = G.surf; ci.minImageCount = count;
     ci.imageFormat = G.surfFmt; ci.imageColorSpace = G.surfCS;
     ci.imageExtent = ext; ci.imageArrayLayers = 1;
-    ci.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+    ci.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT |
+                    VK_IMAGE_USAGE_TRANSFER_SRC_BIT;   /* screenshot readback */
     ci.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
     ci.preTransform = caps.currentTransform;
     ci.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
@@ -749,6 +750,11 @@ void rk_shutdown(void) {
         vkDestroySemaphore(G.dev, G.renderDone[i], NULL);
     vkDestroyBuffer(G.dev, G.vbuf, NULL);
     vkFreeMemory(G.dev, G.vbufMem, NULL);
+    if (G.shotBuf) {
+        vkUnmapMemory(G.dev, G.shotMem);
+        vkDestroyBuffer(G.dev, G.shotBuf, NULL);
+        vkFreeMemory(G.dev, G.shotMem, NULL);
+    }
     vkDestroyImageView(G.dev, G.shadowView, NULL);
     vkDestroyImage(G.dev, G.shadowImg, NULL);
     vkFreeMemory(G.dev, G.shadowMem, NULL);

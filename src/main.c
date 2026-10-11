@@ -1,5 +1,6 @@
 /* main.c - entry point, input dispatch, frame loop. */
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN
@@ -175,6 +176,11 @@ static void on_key(GLFWwindow *w, int key, int sc, int action, int mods) {
     }
     if (key == GLFW_KEY_F3 && action == GLFW_PRESS) { prof_toggle(); return; }
     if (key == GLFW_KEY_F11 && action == GLFW_PRESS) { toggle_fullscreen(); return; }
+    if (key == GLFW_KEY_F12 && action == GLFW_PRESS) {
+        static int shotN;
+        char p[64]; snprintf(p, sizeof p, "shot_%d.bmp", ++shotN);
+        rk_screenshot(p); return;
+    }
     if (key == GLFW_KEY_TAB && (action == GLFW_PRESS)) { app_toggle_mode(); return; }
     if (key == GLFW_KEY_ESCAPE && panel_del_pending()) { panel_del_cancel(); return; }
     if (key == GLFW_KEY_ESCAPE && A.app == APP_PLAY) { app_toggle_mode(); return; }
@@ -232,6 +238,10 @@ int main(void) {
     A.hoverBlock = A.hoverAxis = A.hoverAsset = -1;
     A.lastT = glfwGetTime();
     prof_reset();
+    /* scripted capture: VARLERA_SHOT=out.bmp writes a screenshot at
+       frame 45 then continues (handy for agent/CI verification) */
+    const char *envShot = getenv("VARLERA_SHOT");
+    int frameNo = 0;
 
     puts("Varlera controls:");
     puts("  RMB look | WASD+QE fly | space/shift up/down | wheel=zoom | MMB pan | F focus");
@@ -291,6 +301,7 @@ int main(void) {
         prof_zone_begin(PZ_END);
         rk_end_frame();
         prof_zone_end(PZ_END);
+        if (envShot && ++frameNo == 45) rk_screenshot(envShot);
 
         prof_count(PC_BLOCKS, g_nb);
         RkStats rs; rk_query_stats(&rs);
