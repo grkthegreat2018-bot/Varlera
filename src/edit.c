@@ -191,9 +191,8 @@ static void resolve_ghost_overlap(v3 *p, v3 gs) {
         for (int i = 0; i < g_nb; i++) {
             Block *b = &g_blocks[i];
             v3 es = block_eff_size(b);
-            if (fabsf(p->x - b->pos.x) < (gs.x + es.x)*0.5f - 1e-3f &&
-                fabsf(p->y - b->pos.y) < (gs.y + es.y)*0.5f - 1e-3f &&
-                fabsf(p->z - b->pos.z) < (gs.z + es.z)*0.5f - 1e-3f) {
+            if (aabb_overlap_xz(*p, gs, b->pos, es, 1e-3f) &&
+                fabsf(p->y - b->pos.y) < (gs.y + es.y)*0.5f - 1e-3f) {
                 float bt = b->pos.y + es.y*0.5f;
                 if (bt > top) top = bt;
             }
@@ -369,8 +368,7 @@ static void paste_clip(v3 at) {
             v3 es = block_eff_size(&A.clip[i]);
             for (int j = 0; j < g_nb; j++) {
                 v3 bs = block_eff_size(&g_blocks[j]);
-                if (fabsf(p.x-g_blocks[j].pos.x) < (es.x+bs.x)*0.5f-1e-3f &&
-                    fabsf(p.z-g_blocks[j].pos.z) < (es.z+bs.z)*0.5f-1e-3f &&
+                if (aabb_overlap_xz(p, es, g_blocks[j].pos, bs, 1e-3f) &&
                     p.y-es.y*0.5f < g_blocks[j].pos.y+bs.y*0.5f-1e-3f &&
                     p.y+es.y*0.5f > g_blocks[j].pos.y-bs.y*0.5f+1e-3f) {
                     float need = g_blocks[j].pos.y+bs.y*0.5f - (p.y-es.y*0.5f);
@@ -484,6 +482,10 @@ void edit_lmb_motion(void) {            /* click -> move once past threshold */
     }
 }
 
+static void save_all(void) {
+    world_save("world.bw"); tex_save("textures.bw"); puts("saved");
+}
+
 void edit_key(int key, int mods) {
     int ctrl = mods & GLFW_MOD_CONTROL;
     switch (key) {
@@ -551,7 +553,7 @@ void edit_key(int key, int mods) {
         break;
     case GLFW_KEY_Z: if (ctrl && world_undo()) { sel_clear(); } break;
     case GLFW_KEY_Y: if (ctrl && world_redo()) { sel_clear(); } break;
-    case GLFW_KEY_S: if (ctrl) { world_save("world.bw"); tex_save("textures.bw"); puts("saved"); } break;
+    case GLFW_KEY_S: if (ctrl) save_all(); break;
     case GLFW_KEY_LEFT: case GLFW_KEY_RIGHT:
     case GLFW_KEY_UP:   case GLFW_KEY_DOWN:
         /* nudge selection 0.5 in view-relative horizontal direction */
@@ -566,7 +568,7 @@ void edit_key(int key, int mods) {
                 g_blocks[i].pos = v3_add(g_blocks[i].pos, v3_scale(d, SIZE_SNAP));
         }
         break;
-    case GLFW_KEY_F5: world_save("world.bw"); tex_save("textures.bw"); puts("saved"); break;
+    case GLFW_KEY_F5: save_all(); break;
     case GLFW_KEY_F9:
         if (world_load("world.bw")) puts("loaded world.bw"); else puts("no world.bw");
         sel_clear();

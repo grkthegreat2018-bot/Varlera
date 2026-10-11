@@ -16,8 +16,7 @@ CamBasis cam_basis(void) {
     CamBasis c;
     c.f = v3_make(-sy*cp, sp, -cy*cp);
     c.r = v3_make(cy, 0, -sy);
-    c.u = v3_cross(c.f, c.r);          /* right-handed up */
-    c.u = v3_scale(c.u, -1.0f);
+    c.u = v3_cross(c.r, c.f);          /* right-handed up */
     return c;
 }
 

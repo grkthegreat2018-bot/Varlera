@@ -21,15 +21,23 @@ links m/dl/pthread. Win32-only code (file dialog, DPI awareness) is `_WIN32`
 
 ## Layout
 
-- `src/rk.c` / `rk.h` — renderer. Vulkan 1.3 dynamic rendering, reversed-Z main depth
-  (clear 0, GREATER), 4x MSAA + resolve, 2048px directional shadow map (forward-Z
-  ortho `m4_ortho`, hardware-compare sampler + 4-tap PCF), instanced drawing
-  (`RkInst` = pos/scale/RGBA8/flags; bits: 0 unlit, 1-2 rot90, 3 nofog, 4 iconVP),
-  deferred command queue replayed for shadow pass. UI quads are NDC rects
-  (`UIVert` pos/col/uv/tex — `rk_ui_rect` solid, `rk_ui_texrect` samples the
-  atlas via set1 binding 1 for real texture previews). Manual VkDeviceMemory
-  (VMA 3.x is C++-only — do not re-add to a C target). `rk_init` returns 1 on
-  success.
+- `src/rk.c` / `rk.h` — renderer, frame + draw path. Vulkan 1.3 dynamic
+  rendering, reversed-Z main depth (clear 0, GREATER), 4x MSAA + resolve,
+  2048px directional shadow map (forward-Z ortho `m4_ortho`, hardware-compare
+  sampler + 4-tap PCF), instanced drawing (`RkInst` = pos/scale/RGBA8/flags;
+  bits: 0 unlit, 1-2 rot90, 3 nofog, 4 iconVP), deferred command queue
+  replayed for shadow pass. UI quads are NDC rects (`UIVert` pos/col/uv/tex
+  — `rk_ui_rect` solid, `rk_ui_texrect` samples the atlas via set1 binding 1
+  for real texture previews). `rk_init` returns 1 on success.
+- `src/rk_vk.c` — renderer init/resources: instance/device pick, swapchain,
+  pipelines, memory (`buf_create`/`make_image`, manual VkDeviceMemory — VMA
+  3.x is C++-only, do not re-add to a C target), texture-atlas + model-mesh
+  uploads.
+- `src/rk_int.h` — renderer-internal shared state: `RkG G`, queue/UBO types,
+  `VKC`, `rk_swapchain_recreate`, `rk_light_dir`.
+- `src/meshgen.c` / `.h` — CPU generation of the built-in unit-box shape
+  meshes (`meshgen_shape` emits one shape for CPU bakes;
+  `meshgen_build_all` emits all + wireframe box + grid plane).
 - `src/app.h` — shared `App A` global (window, camera, mode, selection, drag state).
 - `src/main.c` — entry, glfw callbacks -> dispatch, frame loop.
 - `src/camera.c` — free-fly cam (yaw/pitch basis, ray gen, WASD/QE move).
@@ -54,9 +62,10 @@ links m/dl/pthread. Win32-only code (file dialog, DPI awareness) is `_WIN32`
   Asset geometry, paint color and texture are fully decoupled. Script menu
   docks left of panel on select: GRAVITY/COLLIDE/LOCKED toggles + TRIG/ACT
   cycle rows (BW scripting) + UNFUSE.
-- `src/world.c` — block store (`Block` 44B: pos/size/col/shape/rot/tex/flags/
-  trig/act), undo/redo stacks, `world.bw` binary save/load (v2; reads v1),
-  play-mode gravity settle + snapshot/restore.
+- `src/world.c` — block store (`Block` 64B: pos/size/col/alpha/id/name/shape/
+  rot/tex/texm/flags/trig/act/actParam/tgt), undo/redo stacks, `world.bw`
+  binary save/load (v3; reads v1/v2), play-mode gravity settle (XZ uniform
+  grid broadphase) + snapshot/restore.
 - `src/font.h` — 5x7 bitmap font rendered as UI rects (`ui_text`/`ui_text_clip`).
 - `src/math3d.h` — `v3` union (`{x,y,z}` / `.e[3]`), column-major `m4` float[16],
   `m4_perspective_rz`/`m4_ortho_rz` reversed-Z variants.
@@ -111,6 +120,8 @@ START shape picker (6 presets), PASTE/IMPORT/GRID, palette, MATERIAL row
 that layer's color+texture - locked verts refuse later edits), per-island
 dot colors (union-find components tint dots so disconnected objects read
 apart). verts carry `s_vtex`/`s_vlock` through every split/weld/delete.
+- `src/marching.c` — legacy density-field bake (marching tets over SC_N³
+  grid) + voxel payload unpackers; only used for models.bw <= v5 migration.
 
 Window: GUI subsystem (/ENTRY:mainCRTStartup, no console; stderr still works
 when redirected). Starts borderless fullscreen on the primary monitor;

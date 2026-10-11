@@ -87,10 +87,10 @@ int world_save(const char *path) {
     FILE *f = fopen(path, "wb");
     if (!f) return 0;
     uint32_t hdr[4] = {BW_MAGIC, BW_VER, (uint32_t)g_nb, g_nextid};
-    fwrite(hdr, 4, 4, f);
-    fwrite(g_blocks, sizeof(Block), g_nb, f);
+    int ok = fwrite(hdr, 4, 4, f) == 4 &&
+             fwrite(g_blocks, sizeof(Block), (size_t)g_nb, f) == (size_t)g_nb;
     fclose(f);
-    return 1;
+    return ok;
 }
 
 static void block_defaults(Block *b) {
@@ -165,32 +165,76 @@ void world_restore_play(void) {
     world_reset_physics();
 }
 
-/* support height under block i: ground or top face of any overlapping block */
-static float support_y(int i, float feetY) {
-    Block *b = &g_blocks[i];
-    v3 es = block_eff_size(b);
-    float sup = 0.0f;
-    for (int j = 0; j < g_nb; j++) {
-        if (j == i) continue;
-        Block *o = &g_blocks[j];
-        if (o->flags & BF_NOCOLLIDE) continue;        /* can't support anything */
-        v3 oe = block_eff_size(o);
-        float ox = (es.x + oe.x) * 0.5f, oz = (es.z + oe.z) * 0.5f;
-        if (fabsf(b->pos.x - o->pos.x) >= ox || fabsf(b->pos.z - o->pos.z) >= oz) continue;
-        float top = o->pos.y + oe.y * 0.5f;
-        float myBot = b->pos.y - es.y * 0.5f;
-        if (top <= myBot + 0.6f && top > sup) sup = top;   /* must be below us */
+/* XZ broadphase for support_y: cell size = max XZ extent, so any pair that
+ * can overlap has centers at most one cell apart (checked 3x3 window). */
+static v3     g_es[MAX_BLOCKS];
+static float  g_cellInv;
+static int    g_cellN;
+typedef struct { int cz, cx, i; } SupCell;
+static SupCell g_cell[MAX_BLOCKS];
+
+static int cmp_cell(const void *pa, const void *pb) {
+    const SupCell *a = pa, *b = pb;
+    return a->cz != b->cz ? a->cz - b->cz : a->cx - b->cx;
+}
+
+static void support_build(void) {
+    float cs = 1.0f;
+    for (int i = 0; i < g_nb; i++) {
+        g_es[i] = block_eff_size(&g_blocks[i]);
+        if (g_es[i].x > cs) cs = g_es[i].x;
+        if (g_es[i].z > cs) cs = g_es[i].z;
     }
-    (void)feetY;
+    if (cs < 4.0f) cs = 4.0f;
+    g_cellInv = 1.0f / cs;
+    for (int i = 0; i < g_nb; i++) {
+        g_cell[i].cx = (int)floorf(g_blocks[i].pos.x * g_cellInv);
+        g_cell[i].cz = (int)floorf(g_blocks[i].pos.z * g_cellInv);
+        g_cell[i].i = i;
+    }
+    g_cellN = g_nb;
+    qsort(g_cell, (size_t)g_cellN, sizeof g_cell[0], cmp_cell);
+}
+
+/* support height under block i: ground or top face of any overlapping block */
+static float support_y(int i) {
+    Block *b = &g_blocks[i];
+    v3 es = g_es[i];
+    float sup = 0.0f;
+    float myBot = b->pos.y - es.y * 0.5f;
+    int cx = (int)floorf(b->pos.x * g_cellInv);
+    int cz = (int)floorf(b->pos.z * g_cellInv);
+    for (int dz = -1; dz <= 1; dz++) for (int dx = -1; dx <= 1; dx++) {
+        int tx = cx + dx, tz = cz + dz;
+        int lo = 0, hi = g_cellN;              /* first entry in cell (tx,tz) */
+        while (lo < hi) {
+            int m = (lo + hi) >> 1;
+            int d = g_cell[m].cz - tz;
+            if (!d) d = g_cell[m].cx - tx;
+            if (d < 0) lo = m + 1; else hi = m;
+        }
+        for (int k = lo; k < g_cellN &&
+                        g_cell[k].cz == tz && g_cell[k].cx == tx; k++) {
+            int j = g_cell[k].i;
+            if (j == i) continue;
+            Block *o = &g_blocks[j];
+            if (o->flags & BF_NOCOLLIDE) continue;   /* can't support anything */
+            v3 oe = g_es[j];
+            if (!aabb_overlap_xz(b->pos, es, o->pos, oe, 0.0f)) continue;
+            float top = o->pos.y + oe.y * 0.5f;
+            if (top <= myBot + 0.6f && top > sup) sup = top; /* must be below us */
+        }
+    }
     return sup;
 }
 
 void world_physics(float dt, uint16_t trigHeld) {
     if (dt > 0.05f) dt = 0.05f;
+    support_build();
     for (int i = 0; i < g_nb; i++) {
         Block *b = &g_blocks[i];
         if (b->flags & (BF_NOPHYS | BF_LOCKED)) continue;
-        v3 es = block_eff_size(b);
+        v3 es = g_es[i];
         /* BOOST: thruster while its trigger is held */
         if (b->act == ACT_BOOST && ((trigHeld >> b->trig) & 1)) {
             g_velY[i] = fminf(g_velY[i] + 30.0f * dt, 10.0f);
@@ -198,7 +242,7 @@ void world_physics(float dt, uint16_t trigHeld) {
             continue;
         }
         float sup = (b->flags & BF_NOCOLLIDE) ? es.y * 0.5f
-                                            : support_y(i, 0) + es.y * 0.5f;
+                                            : support_y(i) + es.y * 0.5f;
         if (b->pos.y <= sup + 0.001f) { b->pos.y = sup; g_velY[i] = 0; continue; }
         g_velY[i] -= 22.0f * dt;
         b->pos.y += g_velY[i] * dt;

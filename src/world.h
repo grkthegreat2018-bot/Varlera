@@ -64,6 +64,12 @@ static inline v3 block_eff_size(const Block *b) {
     return (b->rot & 1) ? v3_make(b->size.z, b->size.y, b->size.x) : b->size;
 }
 
+/* XZ overlap of two center+extent AABBs; eps shrinks the test box */
+static inline int aabb_overlap_xz(v3 pa, v3 ea, v3 pb, v3 eb, float eps) {
+    return fabsf(pa.x - pb.x) < (ea.x + eb.x) * 0.5f - eps &&
+           fabsf(pa.z - pb.z) < (ea.z + eb.z) * 0.5f - eps;
+}
+
 int  world_add(v3 pos, v3 size, int shape, int rot, const float col[3]);
 int  world_addb(const Block *src);  /* raw insert, copies every field */
 void world_delete(int i);       /* swap-remove; caller fixes sel[] */
