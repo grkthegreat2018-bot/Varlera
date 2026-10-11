@@ -24,14 +24,9 @@
 #define SRCHH   22.0f
 #define SHAPES_TOP (SRCHY + SRCHH + 6.0f)   /* 84: below the search box */
 
-/* ---- preset palette ---- */
-static const float PALETTE[][3] = {
-    {0.90f,0.92f,0.95f},{0.55f,0.58f,0.62f},{0.24f,0.26f,0.29f},{0.95f,0.85f,0.30f},
-    {0.94f,0.45f,0.20f},{0.85f,0.20f,0.25f},{0.75f,0.25f,0.60f},{0.45f,0.35f,0.85f},
-    {0.25f,0.55f,0.95f},{0.20f,0.75f,0.80f},{0.25f,0.80f,0.40f},{0.55f,0.85f,0.25f},
-    {0.55f,0.35f,0.20f},{0.95f,0.65f,0.45f},{0.95f,0.55f,0.70f},{1.00f,1.00f,1.00f},
-};
-#define N_COLORS ((int)(sizeof PALETTE / sizeof PALETTE[0]))
+/* ---- preset palette lives in world.c (g_palette): shared by UI + ACT_COLOR ---- */
+#define PALETTE g_palette
+#define N_COLORS 16
 
 /* ---- assets: built-in shapes + size variants ---- */
 static const Asset ASSETS[] = {
@@ -82,28 +77,6 @@ static int vox_model_idx(int i) {
         if (g_models[m].vox && !i--) return m;
     return -1;
 }
-static int n_fused_models(void) {
-    int n = 0;
-    for (int m = 0; m < g_nmodels; m++)
-        if (!g_models[m].vox && !g_models[m].adv) n++;
-    return n;
-}
-static int fused_model_idx(int i) {
-    for (int m = 0; m < g_nmodels; m++)
-        if (!g_models[m].vox && !g_models[m].adv && !i--) return m;
-    return -1;
-}
-static int n_adv_models(void) {
-    int n = 0;
-    for (int m = 0; m < g_nmodels; m++) if (g_models[m].adv) n++;
-    return n;
-}
-static int adv_model_idx(int i) {
-    for (int m = 0; m < g_nmodels; m++)
-        if (g_models[m].adv && !i--) return m;
-    return -1;
-}
-
 static int          cat_count(int c) { return c < 3 ? CATS[c].count : n_vox_models(); }
 static int          cat_ai(int c, int i) {
     return c < 3 ? CATS[c].first + i : N_ASSETS + vox_model_idx(i);
@@ -119,10 +92,17 @@ const Asset *panel_asset(int i) {
     int m = i - N_ASSETS;
     if (m >= 0 && m < g_nmodels) {
         static Asset a;                      /* synthetic asset for a model */
+        static char tip[96];                 /* name + counts; shown in tooltip */
         a.name = g_models[m].name;
-        a.tip  = g_models[m].vox ? "Sculpted block. RMB deletes."
-               : g_models[m].adv ? "Premade asset. RMB deletes."
-                                 : "Fused block. RMB deletes.";
+        a.tip = tip;
+        if (g_models[m].vox)
+            snprintf(tip, sizeof tip, "%s - %d verts. RMB deletes.",
+                     g_models[m].adv ? "Premade asset" : "Sculpted block",
+                     g_models[m].nvert);
+        else
+            snprintf(tip, sizeof tip, "%s - %d parts. RMB deletes.",
+                     g_models[m].adv ? "Premade asset" : "Fused block",
+                     g_models[m].nch);
         a.mesh = g_models[m].mesh;
         a.size = g_models[m].size;
         return &a;
@@ -249,12 +229,37 @@ static float shapes_h(void) {
 
 static float cy(float contentY) { return SHAPES_TOP + contentY - A.panelScroll; }
 
-/* MODELS tab (kind 0 = fused) / PROPS tab (kind 1 = premade) */
+/* shared search box — SHAPES filters assets+models, MODELS/PROPS filter models */
+static int search_tab(void) {
+    return A.panelTab == 0 || A.panelTab == 4 || A.panelTab == 5;
+}
+static void draw_search_box(float px) {
+    int foc = A.textMode == 1;
+    rk_ui_rect(px + 8, SRCHY, PW - 16, SRCHH,
+               foc ? 0.24f : 0.15f, foc ? 0.26f : 0.16f, foc ? 0.34f : 0.21f, 1);
+    rk_ui_rect(px + 8, SRCHY, PW - 16, 1.5f, 0.4f,0.6f,0.9f, foc ? 0.9f : 0.4f);
+    char sb[48];
+    if (A.search[0]) snprintf(sb, sizeof sb, "SEARCH: %s", A.search);
+    else snprintf(sb, sizeof sb, "SEARCH");
+    ui_text(px + 14, SRCHY + 7, sb, 1,
+            foc ? 1.0f : 0.55f, foc ? 1.0f : 0.55f, foc ? 1.0f : 0.6f, 1);
+}
+
+/* MODELS tab (kind 0 = fused) / PROPS tab (kind 1 = premade);
+   search box on these tabs filters by model name too */
+static int model_matches(int kind, int m) {
+    int k = g_models[m].adv ? 1 : (g_models[m].vox ? 2 : 0);
+    return k == kind && name_hit(g_models[m].name);
+}
 static int model_list_n(int kind) {
-    return kind ? n_adv_models() : n_fused_models();
+    int n = 0;
+    for (int m = 0; m < g_nmodels; m++) n += model_matches(kind, m);
+    return n;
 }
 static int model_list_idx(int kind, int i) {
-    return kind ? adv_model_idx(i) : fused_model_idx(i);
+    for (int m = 0; m < g_nmodels; m++)
+        if (model_matches(kind, m) && !i--) return m;
+    return -1;
 }
 static float models_h(int kind) {
     return HDRH + ((model_list_n(kind) + COLS - 1) / COLS) * CELL + 6.0f;
@@ -406,12 +411,11 @@ int panel_press(double x, double y) {
 
     float fx = (float)x, fy = (float)y;
 
+    if (search_tab() && in_rect(fx, fy, px + 8, SRCHY, PW - 16, SRCHH)) {
+        A.textMode = 1; return 1;
+    }
+
     if (A.panelTab == 0) {           /* SHAPES */
-        /* search box */
-        if (in_rect(fx, fy, px + 8, SRCHY, PW - 16, SRCHH)) {
-            A.textMode = 1; return 1;
-        }
-        A.textMode = 0;
         /* sculpt entry button (fixed at panel bottom) */
         if (in_rect(fx, fy, px + 8, (float)A.fbh - 34.0f, PW - 16, 26)) {
             sculpt_open(); return 1;
@@ -716,7 +720,8 @@ static void draw_models(float px, int kind) {
     ui_text_clip(px + 12, cy(yy) + 5, hdr, 2, 0.85f,0.87f,0.95f,1, cy0, cy1);
     if (!n)
         ui_text_clip(px + 12, cy(yy) + 30,
-                     kind ? "NONE" : "CTRL+B FUSES SELECTION", 1,
+                     A.search[0] ? "NO MATCH"
+                     : kind ? "NONE" : "CTRL+B FUSES SELECTION", 1,
                      0.55f,0.6f,0.7f,1, cy0, cy1);
     yy += HDRH;
     float cellsY = yy;
@@ -949,16 +954,7 @@ void panel_draw(void) {
     }
 
     if (A.panelTab == 0) {
-        /* search box */
-        int foc = A.textMode == 1;
-        rk_ui_rect(px + 8, SRCHY, PW - 16, SRCHH,
-                   foc ? 0.24f : 0.15f, foc ? 0.26f : 0.16f, foc ? 0.34f : 0.21f, 1);
-        rk_ui_rect(px + 8, SRCHY, PW - 16, 1.5f, 0.4f,0.6f,0.9f, foc ? 0.9f : 0.4f);
-        char sb[48];
-        if (A.search[0]) snprintf(sb, sizeof sb, "SEARCH: %s", A.search);
-        else snprintf(sb, sizeof sb, "SEARCH");
-        ui_text(px + 14, SRCHY + 7, sb, 1,
-                foc ? 1.0f : 0.55f, foc ? 1.0f : 0.55f, foc ? 1.0f : 0.6f, 1);
+        draw_search_box(px);
         draw_shapes(px);
         /* sculpt entry button (fixed at panel bottom) */
         float sy = (float)A.fbh - 34.0f;
@@ -971,7 +967,10 @@ void panel_draw(void) {
     }
     else if (A.panelTab == 1) draw_paint(px);
     else if (A.panelTab == 2) draw_tex(px);
-    else if (A.panelTab == 4 || A.panelTab == 5) draw_models(px, A.panelTab - 4);
+    else if (A.panelTab == 4 || A.panelTab == 5) {
+        draw_search_box(px);
+        draw_models(px, A.panelTab - 4);
+    }
     else                      draw_world(px);
     rk_ui_flush();
 
@@ -1033,18 +1032,37 @@ void panel_draw(void) {
 }
 
 /* ---- block script menu: floats above the selection ---- */
-enum { SM_GRAV, SM_COLL, SM_LOCK, SM_TRIG, SM_ACT, SM_UNFUSE, SM_FUSE, SM_EDIT };
-static const char *SM_LABEL[] = {"GRAVITY","COLLIDE","LOCKED","TRIG","ACT","UNFUSE","FUSE ALL","RESCULPT"};
+enum { SM_GRAV, SM_COLL, SM_LOCK, SM_NAME, SM_TRIG, SM_ACT, SM_TGT, SM_PARAM,
+       SM_UNFUSE, SM_FUSE, SM_EDIT };
+static const char *SM_LABEL[] = {"GRAVITY","COLLIDE","LOCKED","NAME","TRIG","ACT",
+                                 "TGT","PARAM","UNFUSE","FUSE ALL","RESCULPT"};
 static const char *TRIG_NAME[N_TRIGS] = {"ALWAYS","SPACE","W","A","S","D","E","Q","CLICK"};
-static const char *ACT_NAME[N_ACTS] = {"NONE","SPIN","GLOW","BOOST"};
+static const char *ACT_NAME[N_ACTS] = {"NONE","SPIN","GLOW","BOOST","COLOR","TEX","DELETE"};
+static const char *TGT_LBL[4] = {"SELF","ASSET","NAME","ALL"};
 #define SM_W 152.0f
 
-static int script_layout(float *bx, float *by, int acts[8]) {
+static uint32_t s_renId;                     /* block id being renamed (textMode 3) */
+
+/* display name for a block's mesh: builtin asset name or model name */
+static const char *mesh_display_name(int mesh) {
+    if (mesh >= RK_MESH_BASE_MODEL) {
+        int m = mesh - RK_MESH_BASE_MODEL;
+        if (m >= 0 && m < g_nmodels) return g_models[m].name;
+    } else {
+        for (int i = 0; i < N_ASSETS; i++)
+            if (ASSETS[i].mesh == mesh) return ASSETS[i].name;
+    }
+    return "SHAPE";
+}
+
+static int script_layout(float *bx, float *by, int acts[12]) {
     if (A.app != APP_EDIT || !A.nsel || A.drag != M_IDLE) return 0;
     int nr = 0;
     if (A.nsel == 1) {
         acts[nr++] = SM_GRAV; acts[nr++] = SM_COLL; acts[nr++] = SM_LOCK;
-        acts[nr++] = SM_TRIG; acts[nr++] = SM_ACT;
+        acts[nr++] = SM_NAME;
+        acts[nr++] = SM_TRIG; acts[nr++] = SM_ACT; acts[nr++] = SM_TGT;
+        acts[nr++] = SM_PARAM;
         int si0 = sel_first();
         int sh = g_blocks[si0].shape;
         if (sh >= RK_MESH_BASE_MODEL) {
@@ -1055,7 +1073,7 @@ static int script_layout(float *bx, float *by, int acts[8]) {
     } else {
         acts[nr++] = SM_FUSE; acts[nr++] = SM_LOCK;
     }
-    float h = 26.0f + nr * 22.0f;
+    float h = (A.nsel == 1 ? 66.0f : 26.0f) + nr * 22.0f;
     float pw = A.panelOpen ? PW : STRIPW;
     *bx = (float)A.fbw - pw - SM_W - 10.0f;
     *by = clampf((float)A.fbh * 0.5f - h * 0.5f, 8.0f, (float)A.fbh - h - 8.0f);
@@ -1072,30 +1090,55 @@ static int script_state(int act, const Block *b) {
 }
 
 static void draw_script_menu(void) {
-    int acts[8]; float bx, by;
+    int acts[12]; float bx, by;
     int nr = script_layout(&bx, &by, acts);
     if (!nr) return;
-    float h = 26.0f + nr * 22.0f;
+    float hdr = A.nsel == 1 ? 66.0f : 26.0f;
+    float h = hdr + nr * 22.0f;
     rk_ui_rect(bx, by, SM_W, h, 0.10f,0.11f,0.14f, 0.96f);
     rk_ui_rect(bx, by, SM_W, 1.5f, 0.40f,0.70f,1.0f, 0.9f);
-    char buf[24];
-    snprintf(buf, sizeof buf, A.nsel == 1 ? "BLOCK" : "%d BLOCKS", A.nsel);
-    ui_text(bx + 8, by + 8, buf, 1, 0.85f,0.87f,0.95f, 1);
     int si = sel_first();
     const Block *b = A.nsel == 1 && si >= 0 ? &g_blocks[si] : NULL;
+    char buf[40];
+    snprintf(buf, sizeof buf, A.nsel == 1 ? "BLOCK #%u" : "%d BLOCKS",
+             A.nsel == 1 && b ? b->id : (uint32_t)A.nsel);
+    ui_text(bx + 8, by + 8, buf, 1, 0.85f,0.87f,0.95f, 1);
+    if (b) {                                   /* object info block */
+        ui_text(bx + 8, by + 21, mesh_display_name(b->shape), 1,
+                0.55f,0.80f,1.0f, 1);
+        v3 es = block_eff_size(b);
+        char l2[56];
+        snprintf(l2, sizeof l2, "%.1f,%.1f,%.1f  %.1fx%.1fx%.1f",
+                 b->pos.x, b->pos.y, b->pos.z, es.x, es.y, es.z);
+        ui_text(bx + 8, by + 34, l2, 1, 0.55f,0.60f,0.70f, 1);
+        char l3[56];
+        snprintf(l3, sizeof l3, "TEX %d  A %.2f%s",
+                 b->tex, b->alpha, (b->flags & BF_GLASS) ? "  GLASS" : "");
+        ui_text(bx + 8, by + 47, l3, 1, 0.55f,0.60f,0.70f, 1);
+    }
     for (int r = 0; r < nr; r++) {
-        float ry = by + 26.0f + r * 22.0f;
+        float ry = by + hdr + r * 22.0f;
         int hov = in_rect((float)A.mx,(float)A.my, bx+4, ry, SM_W-8, 19);
         int btn = acts[r] == SM_FUSE || acts[r] == SM_UNFUSE ||
-                  acts[r] == SM_TRIG || acts[r] == SM_ACT || acts[r] == SM_EDIT;
+                  acts[r] == SM_TRIG || acts[r] == SM_ACT || acts[r] == SM_EDIT ||
+                  acts[r] == SM_NAME || acts[r] == SM_TGT || acts[r] == SM_PARAM;
         rk_ui_rect(bx+4, ry, SM_W-8, 19,
                    btn ? 0.25f : 0.16f+hov*0.08f,
                    btn ? 0.42f : 0.17f+hov*0.08f,
                    btn ? 0.65f : 0.22f+hov*0.08f, 1);
-        char lab[32];
+        char lab[40];
         const char *txt = SM_LABEL[acts[r]];
         if (b && acts[r] == SM_TRIG) { snprintf(lab, sizeof lab, "TRIG: %s", TRIG_NAME[b->trig]); txt = lab; }
         else if (b && acts[r] == SM_ACT) { snprintf(lab, sizeof lab, "ACT: %s", ACT_NAME[b->act]); txt = lab; }
+        else if (b && acts[r] == SM_TGT) { snprintf(lab, sizeof lab, "TGT: %s", TGT_LBL[b->tgt & 3]); txt = lab; }
+        else if (b && acts[r] == SM_PARAM) { snprintf(lab, sizeof lab, "PARAM: %d", b->actParam); txt = lab; }
+        else if (b && acts[r] == SM_NAME) {
+            if (A.textMode == 3)
+                snprintf(lab, sizeof lab, "NAME: %s_", A.renBuf);
+            else
+                snprintf(lab, sizeof lab, "NAME: %s", b->name[0] ? b->name : "-");
+            txt = lab;
+        }
         ui_text(bx + 12, ry + 6, txt, 1, 0.9f,0.9f,0.95f, 1);
         if (!btn && b) {
             int on = script_state(acts[r], b);
@@ -1124,23 +1167,43 @@ int panel_rmb(double x, double y) {
     return 1;
 }
 
+/* apply the textMode-3 rename buffer to the tracked block id */
+void panel_rename_commit(void) {
+    if (!s_renId) return;
+    for (int i = 0; i < g_nb; i++)
+        if (g_blocks[i].id == s_renId) {
+            snprintf(g_blocks[i].name, sizeof g_blocks[i].name,
+                     "%.11s", A.renBuf);
+            break;
+        }
+    s_renId = 0;
+}
+
 int panel_script_click(double x, double y) {
-    int acts[8]; float bx, by;
+    int acts[12]; float bx, by;
     int nr = script_layout(&bx, &by, acts);
     if (!nr) return 0;
+    float hdr = A.nsel == 1 ? 66.0f : 26.0f;
     for (int r = 0; r < nr; r++) {
-        float ry = by + 26.0f + r * 22.0f;
+        float ry = by + hdr + r * 22.0f;
         if (!in_rect((float)x,(float)y, bx+4, ry, SM_W-8, 19)) continue;
         int i = sel_first();
         world_push_undo();
         switch (acts[r]) {
         case SM_GRAV: g_blocks[i].flags ^= BF_NOPHYS; break;
         case SM_COLL: g_blocks[i].flags ^= BF_NOCOLLIDE; break;
+        case SM_NAME:
+            s_renId = g_blocks[i].id;
+            snprintf(A.renBuf, sizeof A.renBuf, "%.11s", g_blocks[i].name);
+            A.textMode = 3;
+            break;
         case SM_TRIG: g_blocks[i].trig = (g_blocks[i].trig + 1) % N_TRIGS; break;
         case SM_ACT:
             g_blocks[i].act = (g_blocks[i].act + 1) % N_ACTS;
             g_blocks[i].flags &= ~BF_SPIN;   /* migrated to trig/act */
             break;
+        case SM_TGT:   g_blocks[i].tgt = (g_blocks[i].tgt + 1) & 3; break;
+        case SM_PARAM: g_blocks[i].actParam = (g_blocks[i].actParam + 1) & 15; break;
         case SM_LOCK:
             for (int j = 0; j < g_nb; j++) if (A.sel[j]) {
                 g_blocks[j].flags ^= BF_LOCKED;

@@ -50,6 +50,9 @@ static void on_char(GLFWwindow *w, unsigned int cp) {
         if (n < 32) { A.search[n] = (char)cp; A.search[n+1] = 0; }
     } else if (A.textMode == 2) {
         if (A.cmdLen < 95) { A.cmdBuf[A.cmdLen++] = (char)cp; A.cmdBuf[A.cmdLen] = 0; }
+    } else if (A.textMode == 3) {
+        int n = (int)strlen(A.renBuf);
+        if (n < 11) { A.renBuf[n] = (char)cp; A.renBuf[n+1] = 0; }
     }
 }
 
@@ -171,10 +174,14 @@ static void on_key(GLFWwindow *w, int key, int sc, int action, int mods) {
     if (A.modal == 2) { sculpt_key(key); return; }
     /* text input swallows keys first */
     if (A.textMode) {
-        if (key == GLFW_KEY_ESCAPE || key == GLFW_KEY_ENTER) A.textMode = 0;
+        if (key == GLFW_KEY_ESCAPE || key == GLFW_KEY_ENTER) {
+            if (A.textMode == 3) panel_rename_commit();
+            A.textMode = 0;
+        }
         else if (key == GLFW_KEY_BACKSPACE) {
             if (A.textMode == 1) { int n = (int)strlen(A.search); if (n) A.search[n-1] = 0; }
             else if (A.textMode == 2 && A.cmdLen) A.cmdBuf[--A.cmdLen] = 0;
+            else if (A.textMode == 3) { int n = (int)strlen(A.renBuf); if (n) A.renBuf[n-1] = 0; }
         }
         return;
     }

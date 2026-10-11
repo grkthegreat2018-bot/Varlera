@@ -60,8 +60,11 @@ links m/dl/pthread. Win32-only code (file dialog, DPI awareness) is `_WIN32`
   + ENVIRONMENT: SKY x6 / GROUND x5 preset cycler -> `rk_set_env`, saved to
   `env.bw`), MODELS (fused block groups), PROPS (`adv` premade assets).
   Asset geometry, paint color and texture are fully decoupled. Script menu
-  docks left of panel on select: GRAVITY/COLLIDE/LOCKED toggles + TRIG/ACT
-  cycle rows (BW scripting) + UNFUSE.
+  docks left of panel on select: single-select shows `BLOCK #id` + mesh name
+  + pos/size + TEX/alpha info header; GRAVITY/COLLIDE/LOCKED toggles +
+  NAME (textMode 3 rename, tracked by `Block.id`) + TRIG/ACT/TGT/PARAM
+  cycle rows (full BW script row) + UNFUSE/RESCULPT. The SHAPES search box
+  also sits on MODELS/PROPS and filters those grids (`model_matches`).
 - `src/world.c` — block store (`Block` 64B: pos/size/col/alpha/id/name/shape/
   rot/tex/texm/flags/trig/act/actParam/tgt), undo/redo stacks, `world.bw`
   binary save/load (v3; reads v1/v2), play-mode gravity settle (XZ uniform
@@ -115,9 +118,15 @@ fps/frame avg,p95,max + wait/sim/queue/submit CPU zones + GPU
 shadow/main ms + draws/inst/ui-verts/blocks/models).
 
 Scripting (BW-style): select a block -> docked menu -> cycle TRIG
-(ALWAYS/SPACE/W/A/S/D/E/Q/CLICK) and ACT (NONE/SPIN/GLOW/BOOST). In play mode
-the action runs while the trigger key/button is held; BOOST is a thruster
-(velY += 30/s up to 10 u/s). Legacy BF_SPIN behaves like ALWAYS+SPIN.
+(ALWAYS/SPACE/W/A/S/D/E/Q/CLICK), ACT (NONE/SPIN/GLOW/BOOST/COLOR/TEX/
+DELETE), TGT (SELF/ASSET/NAME/ALL) and PARAM (0-15). SPIN/GLOW/BOOST are
+held acts; COLOR/TEX/DELETE are discrete — they fire on the trigger edge
+(`s_prevHeld` diff in world_physics) and apply to the TGT set
+(`tgt_match`). NAME edits `Block.name` (textMode 3, `renBuf`, commit via
+`panel_rename_commit` keyed on stable `Block.id`); TGT NAME targets blocks
+sharing that name. ACT_COLOR paints `g_palette[actParam&15]` — the shared
+16-color table in world.c that the PAINT tab also uses. Legacy BF_SPIN
+behaves like ALWAYS+SPIN.
 RMB on a SCULPTED/MODELS/PROPS cell opens a DELETE/KEEP confirm dialog —
 on confirm placed instances auto-unfuse and mesh ids re-bake dense; ESC or
 any non-DELETE click cancels. Eyedropper (RMB world click) picks

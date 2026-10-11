@@ -7,6 +7,14 @@ Block g_blocks[MAX_BLOCKS];
 int g_nb;
 uint32_t g_nextid = 1;
 
+/* shared 16-color palette — panel swatches and ACT_COLOR actParam both index it */
+const float g_palette[16][3] = {
+    {0.90f,0.92f,0.95f},{0.55f,0.58f,0.62f},{0.24f,0.26f,0.29f},{0.95f,0.85f,0.30f},
+    {0.94f,0.45f,0.20f},{0.85f,0.20f,0.25f},{0.75f,0.25f,0.60f},{0.45f,0.35f,0.85f},
+    {0.25f,0.55f,0.95f},{0.20f,0.75f,0.80f},{0.25f,0.80f,0.40f},{0.55f,0.85f,0.25f},
+    {0.55f,0.35f,0.20f},{0.95f,0.65f,0.45f},{0.95f,0.55f,0.70f},{1.00f,1.00f,1.00f},
+};
+
 /* ---------------- undo/redo ---------------- */
 
 #define UNDO_DEPTH 48
@@ -144,11 +152,13 @@ int world_load(const char *path) {
 /* ---------------- play-mode physics ---------------- */
 
 static float g_velY[MAX_BLOCKS];
+static uint16_t s_prevHeld;           /* last frame's trigHeld -> edge detect */
 static Block g_playBackup[MAX_BLOCKS];
 static int g_playBackupN = -1;
 
 void world_reset_physics(void) {
     memset(g_velY, 0, sizeof g_velY);
+    s_prevHeld = 0;
 }
 
 void world_snapshot_play(void) {
@@ -228,8 +238,40 @@ static float support_y(int i) {
     return sup;
 }
 
+/* does script action on `src` reach block `b`? (tgt scoping) */
+static int tgt_match(const Block *src, const Block *b) {
+    switch (src->tgt & 3) {
+    case TGT_ASSET: return b->shape == src->shape;
+    case TGT_NAME:  return src->name[0] && !strcmp(b->name, src->name);
+    case TGT_ALL:   return 1;
+    default:        return b == src;
+    }
+}
+
 void world_physics(float dt, uint16_t trigHeld) {
     if (dt > 0.05f) dt = 0.05f;
+    /* discrete actions (COLOR/TEX/DEL) fire on the trigger edge; continuous
+       acts (SPIN/GLOW render-side, BOOST below) key off the held bit */
+    uint16_t edge = trigHeld & ~s_prevHeld;
+    s_prevHeld = trigHeld;
+    static uint8_t delMark[MAX_BLOCKS];
+    memset(delMark, 0, (size_t)g_nb);
+    for (int i = 0; i < g_nb; i++) {
+        Block *s = &g_blocks[i];
+        if (s->act < ACT_COLOR || !((edge >> s->trig) & 1)) continue;
+        for (int t = 0; t < g_nb; t++) {
+            Block *b = &g_blocks[t];
+            if (!tgt_match(s, b)) continue;
+            if (s->act == ACT_COLOR) memcpy(b->col, g_palette[s->actParam & 15], sizeof b->col);
+            else if (s->act == ACT_TEX) b->tex = s->actParam;
+            else if (s->act == ACT_DEL) delMark[t] = 1;
+        }
+    }
+    int ndel = 0;
+    for (int i = g_nb - 1; i >= 0; i--)     /* descending: swap-removes pull */
+        if (delMark[i]) { world_delete(i); ndel++; }   /* from >i (consumed) */
+    if (ndel) memset(g_velY, 0, sizeof(float) * g_nb);
+
     support_build();
     for (int i = 0; i < g_nb; i++) {
         Block *b = &g_blocks[i];

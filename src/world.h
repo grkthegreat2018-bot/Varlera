@@ -58,6 +58,7 @@ typedef struct {
 extern Block g_blocks[MAX_BLOCKS];
 extern int g_nb;
 extern uint32_t g_nextid;       /* instance-id allocator */
+extern const float g_palette[16][3];  /* shared color vocabulary (UI + ACT_COLOR) */
 
 /* effective AABB half-extents considering rot (x/z swap on odd rot) */
 static inline v3 block_eff_size(const Block *b) {
