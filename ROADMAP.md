@@ -35,7 +35,11 @@ largest CPU cost in an empty scene. Re-measure after each perf item.
 | Aseprite-like art tool | M | `panel.c`/`tex.c` (or new `art.c`) | Layers + opacity, selection/move/fill/line tools, color pick+swatches, undo stack, zoom pan. Self-contained; worth extracting from `panel.c` once it grows past ~1k lines. |
 | Better world data handling | M | `world.c` save/load | Format v4: header with name/created/modified, `worlds/` dir, thumbnails (render one frame offscreen or save atlas cell), autosave timer, load-version migration (v3 reader already exists). |
 | Better world file size | M | `world.c` save/load | Folds into v4: quantize pos/size to grid, RLE over sorted blocks (long runs share shape/tex/col), varint lengths, optional embedded deflate (small public-domain impl fits the no-dep style). Expect ~3-5x on typical worlds. |
-| Better I/O | M | `main.c`, `world.c`, `tex.c` | One save worker thread (async world+models+atlas), export world→OBJ and atlas→PNG, import OBJ drag-drop, file dialogs on every path (Win32 common dialog exists; zenity guarded on Linux). |
+| Better I/O | M | `main.c`, `world.c`, `tex.c` | One save worker thread (async world+models+atlas), export world→OBJ and atlas→PNG, import OBJ drag-drop, file dialogs on every path (Win32 common dialog exists; zenity guarded on Linux). **Save-As to a user-chosen folder** for worlds/models/textures (`GetSaveFileName`); saved under `worlds/` by default. |
+| Portable world bundle | M | `world.c`, `model.c`, `tex.c` | `.bwx` single-file export = world + referenced models + atlas strip + provenance block. The "share without servers" answer — import validates + regenerates missing pieces. |
+| World settings system | M | `world.c`, `panel.c` WORLD tab | Per-world settings record in `env.bw` v2: physics mode, gravity scale, chunking, LOD, sky assets, render flags. Fields that alter stored data get a destructive-change confirm dialog ("may wipe/reshape this world") before applying. Foundation row for the Tier-3 settings below. |
+| Skybox objects | M | `rk.c` sky pass, `model.c`, `panel.c` | User-chosen models replace flat preset sky elements: sun disc→sculpted sun, billboard clouds, moon, stars — drawn in the sky pass (no depth) per env preset. Ships a default skybox asset pack. |
+| Advanced rendering flags | M | `rk.c`, `rk_vk.c`, WORLD settings | Per-world EXPERIMENTAL section: shadow map size, PCF radius, MSAA toggle, fog curve, custom shader path — behind the wipe-warning pattern; gives experienced users control without destabilizing defaults. |
 | Proper main menu / world menu | M | `main.c` + new `menu.c` | Needs an app-state enum (menu / edit / play) — `main.c` is currently one monolithic loop. World list browser reuses `modal_load` file picking. |
 | Better mesh handling | M | `meshgen.c`, `model.c`, `rk.c` | Per-model vertex cache keyed by hash (skip re-bake when unchanged), merge `rk_world` draws by material/shape, single upload for all model VBs. |
 | Play-mode greedy mesh (frozen blocks) | M | `world.c`, `meshgen.c` | At play entry: union-find over touching unsupported blocks with no script → one combined mesh/instance; re-splits when a member gets a trigger/action. Cuts draw+physics cost for static scenery. |
@@ -79,6 +83,8 @@ largest CPU cost in an empty scene. Re-measure after each perf item.
 | Scene/entity model | L | `world.c`, `main.c`, new `scene.c` | Generalize Block→Entity (transform + components: mesh/collider/script/emitter) so triggers, NPCs, particles, props share one update path. The pivot from "blocks world" to "engine" — do before scripting v2 explodes `Block` further. |
 | Custom NPCs (sculpt + joint planes) | L | `sculpt.c`, `model.c`, `world.c`, new anim | Sculpted limb pieces + joint-plane attachment points → articulated hierarchies; anim state machine; NPC AI hooks into scripting v2. Depends on joints/physics groundwork from live-collision item. |
 | Threading + GPU compute | L | `world.c`, `meshgen.c`, `rk_vk.c` | Job pool for mesh bakes + broadphase (Win32 threads, `_WIN32` guarded). Vulkan compute for physics queries — prefer compute over CUDA (no new dep, works on all GPUs); CUDA only if a profiling-measured kernel justifies it. |
+| Chunked world layout | L | `world.c`, `meshgen.c`, `edit.c` | World setting: chunk shape NONE (current flat array) / COLUMN (MC-style vertical) / CUBIC (16³ cells). Chunks own their instanced draw buffers + dirty-region rebuild; prerequisite for streaming, real LOD, and scale beyond MAX_BLOCKS. |
+| Provenance + watermarks | L | `world.c` v4, `model.c`, new `author.c` | Every world/model/block-set carries an embedded author record: owner + contributor/roles (modeler/artist), content-hash + signature per asset, contributor list sorted by owned-content share. Ownership handoff = owner-signed transfer record. Honest scope: deters + detects stripping (hash mismatch flags it) — can't be cryptographically unalterable in open-source, but tampering is loud, not silent. "Varlera" baked as default author on premade free-use assets. |
 
 ## Tier 4 — long-term / engine-level
 
@@ -93,6 +99,8 @@ largest CPU cost in an empty scene. Re-measure after each perf item.
 | Full game-dev toolset | XL | Umbrella: prefabs, cutscene/camera tracks, game-mode templates, publish→standalone exe bundling world+atlas+models. Lands piecewise after scene/entity + scripting. |
 | Modding / file-format docs | M | Public spec for `.bw` + texture PNG strip. |
 | Multiplayer | XL | Everything above first; deterministic lockstep vs server-auth is its own design. |
+| Cloud backup (Drive/Dropbox/OneDrive) | L | Cheap version ships free via Save-As: point saves at the provider's synced folder. Real API upload (GDrive REST + OAuth) needs an HTTPS client dep — defer until `libcurl`-style dep is accepted. |
+| Localization | M→L | Font is a 5x7 ASCII bitmap baked into one atlas tile — i18n needs a real font path (SDF/MSDF or system font bake) plus a string table. Do when the UI text set stabilizes. |
 
 ## Suggested order
 
@@ -100,17 +108,19 @@ largest CPU cost in an empty scene. Re-measure after each perf item.
 2. Skybox/ground defaults + panel polish + indexing + new shapes +
    QOL/debugging v1 (visual + feel payoff, all S).
 3. Texture menu → art tool (extraction point: new `art.c`).
-4. World data v4 (incl. file-size compression) + better I/O + menus
-   (app-state refactor is the gateway to everything UI).
+4. World data v4 (incl. file-size compression) + better I/O + menus +
+   world-settings schema (app-state refactor is the gateway to
+   everything UI).
 5. Greedy-mesh play mode + mesh cache + material flags + particle
    system + bloom/AO + flipbook anim + assembly sculpt mode +
    auto-merge (perf and content, needed at scale).
 6. Collision overhaul → building overhaul → rigid-body physics +
    joints + physics stats runtime → player controller
    (gameplay unlock).
-7. Scene/entity refactor → scripting v2 (the "engine" pivot) →
-   math/dialog/compound blocks → rig support → 3D anim creator →
-   NPCs → sound/music tools (all ride on it).
+7. Scene/entity refactor → chunked world layout + LOD → provenance
+   metadata → scripting v2 (the "engine" pivot) → math/dialog/
+   compound blocks → rig support → 3D anim creator → NPCs →
+   sound/music tools (all ride on it).
 8. Occlusion culling + threading only when `prof` shows sim/submit
    zones actually limiting fps at real world sizes.
 
