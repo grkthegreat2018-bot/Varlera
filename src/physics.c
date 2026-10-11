@@ -9,6 +9,8 @@
 #include <string.h>
 #include <stdlib.h>
 
+static float boost_step(int i, float dt);
+
 static float g_velY[MAX_BLOCKS];
 static uint16_t s_prevHeld;           /* last frame's trigHeld -> edge detect */
 static Block g_playBackup[MAX_BLOCKS];
@@ -135,22 +137,50 @@ void world_physics(float dt, uint16_t trigHeld) {
         if (delMark[i]) { world_delete(i); ndel++; }   /* from >i (consumed) */
     if (ndel) memset(g_velY, 0, sizeof(float) * g_nb);
 
+    /* RIGID world setting: joints are perfect — script actions still fire
+       (incl. BOOST below) but nothing settles under gravity */
+    const WSet *ws = world_wset();
+    if (ws->phys == WS_PHYS_RIGID) {
+        for (int i = 0; i < g_nb; i++) {
+            Block *b = &g_blocks[i];
+            if (b->act == ACT_BOOST && !(b->flags & (BF_NOPHYS | BF_LOCKED)) &&
+                ((trigHeld >> b->trig) & 1))
+                b->pos.y += boost_step(i, dt);
+        }
+        return;
+    }
+
+    /* SETTLE: gravity scale comes from the world settings (gravMul/8) */
+    const float grav = 22.0f * (ws->gravMul ? ws->gravMul : 8) / 8.0f;
     support_build();
     for (int i = 0; i < g_nb; i++) {
         Block *b = &g_blocks[i];
         if (b->flags & (BF_NOPHYS | BF_LOCKED)) continue;
         v3 es = g_es[i];
-        /* BOOST: thruster while its trigger is held */
+        /* BOOST: thruster while its trigger is held; weight resists lift
+           (w0 -> 1.5x, w8 -> 1.0x, w15 -> 0.56x) */
         if (b->act == ACT_BOOST && ((trigHeld >> b->trig) & 1)) {
-            g_velY[i] = fminf(g_velY[i] + 30.0f * dt, 10.0f);
+            g_velY[i] = fminf(g_velY[i] + boost_step(i, dt), 10.0f);
             b->pos.y += g_velY[i] * dt;
             continue;
         }
         float sup = (b->flags & BF_NOCOLLIDE) ? es.y * 0.5f
                                             : support_y(i) + es.y * 0.5f;
         if (b->pos.y <= sup + 0.001f) { b->pos.y = sup; g_velY[i] = 0; continue; }
-        g_velY[i] -= 22.0f * dt;
+        g_velY[i] -= grav * dt;
         b->pos.y += g_velY[i] * dt;
-        if (b->pos.y <= sup) { b->pos.y = sup; g_velY[i] = 0; }
+        if (b->pos.y <= sup) {          /* landing: bounce restitution 0..0.9 */
+            b->pos.y = sup;
+            float rest = b->bounce * 0.06f;
+            g_velY[i] = (rest > 0.0f && -g_velY[i] > 1.5f)
+                      ? -g_velY[i] * rest : 0.0f;
+        }
     }
+}
+
+/* BOOST thrust delta for one block — weight stat resists (used in both
+   phys modes so thrusters behave identically) */
+static float boost_step(int i, float dt) {
+    float wf = 1.5f - g_blocks[i].weight * (1.0f / 16.0f);
+    return 30.0f * wf * dt;
 }

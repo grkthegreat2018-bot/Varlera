@@ -51,14 +51,18 @@ void panel_env_load(void) {
 
 /* pending world-setting change that needs the wipe-warning confirm */
 static int s_wConfirm = -1;
-static const char *WLBL[] = {"PHYS","CHUNK","CHUNK SZ","LOD","ADV RENDER"};
+#define WS_ROWS 6
+static const char *WLBL[] = {"PHYS","CHUNK","CHUNK SZ","LOD","ADV RENDER",
+                             "GRAVITY"};
 static const char *WWARN[] = {
     "PHYSICS MODE CHANGES PLAY BEHAVIOR",
     "CHUNK LAYOUT MAY RESHAPE OR WIPE THIS WORLD",
     "CHUNK SIZE MAY RESHAPE OR WIPE THIS WORLD",
     "LOD ALTERS DRAW DISTANCE QUALITY",
     "EXPERIMENTAL RENDER FLAGS CAN CAUSE BUGS",
+    "",
 };
+static const uint8_t GRAV_STEPS[] = {0, 2, 4, 8, 12, 16};   /* 0x..2x */
 
 static void wset_cycle(int i) {
     WSet *w = world_wset();
@@ -69,6 +73,10 @@ static void wset_cycle(int i) {
                           w->chunkSize == 16 ? 32 : 8; break;
     case 3: w->lod ^= 1; break;
     case 4: w->advRender ^= 1; break;
+    case 5: { int s = 0;
+              while (s < 6 && GRAV_STEPS[s] != w->gravMul) s++;   /* find */
+              w->gravMul = GRAV_STEPS[(s + 1) % 6];              /* advance */
+              break; }
     }
     world_wset_dirty();
 }
@@ -82,6 +90,8 @@ static const char *wset_val(int i, const WSet *w, char *b) {
     case 2: snprintf(b, 8, "%d", w->chunkSize ? w->chunkSize : 16); return b;
     case 3: return ON[w->lod & 1];
     case 4: return ON[w->advRender & 1];
+    case 5: snprintf(b, 8, "%.2fx", (w->gravMul ? w->gravMul : 8) / 8.0f);
+            return b;
     }
     return "";
 }
@@ -133,7 +143,7 @@ int panel_world_tab_press(float fx, float fy, float px) {
         }
     }
     /* world settings — rows 1/2/4 are dangerous: confirm first */
-    for (int i = 0; i < 5; i++) {
+    for (int i = 0; i < WS_ROWS; i++) {
         if (in_rect(fx, fy, px + 8, 312.0f + i * 28.0f, PW - 16, 24)) {
             if (i == 1 || i == 2 || i == 4) s_wConfirm = i;
             else wset_cycle(i);
@@ -203,7 +213,7 @@ void panel_world_draw(float px) {
     ui_text(px + 12, 296, "WORLD SETTINGS", 1, 0.7f,0.72f,0.8f, 1);
     {
         const WSet *w = world_wset();
-        for (int i = 0; i < 5; i++) {
+        for (int i = 0; i < WS_ROWS; i++) {
             float wy = 312.0f + i * 28.0f;
             int hov = in_rect((float)A.mx,(float)A.my, px+8, wy, PW-16, 24);
             int danger = (i == 1 || i == 2 || i == 4);
