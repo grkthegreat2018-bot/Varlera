@@ -50,12 +50,18 @@ typedef enum {
 #define RKIF_TEXOVR   (1u << 13)
 #define RKIF_VCOL   (1u << 14)
 #define RKIF_SPIN   (1u << 15)
+#define RKIF_MAT(m) ((uint32_t)((m) & 3u) << 17)
 
-/* Block.texm packing: bits0-1 mode, bit2 override type */
+/* Block.texm packing: bits0-1 mode, bit2 override, bits3-4 material */
 #define TEXM_STRETCH 0
 #define TEXM_LOOP    1
 #define TEXM_PROC    2
 #define TEXM_OVR     4
+#define TEXM_MAT(m)  ((uint8_t)((m) & 3) << 3)
+#define TEXM_MATTE   0
+#define TEXM_GLOSS   1
+#define TEXM_METAL   2
+#define TEXM_GLOW    3
 
 typedef struct {
     float pos[3];

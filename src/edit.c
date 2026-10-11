@@ -604,7 +604,7 @@ void edit_update(void) {
 
 static uint32_t block_flag(const Block *b) {
     uint32_t f = ((uint32_t)b->rot << 1) | RKIF_TEX(b->tex) |
-                 RKIF_TEXM(b->texm & 3u);
+                 RKIF_TEXM(b->texm & 3u) | RKIF_MAT(b->texm >> 3);
     if (b->texm & TEXM_OVR) f |= RKIF_TEXOVR;
     if (b->shape >= RK_MESH_BASE_MODEL) f |= RKIF_VCOL;
     if (A.app == APP_PLAY) {

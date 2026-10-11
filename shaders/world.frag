@@ -102,6 +102,16 @@ void main() {
     float diff = max(dot(n, L), 0.0);
     float hemi = 0.32 + 0.22 * (n.y * 0.5 + 0.5);  /* sky-ish ambient */
     vec3 col = base * (hemi + 0.95 * diff * sh);
+    /* material: bits 17-18 -> 1 glossy, 2 metal, 3 emissive (glow feeds bloom) */
+    uint mat = (vFlags >> 17) & 3u;
+    if (mat == 1u || mat == 2u) {
+        vec3 V = normalize(u.camPos.xyz - vWorld);
+        vec3 H = normalize(L + V);
+        float sp = pow(max(dot(n, H), 0.0), 32.0) * sh;
+        col += (mat == 1u ? vec3(0.55) : base * 0.9) * sp;
+    } else if (mat == 3u) {
+        col = base * 1.55 + col * 0.2;           /* glow: self-bright, bloom src */
+    }
     if ((vFlags & 8u) == 0u) {                     /* fog unless NOFOG */
         float d = distance(u.camPos.xyz, vWorld);
         float f = clamp((d - u.fogParams.x) / (u.fogParams.y - u.fogParams.x), 0.0, 1.0);

@@ -25,7 +25,10 @@ links m/dl/pthread. Win32-only code (file dialog, DPI awareness) is `_WIN32`
   rendering, reversed-Z main depth (clear 0, GREATER), 4x MSAA + resolve,
   2048px directional shadow map (forward-Z ortho `m4_ortho`, hardware-compare
   sampler + 4-tap PCF), instanced drawing (`RkInst` = pos/scale/RGBA8/flags;
-  bits: 0 unlit, 1-2 rot90, 3 nofog, 4 iconVP), deferred command queue
+  bits: 0 unlit, 1-2 rot90, 3 nofog, 4 iconVP, 5-10 texid, 11-12 texmode,
+  13 texoverride, 14 vcol, 15 spin, 17-18 material MATTE/GLOSS/METAL/GLOW —
+  Blinn spec or self-bright in world.frag, GLOW feeds future bloom),
+  deferred command queue
   replayed for shadow pass. UI quads are NDC rects (`UIVert` pos/col/uv/tex
   — `rk_ui_rect` solid, `rk_ui_texrect` samples the atlas via set1 binding 1
   for real texture previews). `rk_init` returns 1 on success.
@@ -55,7 +58,8 @@ links m/dl/pthread. Win32-only code (file dialog, DPI awareness) is `_WIN32`
   SPECIAL/SCULPTED, 15 assets + sculpted models, scrollable, tooltips), PAINT
   (16 presets + HSV picker + custom swatches + ALPHA slider -> `A.paintAlpha`
   -> `Block.alpha`/`BF_GLASS`), TEX (ART TOOL buttons EDIT/NEW/SHEET on top ->
-  `art_open`, MODE/TYPE cycling `A.paintTexM`, scrollable grid of real atlas
+  `art_open`, MODE/TYPE cycling `A.paintTexM` + MAT row = material
+  MATTE/GLOSS/METAL/GLOW in texm bits3-4, scrollable grid of real atlas
   previews via `rk_ui_texrect`), WORLD (SAVE/LOAD/UNDO/REDO/CLEAR + block count
   + ENVIRONMENT: SKY x6 / GROUND x5 preset cycler -> `rk_set_env`, saved to
   `env.bw`), MODELS (fused block groups), PROPS (`adv` premade assets).

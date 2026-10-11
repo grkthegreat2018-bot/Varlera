@@ -347,8 +347,9 @@ static int custom_at(float x, float y) {
 
 /* ---- TEX tab: art-tool row + mode/type + scrollable preview grid ---- */
 static const char *TEXMODE_NAME[] = {"STRETCH", "LOOP", "PROC"};
+static const char *TEXMAT_NAME[] = {"MATTE", "GLOSS", "METAL", "GLOW"};
 static float alpha_y(void) { return CUS_Y + ((A.nCustoms + 3) / 4) * 34.0f + 22.0f; }
-#define TG_TOP   152.0f   /* texture grid top y */
+#define TG_TOP   178.0f   /* texture grid top y (below MODE + MAT rows) */
 #define TG_CW    70.0f    /* cell stride x */
 #define TG_CH    70.0f    /* cell stride y */
 #define TG_IW    64.0f    /* preview image w/h */
@@ -500,6 +501,12 @@ int panel_press(double x, double y) {
         if (in_rect(fx, fy, px + 62, 114, 66, 22)) {
             A.paintTexM = (A.paintTexM & ~3) | ((A.paintTexM + 1) % 3);
             apply_tex_sel(); return 1;
+        }
+        if (in_rect(fx, fy, px + 62, 140, 66, 22)) {
+            int m = ((A.paintTexM >> 3) + 1) & 3;
+            A.paintTexM = (A.paintTexM & ~0x18) | TEXM_MAT(m);
+            apply_tex_sel();
+            return 1;
         }
         if (in_rect(fx, fy, px + 138, 114, 80, 22)) {
             A.paintTexM ^= TEXM_OVR;
@@ -826,6 +833,13 @@ static void draw_tex(float px) {
                (ovr ? 0.22f : 0.32f) + hovT*0.06f, 1);
     ui_text(px + 138 + (80 - ui_text_w(ovr ? "OVR" : "OVL",1)) * 0.5f, 121,
             ovr ? "OVR" : "OVL", 1, 0.95f,0.95f,1.0f, 1);
+
+    /* MATERIAL row: bits3-4 of paintTexM -> RKIF_MAT -> world.frag branch */
+    ui_text(px + 12, 146, "MAT:", 1, 0.7f,0.72f,0.8f, 1);
+    const char *mn = TEXMAT_NAME[(A.paintTexM >> 3) & 3];
+    int hovMat = in_rect((float)A.mx,(float)A.my, px + 62, 140, 66, 22);
+    rk_ui_rect(px + 62, 140, 66, 22, 0.20f + hovMat*0.06f, 0.24f + hovMat*0.06f, 0.32f + hovMat*0.06f, 1);
+    ui_text(px + 62 + (66 - ui_text_w(mn,1)) * 0.5f, 147, mn, 1, 0.9f,0.9f,0.95f, 1);
 
     /* texture preview grid */
     int first = (int)texScroll * TEXCOLS;
