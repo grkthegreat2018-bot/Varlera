@@ -162,6 +162,19 @@ int rk_begin_frame(void) {
     VKC(vkWaitForFences(G.dev, 1, &G.fr[G.fi].fence, VK_TRUE, UINT64_MAX));
     VKC(vkResetFences(G.dev, 1, &G.fr[G.fi].fence));
 
+    /* this frame slot's gpu work is finished -> timestamp results ready */
+    if (G.hasTS && G.fr[G.fi].tsRec) {
+        uint64_t ts[3] = {0};
+        if (vkGetQueryPoolResults(G.dev, G.fr[G.fi].qp, 0, 3, sizeof ts, ts,
+                                  sizeof(uint64_t), VK_QUERY_RESULT_64_BIT)
+            == VK_SUCCESS) {
+            G.gpuMs[0] = (float)((ts[1]-ts[0]) * G.tsPeriod / 1e6);
+            G.gpuMs[1] = (float)((ts[2]-ts[1]) * G.tsPeriod / 1e6);
+            G.gpuMs[2] = (float)((ts[2]-ts[0]) * G.tsPeriod / 1e6);
+        }
+        G.fr[G.fi].tsRec = 0;
+    }
+
     VkResult r = vkAcquireNextImageKHR(G.dev, G.swap, UINT64_MAX, G.fr[G.fi].acq, VK_NULL_HANDLE, &G.imgIdx);
     if (r == VK_ERROR_OUT_OF_DATE_KHR) { rk_swapchain_recreate(); return 0; }
     if (r != VK_SUCCESS && r != VK_SUBOPTIMAL_KHR) VKC(r);
@@ -217,6 +230,12 @@ static void push_pc(const m4 model, const float color[4], uint32_t flags) {
 
 void rk_end_frame(void) {
     /* stage instance + ui data for this frame */
+    if (G.hasTS) {
+        vkCmdResetQueryPool(G.cmd, G.fr[G.fi].qp, 0, 4);
+        vkCmdWriteTimestamp(G.cmd, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+                            G.fr[G.fi].qp, 0);
+        G.fr[G.fi].tsRec = 1;
+    }
     if (G.instN)
         memcpy(G.fr[G.fi].instMap, G.instStage, (size_t)G.instN * sizeof(RkInst));
     if (G.uiVn)
@@ -255,6 +274,8 @@ void rk_end_frame(void) {
             vkCmdDraw(G.cmd, cnt, e->count, (uint32_t)off, e->first);
         }
         vkCmdEndRendering(G.cmd);
+        if (G.hasTS) vkCmdWriteTimestamp(G.cmd,
+            VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, G.fr[G.fi].qp, 1);
         img_barrier(G.shadowImg, VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
             VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT, VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
             VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT, VK_ACCESS_2_SHADER_SAMPLED_READ_BIT,
@@ -389,6 +410,8 @@ void rk_end_frame(void) {
     }
 
     vkCmdEndRendering(G.cmd);
+    if (G.hasTS) vkCmdWriteTimestamp(G.cmd,
+        VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, G.fr[G.fi].qp, 2);
     img_barrier(G.imgs[G.imgIdx], VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
         VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT,
         VK_PIPELINE_STAGE_2_NONE, 0, VK_IMAGE_ASPECT_COLOR_BIT);
@@ -436,3 +459,14 @@ void rk_set_camera(const float vp[16], const float eye[3], const float focus[3])
 }
 
 void rk_extent(int *w, int *h) { *w = (int)G.ext.width; *h = (int)G.ext.height; }
+
+void rk_query_stats(RkStats *s) {
+    s->draws = G.qn; s->insts = G.instN;
+    s->uiVerts = G.uiVn; s->meshVerts = G.meshVn; s->models = G.nmodels;
+}
+
+int rk_gpu_times(float out[3]) {
+    if (!G.hasTS || G.gpuMs[2] <= 0.0f) return 0;
+    memcpy(out, G.gpuMs, sizeof G.gpuMs);
+    return 1;
+}

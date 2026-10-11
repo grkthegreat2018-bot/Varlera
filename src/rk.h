@@ -122,4 +122,9 @@ void rk_set_env(const float sky[3], const float ground[3]);
 
 void rk_extent(int *w, int *h);
 
+/* --- profiling --- */
+typedef struct { int draws, insts, uiVerts, meshVerts, models; } RkStats;
+void rk_query_stats(RkStats *s);
+int  rk_gpu_times(float out[3]);   /* ms: shadow, main, total. 0 = none yet */
+
 #endif /* RK_H */

@@ -17,6 +17,7 @@
 #include "sculpt.h"
 #include "tex.h"
 #include "rk.h"
+#include "prof.h"
 #include "world.h"
 #include "math3d.h"
 
@@ -172,6 +173,7 @@ static void on_key(GLFWwindow *w, int key, int sc, int action, int mods) {
         }
         return;
     }
+    if (key == GLFW_KEY_F3 && action == GLFW_PRESS) { prof_toggle(); return; }
     if (key == GLFW_KEY_F11 && action == GLFW_PRESS) { toggle_fullscreen(); return; }
     if (key == GLFW_KEY_TAB && (action == GLFW_PRESS)) { app_toggle_mode(); return; }
     if (key == GLFW_KEY_ESCAPE && panel_del_pending()) { panel_del_cancel(); return; }
@@ -229,6 +231,7 @@ int main(void) {
     A.drag = M_IDLE;
     A.hoverBlock = A.hoverAxis = A.hoverAsset = -1;
     A.lastT = glfwGetTime();
+    prof_reset();
 
     puts("Varlera controls:");
     puts("  RMB look | WASD+QE fly | space/shift up/down | wheel=zoom | MMB pan | F focus");
@@ -244,6 +247,7 @@ int main(void) {
         A.lastT = t;
         if (A.fbw <= 0 || A.fbh <= 0) continue;
 
+        prof_zone_begin(PZ_SIM);
         cam_frame(dt);
         cam_update_vp();
 
@@ -261,13 +265,18 @@ int main(void) {
             world_physics(dt, held);
         }
         else if (A.app == APP_EDIT && !A.modal) { edit_update(); panel_drag_update(); }
+        prof_zone_end(PZ_SIM);
 
-        if (!rk_begin_frame()) continue;
+        prof_zone_begin(PZ_WAIT);
+        int ok = rk_begin_frame();
+        prof_zone_end(PZ_WAIT);
+        if (!ok) continue;
 
         v3 eye = A.camPos;
         v3 focus = v3_add(A.camPos, v3_scale(cam_basis().f, 30.0f));
         rk_set_camera(A.viewProj, eye.e, focus.e);
 
+        prof_zone_begin(PZ_QUEUE);
         if (A.modal != 2) {                    /* sculpt = own mini-world */
             rk_draw_grid();
             edit_draw_world();
@@ -275,9 +284,22 @@ int main(void) {
         if (A.modal == 1) art_draw();
         else if (A.modal == 2) sculpt_draw();
         else panel_draw();                               /* modal overlays editor */
+        prof_draw();
         rk_ui_flush();
+        prof_zone_end(PZ_QUEUE);
 
+        prof_zone_begin(PZ_END);
         rk_end_frame();
+        prof_zone_end(PZ_END);
+
+        prof_count(PC_BLOCKS, g_nb);
+        RkStats rs; rk_query_stats(&rs);
+        prof_count(PC_DRAWS, rs.draws);
+        prof_count(PC_INST, rs.insts);
+        prof_count(PC_UIVERTS, rs.uiVerts);
+        prof_count(PC_MESHVERTS, rs.meshVerts);
+        prof_count(PC_MODELS, rs.models);
+        prof_frame();
     }
 
     tex_save("textures.bw");

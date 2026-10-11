@@ -585,6 +585,8 @@ int rk_init(GLFWwindow *win) {
     vkGetPhysicalDeviceProperties(G.phys, &pp);
     VkSampleCountFlags sc = pp.limits.framebufferColorSampleCounts & pp.limits.framebufferDepthSampleCounts;
     G.samples = (sc & VK_SAMPLE_COUNT_4_BIT) ? VK_SAMPLE_COUNT_4_BIT : VK_SAMPLE_COUNT_1_BIT;
+    G.hasTS = pp.limits.timestampComputeAndGraphics == VK_TRUE;
+    G.tsPeriod = pp.limits.timestampPeriod;
 
     swapchain_create();
 
@@ -682,6 +684,11 @@ int rk_init(GLFWwindow *win) {
             &G.fr[i].uibMem, &G.fr[i].uiMap);
         G.fr[i].mesh = buf_create(MAX_DYN_VERTS * sizeof(Vert), VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, HOST_MEM,
             &G.fr[i].meshMem, &G.fr[i].meshMap);
+        if (G.hasTS) {
+            VkQueryPoolCreateInfo qpi = {VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO};
+            qpi.queryType = VK_QUERY_TYPE_TIMESTAMP; qpi.queryCount = 4;
+            VKC(vkCreateQueryPool(G.dev, &qpi, NULL, &G.fr[i].qp));
+        }
         VkDescriptorSetAllocateInfo dai = {VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO};
         dai.descriptorPool = G.pool; dai.descriptorSetCount = 1; dai.pSetLayouts = &G.setLayout0;
         VKC(vkAllocateDescriptorSets(G.dev, &dai, &G.fr[i].set0));
@@ -736,6 +743,7 @@ void rk_shutdown(void) {
         vkFreeMemory(G.dev, G.fr[i].meshMem, NULL);
         vkDestroyFence(G.dev, G.fr[i].fence, NULL);
         vkDestroySemaphore(G.dev, G.fr[i].acq, NULL);
+        if (G.fr[i].qp) vkDestroyQueryPool(G.dev, G.fr[i].qp, NULL);
     }
     for (uint32_t i = 0; i < G.renderDoneCount; i++)
         vkDestroySemaphore(G.dev, G.renderDone[i], NULL);

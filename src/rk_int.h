@@ -98,6 +98,8 @@ typedef struct {
         VkBuffer uib;    VkDeviceMemory uibMem;  void *uiMap;
         VkBuffer mesh;   VkDeviceMemory meshMem; void *meshMap;
         VkDescriptorSet set0;
+        VkQueryPool qp;                     /* gpu pass timestamps */
+        int tsRec;                          /* results pending */
     } fr[MAX_FRAMES];
     VkSemaphore renderDone[MAX_IMAGES];
     uint32_t renderDoneCount;
@@ -128,6 +130,9 @@ typedef struct {
     int inFrame;
     int needResize;
     double t;
+    int hasTS;
+    double tsPeriod;
+    float gpuMs[3];                         /* shadow, main, total */
 } RkG;
 
 extern RkG G;                  /* defined in rk.c */
