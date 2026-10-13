@@ -962,6 +962,7 @@ int rk_init(GLFWwindow *win) {
     G.ubo.fogParams[0]=60.0f; G.ubo.fogParams[1]=170.0f;
     G.ubo.groundCol[0]=0.58f; G.ubo.groundCol[1]=0.60f;
     G.ubo.groundCol[2]=0.64f; G.ubo.groundCol[3]=0;   /* w = ground style */
+    G.bloomAmt = 0.55f;
     return 1;
 }
 
@@ -970,6 +971,11 @@ void rk_set_env(const float sky[3], const float ground[3], int gstyle) {
     if (ground) memcpy(G.ubo.groundCol, ground, 12);
     G.ubo.groundCol[3] = (float)gstyle;
 }
+
+void rk_set_fog(float near_, float far_) {
+    G.ubo.fogParams[0] = near_; G.ubo.fogParams[1] = far_;
+}
+void rk_set_bloom(float amt) { G.bloomAmt = amt; }
 
 void rk_shutdown(void) {
     vkDeviceWaitIdle(G.dev);

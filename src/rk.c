@@ -547,7 +547,7 @@ void rk_end_frame(void) {
         int srgb = (G.surfFmt == VK_FORMAT_B8G8R8A8_SRGB ||
                     G.surfFmt == VK_FORMAT_R8G8B8A8_SRGB);
         PostPC pc = {{1.0f / (float)G.ext.width, 1.0f / (float)G.ext.height},
-                     G.bloomOk ? 0.55f : 0.0f,
+                     G.bloomOk ? G.bloomAmt : 0.0f,
                      (float)((G.hdrOk ? 1 : 0) | (srgb ? 0 : 2))};
         vkCmdPushConstants(G.cmd, G.postLayout,
             VK_SHADER_STAGE_VERTEX_BIT|VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof pc, &pc);

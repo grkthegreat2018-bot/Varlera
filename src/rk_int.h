@@ -97,6 +97,7 @@ typedef struct {
        hdrOk=0 falls back to surfFmt for the scene target (passthrough). */
     VkFormat hdrFmt;
     int hdrOk, bloomOk, bloomLive;
+    float bloomAmt;                     /* composite mix (world-set override) */
     VkImage hdrImg;        VkImageView hdrView;  VkDeviceMemory hdrMem;
     VkImage bloomImg;      VkDeviceMemory bloomMem;
     VkImageView bloomMipView[BLOOM_M];

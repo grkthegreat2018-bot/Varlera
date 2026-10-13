@@ -118,12 +118,17 @@ typedef struct {
     uint8_t  gravMul;        /* gravity scale in eighths (8 = 1.0x) */
     uint8_t  skyAssets;      /* 0 preset sky, 1 user skybox objects */
     uint8_t  dragOff;        /* 1 disables play-mode LMB block dragging */
-    uint8_t  pad[20];
+    uint8_t  fogNear;        /* EXPERIMENTAL (advRender): fog start idx, 0=auto */
+    uint8_t  fogFar;         /* fog end idx, 0=auto */
+    uint8_t  bloom;          /* bloom strength idx: 0 auto,1 off,2 low,3 high */
+    uint8_t  pad[17];
 } WSet;
 #define WS_PHYS_SETTLE 0
 #define WS_PHYS_RIGID  1
 WSet *world_wset(void);          /* live record; edit in place */
 void world_wset_dirty(void);     /* call after edits -> autosave notices */
+void world_fog_params(float *near_, float *far_);   /* advRender-gated */
+float world_bloom_amt(void);                        /* advRender-gated */
 
 /* play-mode sim lives in physics.c -> physics.h */
 

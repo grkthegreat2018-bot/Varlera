@@ -388,6 +388,11 @@ int main(void) {
         v3 eye = A.camPos;
         v3 focus = v3_add(A.camPos, v3_scale(cam_basis().f, 30.0f));
         rk_set_camera(A.viewProj, eye.e, focus.e);
+        {   /* EXPERIMENTAL render rows (WSet, advRender-gated) */
+            float fn, ff; world_fog_params(&fn, &ff);
+            rk_set_fog(fn, ff);
+            rk_set_bloom(world_bloom_amt());
+        }
 
         prof_zone_begin(PZ_QUEUE);
         if (A.modal != 2) {                    /* sculpt = own mini-world */

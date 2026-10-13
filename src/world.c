@@ -120,6 +120,19 @@ static void wset_defaults(void) {
     s_wset.gravMul = 8;                        /* 1.0x gravity */
 }
 WSet *world_wset(void)     { return &s_wset; }
+
+/* EXPERIMENTAL render settings (advRender gate): idx 0 = auto default.
+ * fog steps in world units; bloom is the composite mix strength. */
+void world_fog_params(float *near_, float *far_) {
+    static const float N[] = {60.0f, 30.0f, 90.0f, 150.0f};
+    static const float F[] = {170.0f, 120.0f, 260.0f, 400.0f};
+    *near_ = s_wset.advRender ? N[s_wset.fogNear & 3] : 60.0f;
+    *far_  = s_wset.advRender ? F[s_wset.fogFar & 3]  : 170.0f;
+}
+float world_bloom_amt(void) {
+    static const float AMT[] = {0.55f, 0.0f, 0.30f, 1.0f};
+    return s_wset.advRender ? AMT[s_wset.bloom & 3] : 0.55f;
+}
 void  world_wset_dirty(void) { g_rev++; }
 
 /* ---- save dir paths: <dir>/<san>.<ext>; san = [a-z0-9_-] ---- */
