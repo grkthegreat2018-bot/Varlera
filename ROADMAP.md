@@ -19,10 +19,10 @@ submit ~0.55ms. Re-measure after each perf item.
 | ✅ Font atlas (text as textured quads) `984f565` | S | `font.h`, `tex.c`, `rk_ui_flush` | Kills ~8k verts/frame of rect-built glyphs — landed: `uiv` 8196→756. |
 | ✅ Frustum culling in `edit_draw_world` `3087517` | S | `edit.c`, `math3d.h` | Per-block AABB test before `rk_world`/`rk_ghost`; `K_CASTER` keeps off-screen shadow casters. |
 | ✅ Settings file (`settings.bw`) `5be4a7d` | S | `main.c`, `camera.c`, `settings.c` | Window rect/fullscreen, speed, FOV, invert-Y, prof autostart persist. |
-| ⏳ Stylized skybox/ground `8d2a896` | S | `rk.c`, `edit.c` env presets | Sky pass landed (gradient dome + sun disc via env presets). Ground plane styles pending. |
+| ✅ Stylized skybox/ground `8d2a896`+`e9157a3` | S | `rk.c`, `edit.c` env presets | Sky pass (gradient dome + sun disc) + ground floor styles: GRID/CHECK/DOTS/PLAIN patterns via `groundCol.a`, FLOOR row in WORLD tab, env.bw v3. |
 | ⏳ Side panel polish | S | `panel.c` | Search + richer tooltips landed; icon materials, hover states, collapse animation pending. |
 | ✅ Object indexing + metadata `756a1fc` | S | `world.c`, `model.c`, `panel.c` | Search on SHAPES/MODELS/PROPS, info readout w/ stable id, full script rows (TRIG/ACT/TGT/PARAM/NAME), dead ACT_COLOR/TEX/DEL wired live. |
-| ⏳ More default block shapes `353686d` | S | `meshgen.c`, `panel.c` | Pass 1 landed: Slab/Plate/Beam/Pipe/Arch/Ring. `6fd575f`: cageball reworked to a real birdcage (meridian rib tubes + latitude rings, was a zero-thickness shell). BW parity pass remains. |
+| ⏳ More default block shapes `353686d` | S | `meshgen.c`, `panel.c` | Pass 1 landed: Slab/Plate/Beam/Pipe/Arch/Ring. `6fd575f`: cageball reworked to a real birdcage. `e9157a3`: fixed RING/model-0 mesh-id collision (BASE_MODEL 16→32 + v6 save remap). BW parity pass remains. |
 | ⏳ User settings + controls `5be4a7d` | S→M | `main.c`, `camera.c`, `settings.c` | Core file + FOV/invert-Y landed; rebindable keys, UI scale, autosave interval pending. |
 | ⏳ QOL pass | S | `panel.c`, `edit.c`, `main.c` | Block search + toasts landed; hotkey hints bar, drag multi-select pending. |
 | ⏳ Debugging v1 `d0d6685` | S | `prof.c`, `main.c`, `log.c` | `varlera.log` stderr tee + crash minidump landed; overlay page 2 + validation hotkey pending. |
@@ -37,7 +37,7 @@ submit ~0.55ms. Re-measure after each perf item.
 | Overhauled texture menu | M | `panel.c` TEX tab | UX rework of existing palette editor: drag slots, import/export PNG strip, per-texture preview. Stepping stone to the art tool. |
 | Aseprite-like art tool | M | `panel.c`/`tex.c` (or new `art.c`) | Layers + opacity, selection/move/fill/line tools, color pick+swatches, undo stack, zoom pan. Self-contained; worth extracting from `panel.c` once it grows past ~1k lines. |
 | ✅ Better world data handling `7db72fe` | M | `world.c` save/load | Format v4: 56B header (name/created/modified/nextid), `worlds/` dir + name field, `.bmp` thumbnails on save, 90s autosave (`world_rev` dirty check), v1-v3 readers kept. |
-| ⏳ Better world file size `7db72fe` | M | `world.c` save/load | Quantized 30B/block records landed (~2x vs v3). RLE/varint/deflate pending — expect another step down on big worlds. |
+| ✅ Better world file size `7db72fe`+lzss | M | `world.c`, `lzss.c` | Quantized records + v7 LZSS blob: ~15.6B/blk on mixed scenes (~4x vs v3). |
 | ⏳ Better I/O `7db72fe` | M | `main.c`, `world.c`, `tex.c` | `worlds/` layout + thumbs + autosave landed. Pending: async save thread, world→OBJ / atlas→PNG export, OBJ drag-drop, **Save-As to a user-chosen folder** (`GetSaveFileName`). |
 | ✅ Portable world bundle | M | `bundle.c` | `.bwx` = magic/ver + 3 part records (world.bw / models.bw / atlas) via temp-file concat — no new formats. WORLD tab EXPORT/IMPORT buttons; `VARLERA_BWX`/`BWXIN` hooks verified end-to-end. Provenance block pending. |
 | World settings system | M | `world.c`, `panel.c` WORLD tab | Per-world settings record in `env.bw` v2: physics mode, gravity scale, chunking, LOD, sky assets, render flags. Fields that alter stored data get a destructive-change confirm dialog ("may wipe/reshape this world") before applying. Foundation row for the Tier-3 settings below. |

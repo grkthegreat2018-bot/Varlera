@@ -91,11 +91,14 @@ links m/dl/pthread. Win32-only code (file dialog, DPI awareness) is `_WIN32`
   stats are u8 0-15, defaults BS_TRACT 12 / BS_BOUNCE 0 / BS_WEIGHT 8,
   editable via script-menu TRAC/BOUNCE/WEIGHT rows), undo/redo stacks,
   `world.bw`
-  binary save/load. Format v5: 56B header (magic BWLB, ver, nBlocks,
-  nextid, created, modified, name[32]) then per-block packed records —
-  flag byte, id, 9 metadata bytes, u8 color/alpha, traction/bounce/weight
-  (v5; v4 heads are 3B shorter), 6xi16 quantized pos/size (1/16 grid, raw
-  f32 when off-grid), optional name[12]; ~30B vs 68B v3.
+  binary save/load. Format v7: 56B header (magic BWLB, ver, nBlocks,
+  nextid, created, modified, name[32]) then the packed block-record
+  stream as one LZSS blob `{rawBytes, compBytes}` (src/lzss.c — records:
+  flag byte, id, 9 metadata bytes, u8 color/alpha, traction/bounce/weight,
+  6xi16 quantized pos/size (1/16 grid, raw f32 when off-grid), optional
+  name[12]; ~15.6B/blk compressed vs 68B v3). v4-v6 readers decode the
+  same records inline; v1/v2/v3 migrate. v<6 remaps block shapes >=16
+  up 16 (RK_MESH_BASE_MODEL moved 16->32).
   Readers migrate v1/v2/v3. `worlds_file(name,ext)` -> `<dir>/<san>.bw`
   (dir = `worlds_dir`, default "worlds", user-picked via WORLD tab DIR;
   persisted in settings.bw v2). Saves also write `worlds/<name>.bmp`
@@ -122,7 +125,8 @@ links m/dl/pthread. Win32-only code (file dialog, DPI awareness) is `_WIN32`
   zenity fallback on Linux).
 - `src/panel_world.c` — WORLD tab extracted from panel.c: name field,
   9-button grid (SAVE/LOAD/UNDO/REDO/CLEAR/SAVEAS/DIR/EXPORT/IMPORT), env
-  presets (env.bw), WSet settings rows + wipe-warning confirm dialog.
+  presets (env.bw: SKY/GROUND colors + FLOOR pattern GRID/CHECK/DOTS/PLAIN),
+  WSet settings rows + wipe-warning confirm dialog.
   panel.c delegates via `panel_world_tab_press/_draw/_confirm_click/
   _confirm_draw`; shared chrome constants (`PW`, `in_rect`, `panel_x`)
   live in panel.h.
