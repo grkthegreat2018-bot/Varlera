@@ -285,29 +285,55 @@ static int gen_roundc(int n) {
     return s;
 }
 
-/* sphere with circular holes on all 6 axis sides (whiffle ball) */
-static int gen_cageball(int lat, int lon) {
-    int s = g_nv;
-    const float r = 0.5f, hc = 0.85f;   /* hole half-angle cosine ~32 deg */
-    for (int i = 0; i < lat; i++) {
-        float t0 = (float)i/lat*3.14159265f, t1 = (float)(i+1)/lat*3.14159265f;
-        for (int j = 0; j < lon; j++) {
-            float p0 = (float)j/lon*6.2831853f, p1 = (float)(j+1)/lon*6.2831853f;
-            v3 q[4];
-            float ts[4]={t0,t1,t1,t0}, ps[4]={p0,p0,p1,p1};
-            int in = 0;
-            for (int k = 0; k < 4; k++) {
-                q[k] = v3_make(r*sinf(ts[k])*cosf(ps[k]), r*cosf(ts[k]),
-                               r*sinf(ts[k])*sinf(ps[k]));
-                v3 d = v3_norm(q[k]);
-                if (fabsf(d.x) > hc || fabsf(d.y) > hc || fabsf(d.z) > hc) in++;
-            }
-            /* drop only cells fully inside a hole - boundary cells keep the
-               shell connected around the openings */
-            if (in == 4) continue;
-            triN(q[0],q[1],q[2], v3_norm(q[0]),v3_norm(q[1]),v3_norm(q[2]));
-            triN(q[0],q[2],q[3], v3_norm(q[0]),v3_norm(q[2]),v3_norm(q[3]));
+/* swept tube along a circle arc: (u,v) span the plane, ax = plane normal,
+   off = circle center, a0..a1 = arc sweep. 6-gon cross-section, radius tr,
+   per-vertex normals for smooth shading. */
+static void tube_arc(v3 u, v3 v, v3 ax, v3 off, float r, float a0, float a1,
+                     int segs, float tr) {
+    for (int i = 0; i < segs; i++) {
+        float us[2] = {a0 + (a1-a0)*(float)i/segs,
+                       a0 + (a1-a0)*(float)(i+1)/segs};
+        v3 c[2], rd[2];
+        for (int k = 0; k < 2; k++) {
+            float ca = cosf(us[k]), sa = sinf(us[k]);
+            rd[k] = v3_add(v3_scale(u,ca), v3_scale(v,sa));   /* unit radial */
+            c[k] = v3_add(off, v3_scale(rd[k], r));
         }
+        for (int k = 0; k < 6; k++) {
+            float w0 = (float)k/6*6.2831853f, w1 = (float)(k+1)/6*6.2831853f;
+            v3 d00 = v3_add(v3_scale(ax,cosf(w0)), v3_scale(rd[0],sinf(w0)));
+            v3 d10 = v3_add(v3_scale(ax,cosf(w0)), v3_scale(rd[1],sinf(w0)));
+            v3 d01 = v3_add(v3_scale(ax,cosf(w1)), v3_scale(rd[0],sinf(w1)));
+            v3 d11 = v3_add(v3_scale(ax,cosf(w1)), v3_scale(rd[1],sinf(w1)));
+            triN(v3_add(c[0],v3_scale(d00,tr)),
+                 v3_add(c[1],v3_scale(d10,tr)),
+                 v3_add(c[1],v3_scale(d11,tr)), d00,d10,d11);
+            triN(v3_add(c[0],v3_scale(d00,tr)),
+                 v3_add(c[1],v3_scale(d11,tr)),
+                 v3_add(c[0],v3_scale(d01,tr)), d00,d11,d01);
+        }
+    }
+}
+
+/* cage sphere (birdcage): 4 meridian rib tubes end on small polar-cap rings;
+   latitude rings at 0/+-38deg brace the ribs. ~3.7k verts fits the 4k
+   sculpt-preset buffer and the 8k fuse-bake buffer. */
+static int gen_cageball(void) {
+    int s = g_nv;
+    const float R = 0.44f, TR = 0.055f;   /* outer extent R+TR ~= 0.5 */
+    const float T75 = 1.3090f;
+    for (int k = 0; k < 4; k++) {         /* meridian ribs, 45deg apart */
+        float ph = (float)k * 0.7853982f;
+        tube_arc(v3_make(cosf(ph),0,sinf(ph)), v3_make(0,1,0),
+                 v3_make(-sinf(ph),0,cosf(ph)), v3_make(0,0,0),
+                 R, -T75, T75, 12, TR);
+    }
+    static const float LAT[5] = {-1.3090f,-0.6632f,0.0f,0.6632f,1.3090f};
+    static const int   LSG[5] = {8,12,16,12,8};
+    for (int i = 0; i < 5; i++) {
+        float y = R*sinf(LAT[i]), rr = R*cosf(LAT[i]);
+        tube_arc(v3_make(1,0,0), v3_make(0,0,1), v3_make(0,1,0),
+                 v3_make(0,y,0), rr, 0.0f, 6.2831853f, LSG[i], TR);
     }
     return s;
 }
@@ -394,7 +420,7 @@ static int gen_by_index(int shape) {
     case RK_MESH_STAIR:    return gen_stair();
     case RK_MESH_FRAME:    return gen_frame();
     case RK_MESH_ROUNDC:   return gen_roundc(14);
-    case RK_MESH_CAGEBALL: return gen_cageball(18, 36);
+    case RK_MESH_CAGEBALL: return gen_cageball();
     case RK_MESH_CORSTAIR: return gen_corstair();
     case RK_MESH_ARCH:     return gen_arch();
     case RK_MESH_RING:     return gen_ring();
@@ -424,7 +450,7 @@ int meshgen_build_all(Vert *pool, int maxverts,
     off[RK_MESH_STAIR]    = (uint32_t)gen_stair();
     off[RK_MESH_FRAME]    = (uint32_t)gen_frame();
     off[RK_MESH_ROUNDC]   = (uint32_t)gen_roundc(14);
-    off[RK_MESH_CAGEBALL] = (uint32_t)gen_cageball(12, 18);
+    off[RK_MESH_CAGEBALL] = (uint32_t)gen_cageball();
     off[RK_MESH_CORSTAIR] = (uint32_t)gen_corstair();
     off[RK_MESH_ARCH]     = (uint32_t)gen_arch();
     off[RK_MESH_RING]     = (uint32_t)gen_ring();

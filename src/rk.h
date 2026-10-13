@@ -23,7 +23,7 @@ typedef enum {
     RK_MESH_STAIR,      /* 3-step staircase, ascends toward -z */
     RK_MESH_FRAME,      /* hollow cube: 12 edge beams only */
     RK_MESH_ROUNDC,     /* rounded-edge cube (superellipsoid) */
-    RK_MESH_CAGEBALL,   /* sphere with circular holes on all 6 axis sides */
+    RK_MESH_CAGEBALL,   /* birdcage sphere: meridian rib tubes + lat rings */
     RK_MESH_CORSTAIR,   /* L-shaped corner staircase */
     RK_MESH_ARCH,       /* box arch: two legs + lintel, opening in z */
     RK_MESH_RING,       /* standing torus (ring in the XY plane) */

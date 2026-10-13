@@ -338,6 +338,9 @@ static void make_pipelines(void) {
 
     PipeDesc d = {0};
 
+    /* all pre-LDR geometry pipelines render into the HDR scene target */
+    d.fmt = G.hdrFmt;
+
     /* grid: non-instanced, no cull, opaque */
     d.vs=wv; d.fs=gf; d.topo=VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
     fill_mesh_vertex_input(&d);
@@ -391,7 +394,7 @@ static void make_pipelines(void) {
     /* sky: fullscreen triangle, no vertex input, no depth touch */
     memset(&d, 0, sizeof d);
     d.vs=kv; d.fs=kf; d.topo=VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
-    d.cull=VK_CULL_MODE_NONE; d.samples=G.samples;
+    d.cull=VK_CULL_MODE_NONE; d.samples=G.samples; d.fmt=G.hdrFmt;
     G.pSky = make_pipeline(&d);
 
     /* post chain: fullscreen tri into hdrFmt (bloom) / surfFmt (composite) */
@@ -990,6 +993,10 @@ void rk_shutdown(void) {
         vkDestroySemaphore(G.dev, G.renderDone[i], NULL);
     vkDestroyBuffer(G.dev, G.vbuf, NULL);
     vkFreeMemory(G.dev, G.vbufMem, NULL);
+    if (G.mbuf) {
+        vkDestroyBuffer(G.dev, G.mbuf, NULL);
+        vkFreeMemory(G.dev, G.mbufMem, NULL);
+    }
     if (G.shotBuf) {
         vkUnmapMemory(G.dev, G.shotMem);
         vkDestroyBuffer(G.dev, G.shotBuf, NULL);
