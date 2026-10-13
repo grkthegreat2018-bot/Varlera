@@ -14,7 +14,10 @@ for headers/lib — glslc from the SDK is used to compile shaders).
 Exe lands in `build/<config>/varlera.exe` with `shaders/*.spv` copied beside it.
 
 Linux: `sudo apt install libglfw3-dev libvulkan-dev glslc` (or vulkan-sdk), then
-`cmake -B build -S . && cmake --build build`. CMake falls back to
+`cmake -B build -S . && cmake --build build`. Prebuilt binary: the `linux`
+GitHub Actions workflow builds every push and uploads a `varlera-linux`
+artifact (exe + shaders; run needs Vulkan driver + `libglfw3` + a display).
+CMake falls back to
 `find_package(Vulkan)` + `find_package(glfw3)` when vcpkg vars are absent, and
 links m/dl/pthread. Win32-only code (file dialog, DPI awareness) is `_WIN32`
 -guarded; OBJ import on Linux uses zenity or `import.obj` beside the exe.
