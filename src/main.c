@@ -401,6 +401,7 @@ int main(void) {
         prof_draw();
         toast_frame(dt);
         toast_draw();
+        hints_draw();
         rk_ui_flush();
         prof_zone_end(PZ_QUEUE);
 

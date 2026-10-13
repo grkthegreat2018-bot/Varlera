@@ -87,3 +87,21 @@ void toast_draw(void) {
     rk_ui_rect(x, y, tw + 24.0f, 2.0f, 0.95f, 0.75f, 0.30f, 0.9f * a);
     ui_text(x + 12, y + 7, s_msg, sc, 1.0f, 0.96f, 0.85f, a);
 }
+
+/* context-aware hotkey strip pinned to the bottom edge (guide G toggles) */
+void hints_draw(void) {
+    if (!A.guideOn || A.modal) return;
+    const char *s;
+    if (A.textMode)                                   s = "type + Enter commits | Esc cancels";
+    else if (A.app == APP_PLAY)                       s = "Esc edit | LMB drag blocks | script keys SPACE W A S D E Q | CLICK";
+    else if (A.drag == M_ARMED || A.drag == M_PLACE)  s = "LMB place | wheel rotate ghost | RMB/Esc disarm";
+    else if (A.drag == M_MOVE)                        s = "release drops | PgUp/PgDn lift | Esc cancels";
+    else if (A.nsel)                                  s = "ctrl+C/X/V clip | ctrl+D dup | ctrl+B fuse | R/T rot | arrows nudge | Del";
+    else                                              s = "LMB select | shift multi | drag marquee | F3 prof | F12 shot | TAB play";
+    int sc = 1;
+    float tw = (float)ui_text_w(s, sc);
+    float x = (float)A.fbw * 0.5f - tw * 0.5f - 12.0f;
+    float y = (float)A.fbh - 30.0f;
+    rk_ui_rect(x, y, tw + 24.0f, 20.0f, 0.08f, 0.09f, 0.11f, 0.82f);
+    ui_text(x + 12, y + 6, s, sc, 0.72f, 0.76f, 0.84f, 1);
+}

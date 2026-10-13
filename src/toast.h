@@ -14,5 +14,6 @@ void toast_tip(int id);              /* show once per install (seen-set) */
 void toast_say(const char *msg);     /* unconditional transient message */
 void toast_frame(float dt);          /* advance fade/cycle timers */
 void toast_draw(void);               /* call inside UI queue, before flush */
+void hints_draw(void);               /* bottom hotkey strip (guideOn-gated) */
 
 #endif
