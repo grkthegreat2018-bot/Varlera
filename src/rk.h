@@ -109,6 +109,8 @@ void rk_draw_icon(RkMesh m, int px, int py, int pw, int ph,
    projection is continuous where verts coincide). */
 typedef struct { float pos[3], nrm[3], col[3], tex; } Vert;
 int  rk_model_mesh_add(const Vert *v, int n);
+int  rk_model_mesh_add_top(const Vert *v, int n);   /* transient slot (tail) */
+void rk_models_drop_transient(void);                /* free tail slots, no GPU work */
 void rk_models_commit(void);
 void rk_models_reset(void);     /* drop all baked verts (for rebuild) */
 

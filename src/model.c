@@ -159,7 +159,7 @@ static void bake_ao(Vert *v, int n, const Block *rel, int nc) {
 /* bake rel-positioned children -> mesh id. Output verts are normalized to
  * the [-0.5,0.5] unit box of `size` so instancing by block size restores the
  * true extents (model blocks draw with scale = size). */
-static int bake_mesh(const Block *rel, int n, v3 size) {
+static int bake_mesh(const Block *rel, int n, v3 size, int top) {
     static Vert poolbuf[96 * 1024];
     pool = poolbuf; pn = 0; pmax = (int)(sizeof poolbuf / sizeof(Vert));
     for (int i = 0; i < n; i++) {
@@ -173,7 +173,9 @@ static int bake_mesh(const Block *rel, int n, v3 size) {
             poolbuf[i].pos[a] /= s;
         }
     }
-    return rk_model_mesh_add(poolbuf, pn);
+    /* top=1: transient slot from the tail — drops without a rebake */
+    return top ? rk_model_mesh_add_top(poolbuf, pn)
+               : rk_model_mesh_add(poolbuf, pn);
 }
 
 /* topo mesh -> GPU: expand faces to flat-shaded tri soup, normalize to the
@@ -218,7 +220,7 @@ static int model_rebake(const Model *m) {
     if (m->vox)
         return bake_topo(m->mv, m->mvcol, m->mvtex, m->mf,
                          m->nface, m->size);
-    return bake_mesh(m->ch, m->nch, m->size);
+    return bake_mesh(m->ch, m->nch, m->size, 0);
 }
 
 /* ---------------- public api ---------------- */
@@ -247,7 +249,7 @@ int model_bake(const Block *children, int n) {
         m->ch[i] = children[i];
         m->ch[i].pos = v3_sub(children[i].pos, pivot);
     }
-    m->mesh = bake_mesh(m->ch, n, m->size);
+    m->mesh = bake_mesh(m->ch, n, m->size, 0);
     if (m->mesh < 0) return -1;
     return g_nmodels++;
 }
@@ -273,7 +275,7 @@ int model_bake_transient(const Block *abs, int n, v3 *pivot, v3 *size) {
         rel[i] = abs[i];
         rel[i].pos = v3_sub(abs[i].pos, *pivot);
     }
-    return bake_mesh(rel, n, *size);
+    return bake_mesh(rel, n, *size, 1);
 }
 
 /* sculpted vertex-edited mesh -> model (verts arrive centered on AABB) */
@@ -438,6 +440,7 @@ static int weld_topo(const Vert *soup, int ns, Model *m) {
 }
 
 int models_load(const char *path) {
+    rk_models_reset();              /* also clears transient tail cursors */
     FILE *f = fopen(path ? path : def_path(), "rb");
     if (!f) return 0;
     uint32_t hdr[3];

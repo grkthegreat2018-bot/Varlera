@@ -130,12 +130,17 @@ typedef struct {
     uint32_t meshCount[RK_MESH_COUNT + 1];
     VkDeviceSize lineOff; uint32_t lineCount;
 
-    /* baked custom-model meshes: CPU store + rebuilt GPU buffer */
+    /* baked custom-model meshes: CPU store + rebuilt GPU buffer.
+     * Transient meshes (play-mode greedy clusters) allocate slots+verts
+     * top-down: slot = --mtop, verts end at mvt and grow downward. They
+     * never collide with dense persistent ids and drop for free. */
     VkBuffer mbuf; VkDeviceMemory mbufMem;
-    Vert mverts[256 * 1024]; int mvn;     /* model vert pool */
+    Vert mverts[256 * 1024]; int mvn;     /* model vert pool (head) */
     VkDeviceSize modelOff[RK_MAX_MODELS];
     uint32_t modelCount[RK_MAX_MODELS];
     int nmodels;
+    int mtop;                           /* next transient slot (down) */
+    int mvt;                            /* transient vert tail (down) */
 
     /* per-frame queues */
     QEnt q[MAX_Q];           int qn;

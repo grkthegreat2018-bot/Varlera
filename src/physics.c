@@ -39,7 +39,6 @@ static v3    s_dragRO, s_dragRD;      /* latest cursor ray (world_drag_move) */
 typedef struct { int mesh; v3 pos, size; } MCls;
 static MCls   s_cls[MRG_MAX_CLS];
 static int    s_nCls;
-static int    s_baked;                   /* transient meshes added this play */
 static int16_t s_blkCls[MAX_BLOCKS];     /* block idx -> cluster, -1 none */
 
 static void merge_dissolve(int ci) {
@@ -159,7 +158,7 @@ static void merge_build(void) {
                 s_blkCls[j] = (int16_t)ci;
             }
     }
-    if (s_nCls) { rk_models_commit(); s_baked += s_nCls; }
+    if (s_nCls) rk_models_commit();
 }
 
 int world_merged_count(void) { return s_nCls; }
@@ -210,6 +209,7 @@ void world_reset_physics(void) {
     s_dragI = -1;
     particles_reset();
     s_nCls = 0;
+    rk_models_drop_transient();          /* cluster slots die here */
     for (int i = 0; i < g_nb; i++) s_blkCls[i] = -1;
 }
 
@@ -248,8 +248,8 @@ void world_snapshot_play(void) {
 
 void world_restore_play(void) {
     if (g_playBackupN < 0) return;
-    if (s_baked) models_rebake_all();    /* drop transient slots: ids stay dense */
-    s_baked = 0;
+    /* transient slots drop in world_reset_physics below — free, no GPU
+     * wait and no persistent-model rebake */
     g_nb = g_playBackupN;
     memcpy(g_blocks, g_playBackup, sizeof(Block) * g_nb);
     g_playBackupN = -1;

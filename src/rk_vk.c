@@ -141,7 +141,29 @@ void rk_tex_upload(const uint8_t *rgba) {
 
 /* ---------------- baked model meshes ---------------- */
 
-void rk_models_reset(void) { G.nmodels = 0; G.mvn = 0; }
+#define MV_CAP ((int)(sizeof G.mverts / sizeof(Vert)))
+
+void rk_models_reset(void) {
+    G.nmodels = 0; G.mvn = 0;
+    G.mtop = RK_MAX_MODELS; G.mvt = MV_CAP;
+}
+
+/* transient slot: top of the id range downward, verts from the tail.
+ * Persistent slots stay dense so they never see these; a
+ * rk_models_drop_transient() makes them vanish with zero GPU work. */
+int rk_model_mesh_add_top(const Vert *v, int n) {
+    int slot = G.mtop - 1;
+    if (slot < G.nmodels || n < 1 || G.mvt - n < G.mvn) return -1;
+    G.mtop = slot; G.mvt -= n;
+    G.modelOff[slot] = (VkDeviceSize)G.mvt;
+    G.modelCount[slot] = (uint32_t)n;
+    memcpy(G.mverts + G.mvt, v, (size_t)n * sizeof(Vert));
+    return RK_MESH_BASE_MODEL + slot;
+}
+
+void rk_models_drop_transient(void) {
+    G.mtop = RK_MAX_MODELS; G.mvt = MV_CAP;
+}
 
 int rk_model_mesh_add(const Vert *v, int n) {
     if (G.nmodels >= RK_MAX_MODELS || G.mvn + n > (int)(sizeof G.mverts / sizeof(Vert)))
@@ -158,8 +180,11 @@ void rk_models_commit(void) {
     vkDeviceWaitIdle(G.dev);              /* fuse is rare; simplicity wins */
     if (G.mbuf) { vkDestroyBuffer(G.dev, G.mbuf, NULL); vkFreeMemory(G.dev, G.mbufMem, NULL); }
     G.mbuf = VK_NULL_HANDLE; G.mbufMem = VK_NULL_HANDLE;
-    if (!G.mvn) return;
-    VkDeviceSize bytes = (VkDeviceSize)G.mvn * sizeof(Vert);
+    /* transient tail verts ride the tail of the same buffer: upload
+     * covers [0, vhi) where vhi reaches the transient base */
+    int vhi = G.mvt < MV_CAP ? MV_CAP : G.mvn;
+    if (!vhi) return;
+    VkDeviceSize bytes = (VkDeviceSize)vhi * sizeof(Vert);
     void *map; VkDeviceMemory stagM;
     VkBuffer stag = buf_create(bytes, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, HOST_MEM, &stagM, &map);
     memcpy(map, G.mverts, bytes);
@@ -739,6 +764,7 @@ static void pick_physical_device(void) {
 
 int rk_init(GLFWwindow *win) {
     memset(&G, 0, sizeof G);
+    rk_models_reset();              /* mtop/mvt tail cursors */
     G.win = win;
 
     VkApplicationInfo app = {VK_STRUCTURE_TYPE_APPLICATION_INFO};
