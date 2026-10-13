@@ -16,7 +16,7 @@ enum { PZ_WAIT,    /* rk_begin_frame: fence wait + acquire (GPU-bound tell) */
        PZ_N };
 
 enum { PC_BLOCKS, PC_DRAWS, PC_INST, PC_UIVERTS, PC_MESHVERTS, PC_MODELS,
-       PC_N };
+       PC_PARTICLES, PC_N };
 
 void prof_reset(void);
 void prof_zone_begin(int z);

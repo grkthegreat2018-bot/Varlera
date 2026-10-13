@@ -5,6 +5,7 @@
 #include "physics.h"
 #include "world.h"
 #include "toast.h"
+#include "particles.h"
 #include <math.h>
 #include <string.h>
 #include <stdlib.h>
@@ -13,6 +14,8 @@ static float boost_step(int i, float dt);
 
 static float g_velY[MAX_BLOCKS];
 static uint16_t s_prevHeld;           /* last frame's trigHeld -> edge detect */
+static float s_emitAcc[MAX_BLOCKS];   /* per-block particle emit accumulators */
+static uint32_t s_phFrame;            /* physics frame counter (emit parity) */
 static Block g_playBackup[MAX_BLOCKS];
 static int g_playBackupN = -1;
 
@@ -44,8 +47,36 @@ int world_dragging(void) { return s_dragI >= 0; }
 
 void world_reset_physics(void) {
     memset(g_velY, 0, sizeof g_velY);
+    memset(s_emitAcc, 0, sizeof s_emitAcc);
     s_prevHeld = 0;
     s_dragI = -1;
+    particles_reset();
+}
+
+/* held-trigger emitters (BOOST exhaust / SPIN sparks) — runs for every
+   block each physics frame in both phys modes; cosmetic, ignores NOPHYS */
+static void emit_continuous(int i, float dt, uint16_t trigHeld) {
+    Block *b = &g_blocks[i];
+    if (!((trigHeld >> (b->trig & 15)) & 1) ||
+        (b->act != ACT_BOOST && b->act != ACT_SPIN)) {
+        s_emitAcc[i] = 0.0f;
+        return;
+    }
+    s_emitAcc[i] += dt;
+    v3 es = block_eff_size(b);
+    if (b->act == ACT_BOOST) {
+        if (s_emitAcc[i] < 0.028f) return;
+        s_emitAcc[i] = 0.0f;
+        v3 at = b->pos; at.y -= es.y * 0.5f;
+        particles_burst_dir(P_FIRE, at, v3_make(0, -1, 0), NULL, 1);
+        if (((s_phFrame + (uint32_t)i) & 3) == 0)
+            particles_burst(P_SMOKE, at, NULL, 1);
+    } else {                        /* ACT_SPIN: occasional top sparks */
+        if (s_emitAcc[i] < 0.14f) return;
+        s_emitAcc[i] = 0.0f;
+        v3 at = b->pos; at.y += es.y * 0.5f;
+        particles_burst(P_SPARK, at, NULL, 1);
+    }
 }
 
 void world_snapshot_play(void) {
@@ -141,6 +172,7 @@ void world_physics(float dt, uint16_t trigHeld) {
        acts (SPIN/GLOW render-side, BOOST below) key off the held bit */
     uint16_t edge = trigHeld & ~s_prevHeld;
     s_prevHeld = trigHeld;
+    s_phFrame++;
     static uint8_t delMark[MAX_BLOCKS];
     memset(delMark, 0, (size_t)g_nb);
     for (int i = 0; i < g_nb; i++) {
@@ -154,14 +186,22 @@ void world_physics(float dt, uint16_t trigHeld) {
         for (int t = 0; t < g_nb; t++) {
             Block *b = &g_blocks[t];
             if (!tgt_match(s, b)) continue;
-            if (s->act == ACT_COLOR) memcpy(b->col, g_palette[s->actParam & 15], sizeof b->col);
-            else if (s->act == ACT_TEX) b->tex = s->actParam;
-            else if (s->act == ACT_DEL) delMark[t] = 1;
+            if (s->act == ACT_COLOR) {
+                memcpy(b->col, g_palette[s->actParam & 15], sizeof b->col);
+                particles_burst(P_PUFF, b->pos, NULL, 1);
+            } else if (s->act == ACT_TEX) {
+                b->tex = s->actParam;
+                particles_burst(P_PUFF, b->pos, NULL, 1);
+            } else if (s->act == ACT_DEL) delMark[t] = 1;
         }
     }
     int ndel = 0;
     for (int i = g_nb - 1; i >= 0; i--)     /* descending: swap-removes pull */
-        if (delMark[i]) { world_delete(i); ndel++; }   /* from >i (consumed) */
+        if (delMark[i]) {                     /* debris burst, then delete */
+            particles_burst(P_DEBRIS, g_blocks[i].pos, g_blocks[i].col, 6);
+            particles_burst(P_PUFF, g_blocks[i].pos, NULL, 2);
+            world_delete(i); ndel++;
+        }
     if (ndel) { memset(g_velY, 0, sizeof(float) * g_nb); s_dragI = -1; }
 
     /* drag target along the stored ray; Y never sinks below support */
@@ -177,6 +217,7 @@ void world_physics(float dt, uint16_t trigHeld) {
     if (ws->phys == WS_PHYS_RIGID) {
         for (int i = 0; i < g_nb; i++) {
             Block *b = &g_blocks[i];
+            emit_continuous(i, dt, trigHeld);
             if (i == s_dragI) {                 /* kinematic drag */
                 v3 es = block_eff_size(b);
                 b->pos.x = dragT.x; b->pos.z = dragT.z;
@@ -195,6 +236,7 @@ void world_physics(float dt, uint16_t trigHeld) {
     support_build();
     for (int i = 0; i < g_nb; i++) {
         Block *b = &g_blocks[i];
+        emit_continuous(i, dt, trigHeld);   /* thrusters/sparks run always */
         if (b->flags & (BF_NOPHYS | BF_LOCKED)) continue;
         v3 es = g_es[i];
         /* kinematic drag: follow cursor ray, can't sink through support */
@@ -220,9 +262,15 @@ void world_physics(float dt, uint16_t trigHeld) {
         b->pos.y += g_velY[i] * dt;
         if (b->pos.y <= sup) {          /* landing: bounce restitution 0..0.9 */
             b->pos.y = sup;
+            float imp = -g_velY[i];
+            if (imp > 2.5f) {           /* hard landing -> dust at the base */
+                v3 at = b->pos; at.y -= es.y * 0.5f;
+                particles_burst(P_DUST, at, NULL,
+                                (int)clampf(imp * 0.9f, 3.0f, 12.0f));
+            }
             float rest = b->bounce * 0.06f;
-            g_velY[i] = (rest > 0.0f && -g_velY[i] > 1.5f)
-                      ? -g_velY[i] * rest : 0.0f;
+            g_velY[i] = (rest > 0.0f && imp > 1.5f)
+                      ? imp * rest : 0.0f;
         }
     }
 }

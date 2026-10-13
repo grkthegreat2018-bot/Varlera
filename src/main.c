@@ -24,6 +24,7 @@
 #include "settings.h"
 #include "bundle.h"
 #include "physics.h"
+#include "particles.h"
 #include "world.h"
 #include "math3d.h"
 
@@ -333,6 +334,8 @@ int main(void) {
     const char *envBwx   = getenv("VARLERA_BWX");       /* test hook: export */
     const char *envBwxIn = getenv("VARLERA_BWXIN");     /* test hook: import */
     const char *envTab   = getenv("VARLERA_TAB");       /* test hook: open tab */
+    const char *envParts = getenv("VARLERA_PARTS");     /* test hook: burst test */
+    const char *envExit  = getenv("VARLERA_EXIT");      /* test hook: quit at frame N */
     if (envTab) A.panelTab = atoi(envTab);
     int frameNo = 0;
 
@@ -372,6 +375,7 @@ int main(void) {
             world_physics(dt, held);
         }
         else if (A.app == APP_EDIT && !A.modal) { edit_update(); panel_drag_update(); }
+        particles_update(dt);
         prof_zone_end(PZ_SIM);
 
         prof_zone_begin(PZ_WAIT);
@@ -388,6 +392,7 @@ int main(void) {
             rk_draw_sky();
             rk_draw_grid();
             edit_draw_world();
+            particles_draw();
         }
         if (A.modal == 1) art_draw();
         else if (A.modal == 2) sculpt_draw();
@@ -402,6 +407,13 @@ int main(void) {
         rk_end_frame();
         prof_zone_end(PZ_END);
         ++frameNo;
+        if (envParts && frameNo == 20) {
+            int n = atoi(envParts);
+            particles_burst(P_FIRE,   v3_make(0, 2.5f, 0), NULL, n);
+            particles_burst(P_SMOKE,  v3_make(2, 2.0f, 0), NULL, n);
+            particles_burst(P_DEBRIS, v3_make(-2, 2.5f, 0), NULL, n);
+            particles_burst(P_SPARK,  v3_make(0, 3.5f, 2), NULL, n);
+        }
         if (envShot && frameNo == 45) rk_screenshot(envShot);
         if (envSave && frameNo == 50) {
             worlds_ensure();
@@ -415,6 +427,7 @@ int main(void) {
             toast_say(rk_reload_shaders() ? "shaders reloaded"
                                           : "shader reload: compile errors");
         }
+        if (envExit && frameNo >= atoi(envExit)) break;
         if (A.setDirty) { A.setDirty = 0; settings_save(); }
         /* autosave: world mutated + 90s since last write -> .auto.bw */
         static uint64_t s_lastRev; static double s_lastAuto;

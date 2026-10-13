@@ -61,10 +61,10 @@ static void report(void) {
     }
     fprintf(stderr,
         " | gpu %.2f (sh %.2f main %.2f post %.2f)"
-        " | draws %d inst %d uiv %d mv %d blocks %d models %d\n",
+        " | draws %d inst %d uiv %d mv %d blocks %d models %d parts %d\n",
         gpu[3], gpu[0], gpu[1], gpu[2],
         cnt[PC_DRAWS], cnt[PC_INST], cnt[PC_UIVERTS], cnt[PC_MESHVERTS],
-        cnt[PC_BLOCKS], cnt[PC_MODELS]);
+        cnt[PC_BLOCKS], cnt[PC_MODELS], cnt[PC_PARTICLES]);
 }
 
 void prof_frame(void) {
@@ -106,7 +106,8 @@ void prof_draw(void) {
     snprintf(b, sizeof b, "draws %d inst %d uiv %d mv %d",
              cnt[PC_DRAWS], cnt[PC_INST], cnt[PC_UIVERTS], cnt[PC_MESHVERTS]);
     ui_text(x + 8, y, b, 1, 0.8f, 0.85f, 1.0f, 1); y += lh;
-    snprintf(b, sizeof b, "blocks %d models %d", cnt[PC_BLOCKS], cnt[PC_MODELS]);
+    snprintf(b, sizeof b, "blocks %d models %d parts %d",
+             cnt[PC_BLOCKS], cnt[PC_MODELS], cnt[PC_PARTICLES]);
     ui_text(x + 8, y, b, 1, 0.8f, 0.85f, 1.0f, 1); y += lh + 4;
 
     /* frame-time strip: 1 bar/frame, green <16.7ms, amber <33ms, red above */

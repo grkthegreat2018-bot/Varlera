@@ -7,6 +7,7 @@
 #include "toast.h"
 #include "tex.h"
 #include "rk.h"
+#include "particles.h"
 #include "math3d.h"
 #include <string.h>
 #include <math.h>
@@ -215,6 +216,9 @@ static void place_commit(void) {
         g_blocks[ni].texm = (uint8_t)A.paintTexM;
         g_blocks[ni].alpha = A.paintAlpha;
         if (A.paintAlpha < 1.0f) g_blocks[ni].flags |= BF_GLASS;
+        v3 at = g_blocks[ni].pos;
+        at.y -= block_eff_size(&g_blocks[ni]).y * 0.5f;
+        particles_burst(P_DUST, at, g_blocks[ni].col, 6);
         static const int catTip[4] = {TIP_PLACE_BASIC, TIP_PLACE_RAMP,
                                       TIP_PLACE_SPECIAL, TIP_PLACE_MODEL};
         int cat = panel_asset_cat(A.armedAsset);
