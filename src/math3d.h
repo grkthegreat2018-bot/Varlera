@@ -139,17 +139,20 @@ static inline float clampf(float x, float a, float b) { return x < a ? a : (x > 
 static inline float snapf(float x, float step) { return floorf(x/step + 0.5f) * step; }
 
 /* Gribb-Hartmann frustum planes from a column-major view-proj.
+ * clip = M*p (column-vector): plane rows are M's ROWS, i.e. vp[k*4+i],
+ * NOT columns — transposed planes wrongly cull on-screen objects
+ * (they end up shadow-only via the caster path).
  * Vulkan clip volume: -w<=x,y<=w, 0<=z<=w (near is row2 for both
  * forward and reversed Z). pl[i] = {a,b,c,d}; inside => a*x+b*y+c*z+d >= 0. */
 static inline void frustum_planes(const m4 vp, float pl[6][4]) {
     for (int i = 0; i < 4; i++) {
-        float r0 = vp[i], r1 = vp[4+i], r2 = vp[8+i], r3 = vp[12+i];
+        float r0 = vp[i*4], r1 = vp[i*4+1], r2 = vp[i*4+2], r3 = vp[i*4+3];
         pl[0][i] = r3 + r0;  /* left   */
         pl[1][i] = r3 - r0;  /* right  */
         pl[2][i] = r3 + r1;  /* bottom */
         pl[3][i] = r3 - r1;  /* top    */
-        pl[4][i] = r2;       /* near/far side:  z_c >= 0 */
-        pl[5][i] = r3 - r2;  /* other depth:    z_c <= w */
+        pl[4][i] = r2;       /* far  side (z_c >= 0): row2      */
+        pl[5][i] = r3 - r2;  /* near side (z_c <= w): row3-row2 */
     }
 }
 

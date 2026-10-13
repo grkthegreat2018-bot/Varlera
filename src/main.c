@@ -336,6 +336,7 @@ int main(void) {
     const char *envTab   = getenv("VARLERA_TAB");       /* test hook: open tab */
     const char *envParts = getenv("VARLERA_PARTS");     /* test hook: burst test */
     const char *envExit  = getenv("VARLERA_EXIT");      /* test hook: quit at frame N */
+    const char *envPlace = getenv("VARLERA_PLACE");     /* test hook: place_commit path at frame 20 */
     if (envTab) A.panelTab = atoi(envTab);
     int frameNo = 0;
 
@@ -415,6 +416,27 @@ int main(void) {
             particles_burst(P_SPARK,  v3_make(0, 3.5f, 2), NULL, n);
         }
         if (envShot && frameNo == 45) rk_screenshot(envShot);
+        if (envPlace && frameNo == 20) {
+            static const float COL[3] = {0.3f, 0.5f, 0.9f};
+            for (int i = 0; i < 4; i++) {     /* texm 0,1,2,4 -> which vanish? */
+                int ni = world_add(v3_make(2.0f + i*2, 0.5f, 4), v3_make(1,1,1),
+                                   RK_MESH_CUBE, 0, COL);
+                if (ni >= 0) {
+                    g_blocks[ni].texm = (uint8_t)i;
+                    g_blocks[ni].alpha = 1.0f;
+                }
+            }
+        }
+        if (envPlace && frameNo == 30) {
+            /* regression: every ground-level block must pass the cull test */
+            float pl[6][4]; frustum_planes(A.viewProj, pl);
+            int nvis = 0;
+            for (int i = 0; i < g_nb; i++) {
+                v3 h = v3_scale(block_eff_size(&g_blocks[i]), 0.5f);
+                nvis += aabb_in_frustum(pl, g_blocks[i].pos, h);
+            }
+            fprintf(stderr, "place-test: %d/%d blocks visible\n", nvis, g_nb);
+        }
         if (envSave && frameNo == 50) {
             worlds_ensure();
             world_save(worlds_file(A.worldName, "bw"), A.worldName);
