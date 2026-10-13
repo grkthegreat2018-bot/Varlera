@@ -219,8 +219,10 @@ color+texture.
 
 Modals (main.c routes all input by A.modal): 1 = pixel-art tool (art.c,
 TEX tab EDIT/NEW/SHEET at the top; tools PEN/ERASE/FILL/LINE/RECT/PICK +
-MIRROR/UNDO/CLEAR, wheel zoom, RMB pan, per-stroke snapshot undo, DONE
-commits + saves, CANCEL/ESC discards), 2 = sculpt mode (sculpt.c, SCULPT
+MIRROR/UNDO/CLEAR/ONION/PLAY, wheel zoom, RMB pan, per-stroke snapshot
+undo, DONE commits + saves, CANCEL/ESC discards; multi-tile sheets edit
+one tile per canvas with a frame strip + onion skin for flipbook anim —
+TEXM_ANIM mode plays tiles row-major at tex_fps per texture), 2 = sculpt mode (sculpt.c, SCULPT
 button top-left next to PLAY or SHAPES footer). Editor is paused while a
 modal is open; camera still flies. Sculpt: direct vertex editing on a welded tri mesh —
 LMB grabs a vertex dot and drags on a camera-parallel plane (snapped to the

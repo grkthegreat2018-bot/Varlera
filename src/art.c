@@ -31,19 +31,34 @@ static float s_pan0x, s_pan0y, s_panOX, s_panOY;
 static uint8_t *s_snap;           /* per-stroke undo snapshot (w*h*4) */
 static int   s_snapW, s_snapH, s_haveSnap;
 
+/* flipbook frames: a multi-tile sheet edits ONE tile at a time; the frame
+ * is a row-major tile index and shifts all art-cell addressing. */
+static int   s_frame;             /* current frame tile (0..tw*th-1) */
+static int   s_onion = 1;         /* ghost the previous frame under canvas */
+static int   s_fplay;             /* live preview: advance at tex fps */
+
+static int art_frames(void) { return s_tw * s_th; }
+static void frame_off(int *ox, int *oy) {
+    int cpt = TEX_TILE / ART_PPX;             /* art cells per tile */
+    *ox = (s_frame % s_tw) * cpt;
+    *oy = (s_frame / s_tw) * cpt;
+}
+
 static uint8_t *tex_pix(int *w, int *h) { return tex_px(A.artTex, w, h); }
 
 /* read/write one art pixel (ART_PPX block of atlas px) */
 static void aget(int cx, int cy, uint8_t out[4]) {
     int w, h; uint8_t *p = tex_pix(&w, &h);
-    int ax = cx * ART_PPX, ay = cy * ART_PPX;
+    int ox, oy; frame_off(&ox, &oy);
+    int ax = (cx + ox) * ART_PPX, ay = (cy + oy) * ART_PPX;
     memcpy(out, p + ((size_t)ay * RK_TEX_ATLAS + ax) * 4, 4);
 }
 static void aset(int cx, int cy, const uint8_t c[4]) {
     int w, h; uint8_t *p = tex_pix(&w, &h);
+    int ox, oy; frame_off(&ox, &oy);
     for (int j = 0; j < ART_PPX; j++)
         for (int i = 0; i < ART_PPX; i++) {
-            int ax = cx * ART_PPX + i, ay = cy * ART_PPX + j;
+            int ax = (cx + ox) * ART_PPX + i, ay = (cy + oy) * ART_PPX + j;
             if (ax < w && ay < h)
                 memcpy(p + ((size_t)ay * RK_TEX_ATLAS + ax) * 4, c, 4);
         }
@@ -145,9 +160,10 @@ void art_open(int texId) {
     A.drag = M_IDLE; A.armedAsset = -1;
     const Tex *t = &g_tex[texId];
     s_tw = t->tw; s_th = t->th;
-    s_cells = s_tw * (TEX_TILE / ART_PPX);
+    s_cells = TEX_TILE / ART_PPX;           /* one frame tile per canvas */
     s_zoom = 1.0f; s_panx = s_pany = 0;
     s_mirror = 0; s_shapeDrag = 0; s_panDrag = 0; s_haveSnap = 0;
+    s_frame = 0; s_fplay = 0;
 }
 
 void art_close(int save) {
@@ -168,9 +184,10 @@ static void layout(float *cw, float *ch) {
 }
 
 /* right column: tool buttons */
-enum { T_PEN, T_ERA, T_FILL, T_LINE, T_RECT, T_PICK, T_MIRR, T_UNDO, T_CLR, NT };
-static const char *TN[NT] = {"PEN","ERASE","FILL","LINE","RECT","PICK","MIRROR","UNDO","CLEAR"};
-static const char *TK[NT] = {"B","E","G","L","R","I","M","Z","C"};
+enum { T_PEN, T_ERA, T_FILL, T_LINE, T_RECT, T_PICK, T_MIRR, T_UNDO, T_CLR,
+       T_ONION, T_PLAY, NT };
+static const char *TN[NT] = {"PEN","ERASE","FILL","LINE","RECT","PICK","MIRROR","UNDO","CLEAR","ONION","PLAY"};
+static const char *TK[NT] = {"B","E","G","L","R","I","M","Z","C","O","P"};
 
 static float tools_x(void) {
     float cw, ch; layout(&cw, &ch);
@@ -210,8 +227,23 @@ int art_press(float x, float y) {
             case T_MIRR: s_mirror ^= 1; break;
             case T_UNDO: snap_restore(); break;
             case T_CLR:  snap_take(); clear_all(); break;
+            case T_ONION: s_onion ^= 1; break;
+            case T_PLAY:  s_fplay ^= 1; break;
             }
             return 1;
+        }
+    }
+    /* frame strip (sheet anims): click a tile to edit that frame */
+    if (art_frames() > 1) {
+        float cw2, ch2; layout(&cw2, &ch2);
+        float fy = s_cy + ch2 + 12.0f;
+        for (int f = 0; f < art_frames(); f++) {
+            float fx = s_cx + f * 34.0f;
+            if (fx + 30.0f > s_cx + cw2) break;
+            if (x >= fx && x < fx + 30 && y >= fy && y < fy + 30) {
+                s_frame = f; s_fplay = 0;
+                return 1;
+            }
         }
     }
     /* palette: 2 cols x 8 rows below tools */
@@ -229,7 +261,7 @@ int art_press(float x, float y) {
     if (x >= tx && x < tx + 28 && y >= cxy && y < cxy + 26) { A.artTool = 1; return 1; }
 
     int cx, cy;
-    if (canvas_cell(x, y, &cx, &cy)) {
+    if (canvas_cell(x, y, &cx, &cy) && !s_fplay) {
         if (A.artTool == 2)      { snap_take(); flood(cx, cy); }
         else if (A.artTool == 3) {
             uint8_t c[4]; aget(cx, cy, c);
@@ -270,6 +302,7 @@ void art_motion(void) {
         s_pany = s_panOY + (float)A.my - s_pan0y;
         return;
     }
+    if (s_fplay) return;                    /* no edits while previewing */
     if (s_shapeDrag) {
         /* live preview: restore snapshot, redraw shape */
         int cx, cy;
@@ -301,6 +334,12 @@ int art_key(int key) {
     if (key == GLFW_KEY_M) s_mirror ^= 1;
     if (key == GLFW_KEY_Z || key == GLFW_KEY_U) snap_restore();
     if (key == GLFW_KEY_C) { snap_take(); clear_all(); }
+    if (key == GLFW_KEY_O) s_onion ^= 1;
+    if (key == GLFW_KEY_P) s_fplay ^= 1;
+    if (key == GLFW_KEY_COMMA)
+        { s_frame = (s_frame + art_frames() - 1) % art_frames(); s_fplay = 0; }
+    if (key == GLFW_KEY_PERIOD)
+        { s_frame = (s_frame + 1) % art_frames(); s_fplay = 0; }
     return 1;
 }
 
@@ -312,9 +351,20 @@ void art_draw(void) {
     /* dim the world behind */
     rk_ui_rect(0, 0, (float)A.fbw, (float)A.fbh, 0.02f, 0.02f, 0.03f, 0.55f);
 
-    /* canvas: backing + cells */
+    /* canvas: backing + cells (one frame tile; sheet anims pick s_frame) */
     rk_ui_rect(s_cx - 2, s_cy - 2, cw + 4, ch + 4, 0.10f, 0.10f, 0.12f, 1);
     int w, h; uint8_t *px = tex_pix(&w, &h);
+    int nf = art_frames();
+    /* live preview plays the frames at the texture's rate */
+    int df = s_frame;
+    if (s_fplay && nf > 1) {
+        float fps = tex_fps(A.artTex); if (fps <= 0.0f) fps = 8.0f;
+        df = (int)(glfwGetTime() * fps) % nf;
+    }
+    int cpt = TEX_TILE / ART_PPX;
+    int ox = (df % s_tw) * cpt, oy = (df / s_tw) * cpt;
+    int pox = (((df + nf - 1) % nf) % s_tw) * cpt,   /* onion: prev frame */
+        poy = (((df + nf - 1) % nf) / s_tw) * cpt;
     float cs = s_cs * s_zoom;
     for (int cy = 0; cy < s_cells; cy++)
         for (int cx = 0; cx < s_cells; cx++) {
@@ -324,7 +374,14 @@ void art_draw(void) {
             int ch_ = ((cx >> 2) + (cy >> 2)) & 1;
             rk_ui_rect(sx, sy, cs, cs, ch_ ? 0.32f : 0.22f, ch_ ? 0.32f : 0.22f,
                        ch_ ? 0.34f : 0.24f, 1);
-            int ax = cx * ART_PPX, ay = cy * ART_PPX;
+            if (s_onion && nf > 1) {           /* previous frame ghost */
+                int qx = (cx + pox) * ART_PPX, qy = (cy + poy) * ART_PPX;
+                const uint8_t *q = px + ((size_t)qy * RK_TEX_ATLAS + qx) * 4;
+                if (q[3] > 10)
+                    rk_ui_rect(sx, sy, cs, cs, q[0]/255.0f, q[1]/255.0f,
+                               q[2]/255.0f, q[3] / 255.0f * 0.30f);
+            }
+            int ax = (cx + ox) * ART_PPX, ay = (cy + oy) * ART_PPX;
             const uint8_t *p = px + ((size_t)ay * RK_TEX_ATLAS + ax) * 4;
             if (p[3] > 10)
                 rk_ui_rect(sx, sy, cs, cs, p[0]/255.0f, p[1]/255.0f, p[2]/255.0f,
@@ -345,14 +402,6 @@ void art_draw(void) {
         }
     }
 
-    /* tile guide lines (proc sheet) */
-    int cellsPerTile = TEX_TILE / ART_PPX;
-    for (int t = 1; t < s_tw; t++) {
-        float lx = s_cx + s_panx + t * cellsPerTile * cs;
-        rk_ui_rect(lx - 1, s_cy + s_pany, 2, s_cells * cs, 0.4f, 0.7f, 1.0f, 0.8f);
-        float ly = s_cy + s_pany + t * cellsPerTile * cs;
-        rk_ui_rect(s_cx + s_panx, ly - 1, s_cells * cs, 2, 0.4f, 0.7f, 1.0f, 0.8f);
-    }
     /* mirror midline */
     if (s_mirror) {
         float mx = s_cx + s_panx + s_cells * 0.5f * cs;
@@ -364,10 +413,30 @@ void art_draw(void) {
     rk_ui_rect(s_cx - 1, s_cy - 1, 1, ch + 2, 0.5f, 0.6f, 0.8f, 0.8f);
     rk_ui_rect(s_cx + cw, s_cy - 1, 1, ch + 2, 0.5f, 0.6f, 0.8f, 0.8f);
 
+    /* frame strip (sheet anims): one atlas-thumbnail per tile */
+    if (nf > 1) {
+        const Tex *t = &g_tex[A.artTex];
+        float fy = s_cy + ch + 12.0f;
+        for (int f = 0; f < nf; f++) {
+            float fx = s_cx + f * 34.0f;
+            if (fx + 30.0f > s_cx + cw) break;
+            int sel = (f == df);
+            rk_ui_rect(fx, fy, 30, 30, sel ? 0.30f : 0.16f,
+                       sel ? 0.45f : 0.18f, sel ? 0.65f : 0.24f, 1);
+            float u0 = (t->tx + f % s_tw) / 8.0f, u1 = u0 + 0.125f;
+            float v0 = (t->ty + f / s_tw) / 8.0f, v1 = v0 + 0.125f;
+            rk_ui_texrect(fx + 2, fy + 2, 26, 26, u0, v0, u1, v1);
+        }
+    }
+
     /* title + top bar buttons */
-    char tb[64];
-    snprintf(tb, sizeof tb, "PIXEL ART - %s (%dx%d)", g_tex[A.artTex].name,
-             s_tw, s_th);
+    char tb[80];
+    if (nf > 1)
+        snprintf(tb, sizeof tb, "PIXEL ART - %s (%dx%d)  FRAME %d/%d",
+                 g_tex[A.artTex].name, s_tw, s_th, df + 1, nf);
+    else
+        snprintf(tb, sizeof tb, "PIXEL ART - %s (%dx%d)", g_tex[A.artTex].name,
+                 s_tw, s_th);
     ui_text(s_cx, s_cy - 38, tb, 2, 0.9f, 0.92f, 1.0f, 1);
     ui_text(s_cx, s_cy - 16, "WHEEL ZOOM - RMB PAN", 1, 0.55f, 0.6f, 0.7f, 1);
     for (int i = 0; i < 3; i++) {
@@ -390,7 +459,9 @@ void art_draw(void) {
         int act = (i == T_PEN && A.artTool == 0) || (i == T_ERA && A.artTool == 1) ||
                   (i == T_FILL && A.artTool == 2) || (i == T_PICK && A.artTool == 3) ||
                   (i == T_LINE && A.artTool == 4) || (i == T_RECT && A.artTool == 5) ||
-                  (i == T_MIRR && s_mirror);
+                  (i == T_MIRR && s_mirror) ||
+                  (i == T_ONION && s_onion && art_frames() > 1) ||
+                  (i == T_PLAY && s_fplay);
         int hov = A.mx >= tx && A.mx < tx + 76 && A.my >= ty && A.my < ty + 22;
         rk_ui_rect(tx, ty, 76, 22,
                    act ? 0.30f : 0.16f + hov*0.06f, act ? 0.45f : 0.18f + hov*0.06f,

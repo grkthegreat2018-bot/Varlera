@@ -338,6 +338,7 @@ int main(void) {
     const char *envExit  = getenv("VARLERA_EXIT");      /* test hook: quit at frame N */
     const char *envPlay  = getenv("VARLERA_PLAY");      /* test hook: play @30, edit @90 */
     const char *envAnim  = getenv("VARLERA_ANIM");      /* test hook: flipbook block @10 */
+    const char *envArt   = getenv("VARLERA_ART");       /* test hook: art_open(id) @20 */
     const char *envPlace = getenv("VARLERA_PLACE");     /* test hook: place_commit path at frame 20 */
     const char *envTexPng = getenv("VARLERA_TEXPNG");   /* test hook: png export+reimport */
     if (envTab) A.panelTab = atoi(envTab);
@@ -424,6 +425,7 @@ int main(void) {
             particles_burst(P_DEBRIS, v3_make(-2, 2.5f, 0), NULL, n);
             particles_burst(P_SPARK,  v3_make(0, 3.5f, 2), NULL, n);
         }
+        if (envArt && frameNo == 20) art_open(atoi(envArt));
         if (envShot && frameNo == 45) rk_screenshot(envShot);
         if (envShot && strchr(envShot, ',') && frameNo == 90) {
             rk_screenshot(strchr(envShot, ',') + 1);    /* ",second.bmp" */
