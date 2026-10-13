@@ -103,6 +103,59 @@ static void bake_shape(const Block *ch, v3 pivot) {
     }
 }
 
+/* ---------------- baked vertex AO (block-fused models) ----------------
+ * For each vert: 8 hemisphere rays around the normal vs child AABBs;
+ * hit fraction darkens the baked vertex color. Runs on the
+ * pre-normalization (world-unit) soup so ray lengths are real. */
+static int ray_aabb(v3 ro, v3 rd, v3 c, v3 h, float maxT) {
+    float tmin = 0.0f, tmax = maxT;
+    for (int a = 0; a < 3; a++) {
+        if (fabsf(rd.e[a]) < 1e-8f) {       /* parallel to slab */
+            if (ro.e[a] < c.e[a] - h.e[a] || ro.e[a] > c.e[a] + h.e[a])
+                return 0;
+            continue;
+        }
+        float inv = 1.0f / rd.e[a];
+        float t0 = (c.e[a] - h.e[a] - ro.e[a]) * inv;
+        float t1 = (c.e[a] + h.e[a] - ro.e[a]) * inv;
+        if (inv < 0.0f) { float t = t0; t0 = t1; t1 = t; }
+        if (t0 > tmin) tmin = t0;
+        if (t1 < tmax) tmax = t1;
+        if (tmax < tmin) return 0;
+    }
+    return 1;
+}
+
+static void bake_ao(Vert *v, int n, const Block *rel, int nc) {
+    /* 8 fixed hemisphere dirs: straight out + 7 tilted ~35deg */
+    static const float DK[8][2] = {
+        {0,0},{1,0},{-1,0},{0,1},{0,-1},{1,1},{-1,-1},{1,-1}
+    };
+    for (int i = 0; i < n; i++) {
+        v3 nn = v3_norm(v3_make(v[i].nrm[0], v[i].nrm[1], v[i].nrm[2]));
+        v3 up = fabsf(nn.y) > 0.9f ? v3_make(1,0,0) : v3_make(0,1,0);
+        v3 t1 = v3_norm(v3_cross(nn, up));
+        v3 t2 = v3_cross(nn, t1);
+        v3 ro = v3_add(v3_make(v[i].pos[0], v[i].pos[1], v[i].pos[2]),
+                       v3_scale(nn, 0.02f));
+        int hits = 0;
+        for (int k = 0; k < 8; k++) {
+            v3 d = v3_norm(v3_add(nn,
+                       v3_add(v3_scale(t1, DK[k][0] * 0.72f),
+                              v3_scale(t2, DK[k][1] * 0.72f))));
+            for (int j = 0; j < nc; j++) {
+                v3 h = block_eff_size(&rel[j]);
+                if (ray_aabb(ro, d, rel[j].pos, v3_scale(h, 0.5f), 0.9f)) {
+                    hits++; break;
+                }
+            }
+        }
+        float occ = hits / 8.0f;
+        float f = 1.0f - 0.5f * occ;
+        for (int a = 0; a < 3; a++) v[i].col[a] *= f;
+    }
+}
+
 /* bake rel-positioned children -> mesh id. Output verts are normalized to
  * the [-0.5,0.5] unit box of `size` so instancing by block size restores the
  * true extents (model blocks draw with scale = size). */
@@ -113,6 +166,7 @@ static int bake_mesh(const Block *rel, int n, v3 size) {
         if (rel[i].shape == RK_MESH_CUBE) bake_cube(&rel[i], v3_make(0,0,0), rel, n, i);
         else                              bake_shape(&rel[i], v3_make(0,0,0));
     }
+    bake_ao(poolbuf, pn, rel, n);
     for (int i = 0; i < pn; i++) {
         for (int a = 0; a < 3; a++) {
             float s = size.e[a]; if (s < 0.125f) s = 0.125f;
