@@ -8,3 +8,6 @@ worlds/
 tee_check.log
 .devin/scratchpad.md
 .devin_*.txt
+env.bw
+settings.bw
+textures.bw

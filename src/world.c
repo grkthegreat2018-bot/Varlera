@@ -103,7 +103,7 @@ void world_delete(int i) {
 /* ---------------- save/load ---------------- */
 
 #define BW_MAGIC 0x42574C42u  /* 'BWLB' */
-#define BW_VER   5              /* v5 = v4 + 3 stat bytes in block head */
+#define BW_VER   6              /* v6 = v5 layout; mesh base moved 16->32 */
 #define BW_VER1_BLKSZ 40      /* v1: no trig/act */
 #define BW_VER2_BLKSZ 44      /* v2: +trig/act; no texm/alpha/id/name */
 #define BW_VER3_BLKSZ 64      /* v3: raw Block */
@@ -311,6 +311,11 @@ int world_load(const char *path, char *nameOut) {
     }
     fclose(f);
     if (!ok) { g_nb = 0; return 0; }
+    /* v<6 predates RK_MESH_BASE_MODEL 16->32 (built-ins grew to 17 ids);
+       saved fused-model refs shift up to the new base */
+    if (ver < 6)
+        for (int i = 0; i < g_nb; i++)
+            if (g_blocks[i].shape >= 16) g_blocks[i].shape += 16;
     g_un = g_re = 0;
     g_rev++;
     return 1;

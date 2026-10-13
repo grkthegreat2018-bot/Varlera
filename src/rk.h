@@ -30,8 +30,10 @@ typedef enum {
     RK_MESH_COUNT
 } RkMesh;
 
-/* baked custom models live at mesh ids [RK_MESH_BASE_MODEL .. +64) */
-#define RK_MESH_BASE_MODEL 16
+/* baked custom models live at mesh ids [RK_MESH_BASE_MODEL .. +64).
+ * 32 (not RK_MESH_COUNT): leaves 17-31 free for future built-ins without
+ * shifting model ids — v<6 world saves remap old ids 16-79 up by 16. */
+#define RK_MESH_BASE_MODEL 32
 #define RK_MAX_MODELS     64
 
 /* flags layout (both instanced + push-const paths):
@@ -134,8 +136,9 @@ void rk_ui_texrect_col(float px, float py, float pw, float ph,
                        float u0, float v0, float u1, float v1);
 void rk_ui_flush(void);
 
-/* environment look: sky tints clear+fog, ground tints the grid base color */
-void rk_set_env(const float sky[3], const float ground[3]);
+/* environment look: sky tints clear+fog, ground tints the grid base color.
+ * gstyle: 0 grid, 1 checker, 2 dots, 3 plain (grid.frag pattern select) */
+void rk_set_env(const float sky[3], const float ground[3], int gstyle);
 
 void rk_extent(int *w, int *h);
 void rk_screenshot(const char *path);       /* .bmp captured after present */

@@ -38,12 +38,22 @@ float shadowFactor(vec3 wp) {
 }
 
 void main() {
-    float minor = gridLine(vWorld.xz, 1.0) * 0.18;
-    float major = gridLine(vWorld.xz, 8.0) * 0.38;
-    float line = max(minor, major);
-    /* light ground, slightly darker grid lines (Blocksworld-ish) */
+    int style = int(u.groundCol.a + 0.5);
     vec3 base = u.groundCol.rgb;
-    vec3 col = mix(base, vec3(0.36, 0.38, 0.44), line);
+    vec3 col = base;
+    if (style == 0) {                        /* GRID: minor 1u + major 8u lines */
+        float line = max(gridLine(vWorld.xz, 1.0) * 0.18,
+                         gridLine(vWorld.xz, 8.0) * 0.38);
+        col = mix(base, vec3(0.36, 0.38, 0.44), line);
+    } else if (style == 1) {                 /* CHECK: 4u checkerboard + edge lines */
+        float ck = mod(floor(vWorld.x / 4.0) + floor(vWorld.z / 4.0), 2.0);
+        col = base * mix(1.0, 0.80, ck);
+        col = mix(col, vec3(0.36, 0.38, 0.44), gridLine(vWorld.xz, 4.0) * 0.30);
+    } else if (style == 2) {                 /* DOTS: dot per 2u cell */
+        float d = length(fract(vWorld.xz / 2.0) - 0.5) * 2.0;
+        float w = fwidth(d) * 1.5;
+        col = mix(base, base * 0.72, (1.0 - smoothstep(0.16 - w, 0.16 + w, d)) * 0.5);
+    }                                        /* style 3 PLAIN: flat base */
     /* skip shadow lookup when viewing the underside (shadows would bleed through) */
     float sh = u.camPos.y > vWorld.y ? shadowFactor(vWorld) : 1.0;
     col *= 0.55 + 0.45 * sh;

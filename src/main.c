@@ -426,6 +426,10 @@ int main(void) {
                     g_blocks[ni].alpha = 1.0f;
                 }
             }
+            /* regression: RING (id 16) must draw ring verts, not model 0
+               (BASE_MODEL was 16 -> collided with the first fused model) */
+            world_add(v3_make(10.0f, 0.5f, 4), v3_make(1,1,1),
+                      RK_MESH_RING, 0, COL);
         }
         if (envPlace && frameNo == 30) {
             /* regression: every ground-level block must pass the cull test */

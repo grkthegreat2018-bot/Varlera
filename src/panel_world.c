@@ -28,22 +28,25 @@ static const float ENV_GROUND[][3] = {
 };
 static const char *ENV_GROUND_N[] = {"CONCRETE","GRASS","SAND","SNOW","DARK"};
 #define ENV_NGROUND 5
-static int s_sky = 0, s_ground = 0;
+static const char *ENV_GSTYLE_N[] = {"GRID","CHECK","DOTS","PLAIN"};
+#define ENV_NGSTYLE 4
+static int s_sky = 0, s_ground = 0, s_gstyle = 0;
 
 static void env_apply(void) {
-    rk_set_env(ENV_SKY[s_sky], ENV_GROUND[s_ground]);
+    rk_set_env(ENV_SKY[s_sky], ENV_GROUND[s_ground], s_gstyle);
 }
 static void env_save(void) {
     FILE *f = fopen("env.bw", "wb");
-    if (f) { int v[2] = {s_sky, s_ground}; fwrite(v, 4, 2, f); fclose(f); }
+    if (f) { int v[3] = {s_sky, s_ground, s_gstyle}; fwrite(v, 4, 3, f); fclose(f); }
 }
 void panel_env_load(void) {
     FILE *f = fopen("env.bw", "rb");
     if (!f) { env_apply(); return; }
-    int v[2] = {0, 0};
-    if (fread(v, 4, 2, f) == 2) {
+    int v[3] = {0, 0, 0};
+    if (fread(v, 4, 3, f) >= 2) {
         if (v[0] >= 0 && v[0] < ENV_NSKY) s_sky = v[0];
         if (v[1] >= 0 && v[1] < ENV_NGROUND) s_ground = v[1];
+        if (v[2] >= 0 && v[2] < ENV_NGSTYLE) s_gstyle = v[2];
     }
     fclose(f);
     env_apply();
@@ -135,19 +138,20 @@ int panel_world_tab_press(float fx, float fy, float px) {
             return 1;
         }
     }
-    /* environment pickers: SKY / GROUND cycle */
-    for (int i = 0; i < 2; i++) {
+    /* environment pickers: SKY / GROUND / FLOOR cycle */
+    for (int i = 0; i < 3; i++) {
         float ey = 226.0f + i * 34.0f;
         if (in_rect(fx, fy, px + 8, ey, PW - 16, 26)) {
-            if (i == 0) s_sky = (s_sky + 1) % ENV_NSKY;
-            else        s_ground = (s_ground + 1) % ENV_NGROUND;
+            if (i == 0)      s_sky = (s_sky + 1) % ENV_NSKY;
+            else if (i == 1) s_ground = (s_ground + 1) % ENV_NGROUND;
+            else             s_gstyle = (s_gstyle + 1) % ENV_NGSTYLE;
             env_apply(); env_save();
             return 1;
         }
     }
     /* world settings — rows 1/2/4 are dangerous: confirm first */
     for (int i = 0; i < WS_ROWS; i++) {
-        if (in_rect(fx, fy, px + 8, 312.0f + i * 28.0f, PW - 16, 24)) {
+        if (in_rect(fx, fy, px + 8, 346.0f + i * 28.0f, PW - 16, 24)) {
             if (i == 1 || i == 2 || i == 4) s_wConfirm = i;
             else wset_cycle(i);
             return 1;
@@ -196,28 +200,31 @@ void panel_world_draw(float px) {
         ui_text(px+12, 190, buf, 1, 0.55f,0.6f,0.68f, 1);
     }
 
-    /* environment: sky + ground presets */
+    /* environment: sky + ground presets + floor pattern */
     ui_text(px + 12, 212, "ENVIRONMENT", 1, 0.7f,0.72f,0.8f, 1);
-    const char *envN[2] = {ENV_SKY_N[s_sky], ENV_GROUND_N[s_ground]};
-    const char *envL[2] = {"SKY:", "GROUND:"};
-    for (int i = 0; i < 2; i++) {
+    const char *envN[3] = {ENV_SKY_N[s_sky], ENV_GROUND_N[s_ground],
+                           ENV_GSTYLE_N[s_gstyle]};
+    const char *envL[3] = {"SKY:", "GROUND:", "FLOOR:"};
+    for (int i = 0; i < 3; i++) {
         float ey = 226.0f + i * 34.0f;
         int hov = in_rect((float)A.mx,(float)A.my, px + 8, ey, PW - 16, 26);
         rk_ui_rect(px + 8, ey, PW - 16, 26,
                    0.22f + hov*0.08f, 0.28f + hov*0.08f, 0.38f + hov*0.08f, 1);
         char eb[32]; snprintf(eb, sizeof eb, "%s %s", envL[i], envN[i]);
         ui_text(px + 16, ey + 9, eb, 1, 1,1,1, 1);
-        /* color swatch on the right edge */
-        const float *ec = i == 0 ? ENV_SKY[s_sky] : ENV_GROUND[s_ground];
-        rk_ui_rect(px + PW - 32, ey + 5, 18, 16, ec[0],ec[1],ec[2], 1);
+        /* color swatch on the right edge (no swatch for the pattern row) */
+        if (i < 2) {
+            const float *ec = i == 0 ? ENV_SKY[s_sky] : ENV_GROUND[s_ground];
+            rk_ui_rect(px + PW - 32, ey + 5, 18, 16, ec[0],ec[1],ec[2], 1);
+        }
     }
 
     /* world settings — ! marks rows that warn before changing */
-    ui_text(px + 12, 296, "WORLD SETTINGS", 1, 0.7f,0.72f,0.8f, 1);
+    ui_text(px + 12, 330, "WORLD SETTINGS", 1, 0.7f,0.72f,0.8f, 1);
     {
         const WSet *w = world_wset();
         for (int i = 0; i < WS_ROWS; i++) {
-            float wy = 312.0f + i * 28.0f;
+            float wy = 346.0f + i * 28.0f;
             int hov = in_rect((float)A.mx,(float)A.my, px+8, wy, PW-16, 24);
             int danger = (i == 1 || i == 2 || i == 4);
             rk_ui_rect(px+8, wy, PW-16, 24,
