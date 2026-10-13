@@ -17,6 +17,7 @@ if(NOT VULKAN_INCLUDE_DIR OR NOT VULKAN_LIBRARY)
   set(VULKAN_LIBRARY ${Vulkan_LIBRARIES})
 endif()
 find_package(glfw3 CONFIG REQUIRED)      # Linux: libglfw3-dev ships glfw3Config.cmake
+find_path(STB_INCLUDE_DIR NAMES stb_image.h stb/stb_image.h REQUIRED)  # vcpkg flat, libstb-dev under stb/
 
 # --- shaders ---
 find_program(GLSLC glslc HINTS "$ENV{VULKAN_SDK}/Bin" "$ENV{VULKAN_SDK}/bin" REQUIRED)
@@ -62,9 +63,10 @@ add_executable(varlera WIN32
   src/log.c
   src/settings.c
   src/lzss.c
+  src/stb_impl.c
 )
 add_dependencies(varlera shaders)
-target_include_directories(varlera PRIVATE src ${VULKAN_INCLUDE_DIR})
+target_include_directories(varlera PRIVATE src ${VULKAN_INCLUDE_DIR} ${STB_INCLUDE_DIR})
 target_link_libraries(varlera PRIVATE glfw ${VULKAN_LIBRARY})
 if(WIN32)
   target_link_libraries(varlera PRIVATE dbghelp)   # crash minidump

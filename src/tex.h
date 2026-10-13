@@ -29,6 +29,8 @@ uint8_t *tex_px(int id, int *w, int *h);        /* edit pointer (atlas stride!) 
 void     tex_commit(int id);                    /* push rect data to GPU table + upload */
 int      tex_save(const char *path);
 int      tex_load(const char *path);
+int      tex_export_png(int id, const char *path);   /* one texture -> png */
+int      tex_import_png(const char *path);           /* png -> new tex id/-1 */
 
 static inline int tex_span(const Tex *t) { return t->tw; }   /* square sheets */
 

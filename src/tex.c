@@ -6,7 +6,10 @@
 #include "font.h"
 #include <string.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <math.h>
+#include <stb_image.h>
+#include <stb_image_write.h>
 
 Tex     g_tex[TEX_MAX];
 int     g_ntex;
@@ -260,6 +263,42 @@ int tex_load(const char *path) {
     font_reserve();
     fclose(f);
     return 1;
+}
+
+/* ---- PNG import/export (art pipeline: paint textures in any editor) ---- */
+
+int tex_export_png(int id, const char *path) {
+    int w, h;
+    const uint8_t *src = tex_px(id, &w, &h);
+    if (!src) return 0;
+    uint8_t *img = malloc((size_t)w * h * 4);
+    if (!img) return 0;
+    for (int y = 0; y < h; y++)                    /* de-stride the region */
+        memcpy(img + (size_t)y * w * 4, src + (size_t)y * ATW * 4, (size_t)w * 4);
+    int ok = stbi_write_png(path, w, h, 4, img, w * 4) != 0;
+    free(img);
+    return ok;
+}
+
+int tex_import_png(const char *path) {
+    int w = 0, h = 0, n = 0;
+    uint8_t *img = stbi_load(path, &w, &h, &n, 4);
+    if (!img) return -1;
+    /* must be exact 128px tiles (image 128x128, sheet 384x384, ...) */
+    if (w < TEX_TILE || h < TEX_TILE || w % TEX_TILE || h % TEX_TILE ||
+        w / TEX_TILE > TILES || h / TEX_TILE > TILES) {
+        stbi_image_free(img); return -1;
+    }
+    int id = tex_new("IMPORT", w / TEX_TILE, h / TEX_TILE);
+    if (id < 0) { stbi_image_free(img); return -1; }
+    const Tex *t = &g_tex[id];
+    uint8_t *dst = &g_atlas[(t->ty * TEX_TILE * ATW + t->tx * TEX_TILE) * 4];
+    for (int y = 0; y < h; y++)
+        memcpy(dst + (size_t)y * ATW * 4, img + (size_t)y * w * 4, (size_t)w * 4);
+    stbi_image_free(img);
+    tex_commit(id);
+    tex_save("textures.bw");
+    return id;
 }
 
 /* ---- init: bake built-ins ---- */

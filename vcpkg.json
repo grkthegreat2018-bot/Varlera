@@ -4,6 +4,7 @@
   "dependencies": [
     "glfw3",
     "vulkan-headers",
-    "vulkan-loader"
+    "vulkan-loader",
+    "stb"
   ]
 }

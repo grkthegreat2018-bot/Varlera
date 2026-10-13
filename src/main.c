@@ -337,6 +337,7 @@ int main(void) {
     const char *envParts = getenv("VARLERA_PARTS");     /* test hook: burst test */
     const char *envExit  = getenv("VARLERA_EXIT");      /* test hook: quit at frame N */
     const char *envPlace = getenv("VARLERA_PLACE");     /* test hook: place_commit path at frame 20 */
+    const char *envTexPng = getenv("VARLERA_TEXPNG");   /* test hook: png export+reimport */
     if (envTab) A.panelTab = atoi(envTab);
     int frameNo = 0;
 
@@ -448,6 +449,14 @@ int main(void) {
         }
         if (envBwx && frameNo == 50 && bundle_save(envBwx, A.worldName))
             fprintf(stderr, "bundle -> %s\n", envBwx);
+        if (envTexPng && frameNo == 50) {   /* PNG round-trip: export+import */
+            char ep[512], ip[512];
+            snprintf(ep, sizeof ep, "%s_out.png", envTexPng);
+            snprintf(ip, sizeof ip, "%s_out.png", envTexPng);
+            int okE = tex_export_png(A.paintTex > 0 ? A.paintTex : 1, ep);
+            int nid = okE ? tex_import_png(ip) : -1;
+            fprintf(stderr, "texpng: export %d, reimport id %d\n", okE, nid);
+        }
         if (envBwxIn && frameNo == 50 && bundle_load(envBwxIn, A.worldName))
             fprintf(stderr, "bundle loaded %s\n", envBwxIn);
         if (envReload && frameNo == 60) {

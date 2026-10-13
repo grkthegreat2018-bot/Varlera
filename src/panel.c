@@ -7,6 +7,7 @@
 #include "art.h"
 #include "sculpt.h"
 #include "toast.h"
+#include "filepick.h"
 #include "font.h"
 #include "math3d.h"
 #include <string.h>
@@ -441,21 +442,37 @@ int panel_press(double x, double y) {
     }
 
     if (A.panelTab == 2) {           /* TEX */
-        /* art tool: EDIT selected / NEW tex / NEW SHEET (top of tab) */
-        if (in_rect(fx, fy, px + 10, 78, 64, 24)) {
-            if (A.paintTex > 0 && A.paintTex < g_ntex) art_open(A.paintTex);
-            return 1;
-        }
-        if (in_rect(fx, fy, px + 82, 78, 64, 24)) {
-            int id = tex_new("TEX", 1, 1);
-            if (id > 0) { tex_commit(id); tex_save("textures.bw");
-                          A.paintTex = id; art_open(id); }
-            return 1;
-        }
-        if (in_rect(fx, fy, px + 154, 78, 64, 24)) {
-            int id = tex_new("SHEET", 3, 3);
-            if (id > 0) { tex_commit(id); tex_save("textures.bw");
-                          A.paintTex = id; art_open(id); }
+        /* top row: EDIT / NEW / SHEET / IMP / EXP (PNG in-out) */
+        for (int i = 0; i < 5; i++) {
+            float bx = px + 10 + i * 45.0f;
+            if (!in_rect(fx, fy, bx, 78, 40, 24)) continue;
+            if (i == 0) {
+                if (A.paintTex > 0 && A.paintTex < g_ntex) art_open(A.paintTex);
+            } else if (i == 1) {
+                int id = tex_new("TEX", 1, 1);
+                if (id > 0) { tex_commit(id); tex_save("textures.bw");
+                              A.paintTex = id; art_open(id); }
+            } else if (i == 2) {
+                int id = tex_new("SHEET", 3, 3);
+                if (id > 0) { tex_commit(id); tex_save("textures.bw");
+                              A.paintTex = id; art_open(id); }
+            } else if (i == 3) {
+                char p[512];
+                if (pick_open_path(p, sizeof p, "Import texture PNG",
+                                   "PNG\0*.png\0All Files\0*.*\0")) {
+                    int id = tex_import_png(p);
+                    if (id > 0) A.paintTex = id;
+                    toast_say(id > 0 ? "TEXTURE IMPORTED" : "IMPORT FAILED");
+                }
+            } else {
+                if (A.paintTex > 0 && A.paintTex < g_ntex) {
+                    char p[512];
+                    if (pick_save_path(p, sizeof p, "Export texture PNG",
+                                       "PNG\0*.png\0", "png"))
+                        toast_say(tex_export_png(A.paintTex, p)
+                                  ? "EXPORTED PNG" : "EXPORT FAILED");
+                }
+            }
             return 1;
         }
         /* MODE / TYPE */
@@ -743,13 +760,13 @@ static void draw_paint(float px) {
 /* TEX tab: art-tool buttons on top, mode/type, scrollable preview grid */
 static void draw_tex(float px) {
     ui_text(px + 12, 62, "ART TOOL", 1, 0.7f,0.72f,0.8f, 1);
-    const char *ab[] = {"EDIT", "NEW", "SHEET"};
-    for (int i = 0; i < 3; i++) {
-        float bx = px + 10 + i * 72.0f;
-        int hov = in_rect((float)A.mx,(float)A.my, bx, 78, 64, 24);
-        rk_ui_rect(bx, 78, 64, 24,
+    const char *ab[] = {"EDIT", "NEW", "SHEET", "IMP", "EXP"};
+    for (int i = 0; i < 5; i++) {
+        float bx = px + 10 + i * 45.0f;
+        int hov = in_rect((float)A.mx,(float)A.my, bx, 78, 40, 24);
+        rk_ui_rect(bx, 78, 40, 24,
                    0.24f + hov*0.10f, 0.42f + hov*0.10f, 0.62f + hov*0.08f, 1);
-        ui_text(bx + (64 - ui_text_w(ab[i],1)) * 0.5f, 86, ab[i], 1, 1,1,1, 1);
+        ui_text(bx + (40 - ui_text_w(ab[i],1)) * 0.5f, 86, ab[i], 1, 1,1,1, 1);
     }
 
     /* MODE / TYPE row */
