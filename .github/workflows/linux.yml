@@ -1,0 +1,28 @@
+name: linux
+
+on: [push, workflow_dispatch]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: deps
+        run: sudo apt-get update && sudo apt-get install -y libglfw3-dev libvulkan-dev glslc cmake
+
+      - name: configure
+        run: cmake -B build -S . -DCMAKE_BUILD_TYPE=Release
+
+      - name: build
+        run: cmake --build build -j
+
+      - name: test
+        run: ctest --test-dir build --output-on-failure
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: varlera-linux
+          path: |
+            build/varlera
+            build/shaders/
