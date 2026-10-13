@@ -173,6 +173,21 @@ static void img_barrier(VkImage img, VkImageLayout oldL, VkImageLayout newL,
     vkCmdPipelineBarrier2(G.cmd, &dep);
 }
 
+/* same barrier scoped to one mip level (bloom chain attachments) */
+static void mip_barrier(VkImage img, uint32_t mip, VkImageLayout oldL, VkImageLayout newL,
+                        VkPipelineStageFlags2 srcStage, VkAccessFlags2 srcAcc,
+                        VkPipelineStageFlags2 dstStage, VkAccessFlags2 dstAcc) {
+    VkImageMemoryBarrier2 b = {VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2};
+    b.srcStageMask = srcStage; b.srcAccessMask = srcAcc;
+    b.dstStageMask = dstStage; b.dstAccessMask = dstAcc;
+    b.oldLayout = oldL; b.newLayout = newL;
+    b.image = img;
+    b.subresourceRange = (VkImageSubresourceRange){VK_IMAGE_ASPECT_COLOR_BIT, mip, 1, 0, 1};
+    VkDependencyInfo dep = {VK_STRUCTURE_TYPE_DEPENDENCY_INFO};
+    dep.imageMemoryBarrierCount = 1; dep.pImageMemoryBarriers = &b;
+    vkCmdPipelineBarrier2(G.cmd, &dep);
+}
+
 int rk_begin_frame(void) {
     if (G.needResize) rk_swapchain_recreate();
     int fw = 0, fh = 0;
@@ -187,13 +202,14 @@ int rk_begin_frame(void) {
 
     /* this frame slot's gpu work is finished -> timestamp results ready */
     if (G.hasTS && G.fr[G.fi].tsRec) {
-        uint64_t ts[3] = {0};
-        if (vkGetQueryPoolResults(G.dev, G.fr[G.fi].qp, 0, 3, sizeof ts, ts,
+        uint64_t ts[4] = {0};
+        if (vkGetQueryPoolResults(G.dev, G.fr[G.fi].qp, 0, 4, sizeof ts, ts,
                                   sizeof(uint64_t), VK_QUERY_RESULT_64_BIT)
             == VK_SUCCESS) {
             G.gpuMs[0] = (float)((ts[1]-ts[0]) * G.tsPeriod / 1e6);
             G.gpuMs[1] = (float)((ts[2]-ts[1]) * G.tsPeriod / 1e6);
-            G.gpuMs[2] = (float)((ts[2]-ts[0]) * G.tsPeriod / 1e6);
+            G.gpuMs[2] = (float)((ts[3]-ts[2]) * G.tsPeriod / 1e6);
+            G.gpuMs[3] = (float)((ts[3]-ts[0]) * G.tsPeriod / 1e6);
         }
         G.fr[G.fi].tsRec = 0;
     }
@@ -311,8 +327,8 @@ void rk_end_frame(void) {
             VK_IMAGE_ASPECT_DEPTH_BIT);
     }
 
-    /* ---- main pass ---- */
-    img_barrier(G.imgs[G.imgIdx], VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+    /* ---- main pass -> HDR scene target ---- */
+    img_barrier(G.hdrImg, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
         VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, 0,
         VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT,
         VK_IMAGE_ASPECT_COLOR_BIT);
@@ -328,11 +344,11 @@ void rk_end_frame(void) {
 
     int msaa = G.samples != VK_SAMPLE_COUNT_1_BIT;
     VkRenderingAttachmentInfo col = {VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO};
-    col.imageView = msaa ? G.msaaView : G.views[G.imgIdx];
+    col.imageView = msaa ? G.msaaView : G.hdrView;
     col.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
     if (msaa) {
         col.resolveMode = VK_RESOLVE_MODE_AVERAGE_BIT;
-        col.resolveImageView = G.views[G.imgIdx];
+        col.resolveImageView = G.hdrView;
         col.resolveImageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
     }
     col.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR; col.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
@@ -419,34 +435,196 @@ void rk_end_frame(void) {
             vkCmdDraw(G.cmd, G.lineCount, e->count, (uint32_t)G.lineOff, e->first);
             break;
         case K_UI:
-            vkCmdBindPipeline(G.cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, G.pUI);
-            bind_sets_and_mesh();
-            vkCmdBindVertexBuffers(G.cmd, 0, 1, &G.fr[G.fi].uib, &(VkDeviceSize){0});
-            vkCmdDraw(G.cmd, e->count, 1, e->first, 0);
-            break;
-        case K_ICON: {
-            VkViewport vp = {(float)e->px, (float)e->py, (float)e->pw, (float)e->ph, 0, 1};
-            vkCmdSetViewport(G.cmd, 0, 1, &vp);
-            VkRect2D sc = {{e->px, e->py}, {(uint32_t)e->pw, (uint32_t)e->ph}};
-            vkCmdSetScissor(G.cmd, 0, 1, &sc);
-            vkCmdBindPipeline(G.cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, G.pWorld);
-            bind_sets_and_mesh();
-            bind_mesh_buf(e->mesh);
-            float c[4] = {e->cr, e->cg, e->cb, 1};
-            uint32_t icol = e->mesh >= RK_MESH_BASE_MODEL ? RKF_ICON|RKIF_VCOL : RKF_ICON;
-            push_pc(e->mm, c, icol);
-            VkDeviceSize io; uint32_t ic;
-            if (mesh_span(e->mesh, &io, &ic)) vkCmdDraw(G.cmd, ic, 1, (uint32_t)io, 0);
-            vkCmdSetViewport(G.cmd, 0, 1, &fullvp);
-            vkCmdSetScissor(G.cmd, 0, 1, &fullsc);
-            break; }
-        case K_CASTER: break;              /* shadow pass only */
+        case K_ICON: break;              /* drawn in the LDR pass post-tonemap */
+        case K_CASTER: break;            /* shadow pass only */
         }
     }
 
     vkCmdEndRendering(G.cmd);
     if (G.hasTS) vkCmdWriteTimestamp(G.cmd,
         VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, G.fr[G.fi].qp, 2);
+
+    /* ---- post chain: bloom down/up + tonemap composite ---- */
+    img_barrier(G.hdrImg, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+        VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT,
+        VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT, VK_ACCESS_2_SHADER_SAMPLED_READ_BIT,
+        VK_IMAGE_ASPECT_COLOR_BIT);
+    if (G.bloomOk) {
+        VkRenderingInfo pr = {VK_STRUCTURE_TYPE_RENDERING_INFO};
+        pr.layerCount = 1; pr.colorAttachmentCount = 1;
+        VkRenderingAttachmentInfo pa = {VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO};
+        pa.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+        pa.loadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+        pa.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+        PostPC pc = {{0, 0}, 0.0f, 0.0f};
+        /* down: dst mip i samples postDS[i] (0=hdr, i=bloom mip i-1) */
+        for (int i = 0; i < BLOOM_M; i++) {
+            uint32_t mw = G.ext.width >> (i + 1);  if (!mw) mw = 1;
+            uint32_t mh = G.ext.height >> (i + 1); if (!mh) mh = 1;
+            uint32_t sw = i ? (G.ext.width >> i) : G.ext.width;
+            uint32_t sh = i ? (G.ext.height >> i) : G.ext.height;
+            mip_barrier(G.bloomImg, (uint32_t)i,
+                G.bloomLive ? VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL : VK_IMAGE_LAYOUT_UNDEFINED,
+                VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+                VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT, VK_ACCESS_2_SHADER_SAMPLED_READ_BIT,
+                VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT);
+            pa.imageView = G.bloomMipView[i];
+            pr.renderArea = (VkRect2D){{0,0},{mw,mh}};
+            pr.pColorAttachments = &pa;
+            vkCmdBeginRendering(G.cmd, &pr);
+            VkViewport vp = {0, 0, (float)mw, (float)mh, 0.0f, 1.0f};
+            vkCmdSetViewport(G.cmd, 0, 1, &vp);
+            vkCmdSetScissor(G.cmd, 0, 1, &pr.renderArea);
+            vkCmdBindPipeline(G.cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, G.pDown);
+            vkCmdBindDescriptorSets(G.cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                G.postLayout, 0, 1, &G.postDS[i], 0, NULL);
+            pc.texel[0] = 1.0f / (float)sw; pc.texel[1] = 1.0f / (float)sh;
+            pc.a = (i == 0) ? 0.5f : 0.0f;         /* knee on first level */
+            vkCmdPushConstants(G.cmd, G.postLayout,
+                VK_SHADER_STAGE_VERTEX_BIT|VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof pc, &pc);
+            vkCmdDraw(G.cmd, 3, 1, 0, 0);
+            vkCmdEndRendering(G.cmd);
+            mip_barrier(G.bloomImg, (uint32_t)i,
+                VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT,
+                VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT, VK_ACCESS_2_SHADER_SAMPLED_READ_BIT);
+        }
+        /* up: dst mip i += tent(bloom mip i+1) via additive blend */
+        pa.loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
+        for (int i = BLOOM_M - 2; i >= 0; i--) {
+            uint32_t mw = G.ext.width >> (i + 1);  if (!mw) mw = 1;
+            uint32_t mh = G.ext.height >> (i + 1); if (!mh) mh = 1;
+            uint32_t sw = G.ext.width >> (i + 2);  if (!sw) sw = 1;
+            uint32_t sh = G.ext.height >> (i + 2); if (!sh) sh = 1;
+            mip_barrier(G.bloomImg, (uint32_t)i,
+                VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+                VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT, VK_ACCESS_2_SHADER_SAMPLED_READ_BIT,
+                VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
+                VK_ACCESS_2_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT);
+            pa.imageView = G.bloomMipView[i];
+            pr.renderArea = (VkRect2D){{0,0},{mw,mh}};
+            vkCmdBeginRendering(G.cmd, &pr);
+            VkViewport vp = {0, 0, (float)mw, (float)mh, 0.0f, 1.0f};
+            vkCmdSetViewport(G.cmd, 0, 1, &vp);
+            vkCmdSetScissor(G.cmd, 0, 1, &pr.renderArea);
+            vkCmdBindPipeline(G.cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, G.pUp);
+            vkCmdBindDescriptorSets(G.cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                G.postLayout, 0, 1, &G.postDS[i + 2], 0, NULL);
+            pc.texel[0] = 1.0f / (float)sw; pc.texel[1] = 1.0f / (float)sh;
+            pc.a = 0.0f;
+            vkCmdPushConstants(G.cmd, G.postLayout,
+                VK_SHADER_STAGE_VERTEX_BIT|VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof pc, &pc);
+            vkCmdDraw(G.cmd, 3, 1, 0, 0);
+            vkCmdEndRendering(G.cmd);
+            mip_barrier(G.bloomImg, (uint32_t)i,
+                VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT,
+                VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT, VK_ACCESS_2_SHADER_SAMPLED_READ_BIT);
+        }
+        G.bloomLive = 1;
+    }
+
+    /* composite -> swapchain (tonemap + bloom) */
+    img_barrier(G.imgs[G.imgIdx], VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+        VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, 0,
+        VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT,
+        VK_IMAGE_ASPECT_COLOR_BIT);
+    {
+        VkRenderingAttachmentInfo pa = {VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO};
+        pa.imageView = G.views[G.imgIdx];
+        pa.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+        pa.loadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+        pa.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+        VkRenderingInfo pr = {VK_STRUCTURE_TYPE_RENDERING_INFO};
+        pr.renderArea = (VkRect2D){{0,0}, G.ext};
+        pr.layerCount = 1; pr.colorAttachmentCount = 1; pr.pColorAttachments = &pa;
+        vkCmdBeginRendering(G.cmd, &pr);
+        vkCmdSetViewport(G.cmd, 0, 1, &fullvp);
+        vkCmdSetScissor(G.cmd, 0, 1, &fullsc);
+        vkCmdBindPipeline(G.cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, G.pPost);
+        vkCmdBindDescriptorSets(G.cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
+            G.postLayout, 0, 1, &G.postDS[0], 0, NULL);
+        int srgb = (G.surfFmt == VK_FORMAT_B8G8R8A8_SRGB ||
+                    G.surfFmt == VK_FORMAT_R8G8B8A8_SRGB);
+        PostPC pc = {{1.0f / (float)G.ext.width, 1.0f / (float)G.ext.height},
+                     G.bloomOk ? 0.55f : 0.0f,
+                     (float)((G.hdrOk ? 1 : 0) | (srgb ? 0 : 2))};
+        vkCmdPushConstants(G.cmd, G.postLayout,
+            VK_SHADER_STAGE_VERTEX_BIT|VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof pc, &pc);
+        vkCmdDraw(G.cmd, 3, 1, 0, 0);
+        vkCmdEndRendering(G.cmd);
+    }
+
+    /* ---- LDR pass: icons + UI quads over the tonemapped frame ---- */
+    int hasUI = 0;
+    for (int i = 0; i < G.qn; i++)
+        if (G.q[i].kind == K_UI || G.q[i].kind == K_ICON) { hasUI = 1; break; }
+    if (hasUI) {
+        img_barrier(G.imgs[G.imgIdx], VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+            VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+            VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT,
+            VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
+            VK_ACCESS_2_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT,
+            VK_IMAGE_ASPECT_COLOR_BIT);
+        /* depth for icon self-occlusion: fresh 1x image under MSAA,
+           reuse the main buffer (same layout) when MSAA is off */
+        if (G.uiDepthView)
+            img_barrier(G.uiDepthImg, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL,
+                VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT, 0,
+                VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT, VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
+                VK_IMAGE_ASPECT_DEPTH_BIT);
+        else
+            img_barrier(G.depthImg, VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL,
+                VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL,
+                VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT, VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
+                VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT, VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
+                VK_IMAGE_ASPECT_DEPTH_BIT);
+        VkRenderingAttachmentInfo lc = {VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO};
+        lc.imageView = G.views[G.imgIdx];
+        lc.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+        lc.loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
+        lc.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+        VkRenderingAttachmentInfo ld = {VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO};
+        ld.imageView = G.uiDepthView ? G.uiDepthView : G.depthView;
+        ld.imageLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
+        ld.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+        ld.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+        ld.clearValue.depthStencil.depth = 0.0f;         /* reversed-Z far */
+        VkRenderingInfo lr = {VK_STRUCTURE_TYPE_RENDERING_INFO};
+        lr.renderArea = (VkRect2D){{0,0}, G.ext};
+        lr.layerCount = 1; lr.colorAttachmentCount = 1;
+        lr.pColorAttachments = &lc; lr.pDepthAttachment = &ld;
+        vkCmdBeginRendering(G.cmd, &lr);
+        vkCmdSetViewport(G.cmd, 0, 1, &fullvp);
+        vkCmdSetScissor(G.cmd, 0, 1, &fullsc);
+        for (int i = 0; i < G.qn; i++) {
+            QEnt *e = &G.q[i];
+            if (e->kind == K_UI) {
+                vkCmdBindPipeline(G.cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, G.pUIFlat);
+                bind_sets_and_mesh();
+                vkCmdBindVertexBuffers(G.cmd, 0, 1, &G.fr[G.fi].uib, &(VkDeviceSize){0});
+                vkCmdDraw(G.cmd, e->count, 1, e->first, 0);
+            } else if (e->kind == K_ICON) {
+                VkViewport vp = {(float)e->px, (float)e->py, (float)e->pw, (float)e->ph, 0, 1};
+                vkCmdSetViewport(G.cmd, 0, 1, &vp);
+                VkRect2D sc = {{e->px, e->py}, {(uint32_t)e->pw, (uint32_t)e->ph}};
+                vkCmdSetScissor(G.cmd, 0, 1, &sc);
+                vkCmdBindPipeline(G.cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, G.pIcon);
+                bind_sets_and_mesh();
+                bind_mesh_buf(e->mesh);
+                float c[4] = {e->cr, e->cg, e->cb, 1};
+                uint32_t icol = e->mesh >= RK_MESH_BASE_MODEL ? RKF_ICON|RKIF_VCOL : RKF_ICON;
+                push_pc(e->mm, c, icol);
+                VkDeviceSize io; uint32_t ic;
+                if (mesh_span(e->mesh, &io, &ic)) vkCmdDraw(G.cmd, ic, 1, (uint32_t)io, 0);
+                vkCmdSetViewport(G.cmd, 0, 1, &fullvp);
+                vkCmdSetScissor(G.cmd, 0, 1, &fullsc);
+            }
+        }
+        vkCmdEndRendering(G.cmd);
+    }
+    if (G.hasTS) vkCmdWriteTimestamp(G.cmd,
+        VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, G.fr[G.fi].qp, 3);
     /* screenshot: copy the resolved swapchain image into staging, then run
        the normal present transition; the buffer is read next frame */
     if (G.shotPath[0] && !G.shotPend) {

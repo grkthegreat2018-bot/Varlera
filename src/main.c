@@ -303,6 +303,8 @@ int main(void) {
     /* stress generator: VARLERA_GEN=N scatters N mixed blocks (grid +
        jitter) for profiling at real world sizes */
     const char *envGen = getenv("VARLERA_GEN");
+    const char *envGlow = getenv("VARLERA_GENGLOW");  /* every Nth block GLOW */
+    int glowEvery = envGlow ? atoi(envGlow) : 0;
     if (envGen) {
         int n = atoi(envGen);
         if (n > MAX_BLOCKS) n = MAX_BLOCKS;
@@ -319,8 +321,10 @@ int main(void) {
             float col[3] = {(float)((rng>>12)&15)/15.0f,
                             (float)((rng>>16)&15)/15.0f,
                             (float)((rng>>20)&15)/15.0f};
-            world_add(v3_make(fx, fy, fz), v3_make(s, s, s),
+            int bi = world_add(v3_make(fx, fy, fz), v3_make(s, s, s),
                       (int)(rng % 16), (int)((rng >> 5) & 3), col);
+            if (glowEvery && bi >= 0 && i % glowEvery == 0)
+                g_blocks[bi].texm = TEXM_MAT(TEXM_GLOW);
         }
         fprintf(stderr, "gen: %d blocks\n", g_nb);
     }

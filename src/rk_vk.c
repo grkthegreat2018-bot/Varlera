@@ -212,11 +212,13 @@ typedef struct {
     VkVertexInputAttributeDescription attrs[8];
     VkVertexInputBindingDescription binds[2];
     uint32_t attrCount, bindCount;
-    int blend, depthTest, depthWrite;
+    int blend, blendAdd, depthTest, depthWrite;
     VkCompareOp cmp;
     VkCullModeFlags cull;
-    int depthBias;
+    int depthBias, noDepth;
     VkSampleCountFlagBits samples;
+    VkFormat fmt;                  /* 0 = surfFmt */
+    VkPipelineLayout layout;       /* 0 = G.pipeLayout */
 } PipeDesc;
 
 static VkPipeline make_pipeline(const PipeDesc *d) {
@@ -259,7 +261,13 @@ static VkPipeline make_pipeline(const PipeDesc *d) {
 
     VkPipelineColorBlendAttachmentState att = {0};
     att.colorWriteMask = VK_COLOR_COMPONENT_R_BIT|VK_COLOR_COMPONENT_G_BIT|VK_COLOR_COMPONENT_B_BIT|VK_COLOR_COMPONENT_A_BIT;
-    if (d->blend) {
+    if (d->blendAdd) {
+        att.blendEnable = VK_TRUE;
+        att.srcColorBlendFactor = att.dstColorBlendFactor = VK_BLEND_FACTOR_ONE;
+        att.colorBlendOp = VK_BLEND_OP_ADD;
+        att.srcAlphaBlendFactor = att.dstAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
+        att.alphaBlendOp = VK_BLEND_OP_ADD;
+    } else if (d->blend) {
         att.blendEnable = VK_TRUE;
         att.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
         att.dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
@@ -275,10 +283,12 @@ static VkPipeline make_pipeline(const PipeDesc *d) {
     VkPipelineDynamicStateCreateInfo dyn = {VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO};
     dyn.dynamicStateCount = 2; dyn.pDynamicStates = dyns;
 
+    VkFormat colFmt = d->fmt ? d->fmt : G.surfFmt;
     VkPipelineRenderingCreateInfo rd = {VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO};
     if (d->fs) {
-        rd.colorAttachmentCount = 1; rd.pColorAttachmentFormats = &G.surfFmt;
-        rd.depthAttachmentFormat = VK_FORMAT_D32_SFLOAT;
+        rd.colorAttachmentCount = 1; rd.pColorAttachmentFormats = &colFmt;
+        rd.depthAttachmentFormat = d->noDepth ? VK_FORMAT_UNDEFINED
+                                              : VK_FORMAT_D32_SFLOAT;
     } else {
         rd.depthAttachmentFormat = VK_FORMAT_D32_SFLOAT;
     }
@@ -290,7 +300,7 @@ static VkPipeline make_pipeline(const PipeDesc *d) {
     pi.pViewportState = &vp; pi.pRasterizationState = &rs;
     pi.pMultisampleState = &ms; pi.pDepthStencilState = &ds;
     pi.pColorBlendState = &cb; pi.pDynamicState = &dyn;
-    pi.layout = G.pipeLayout;
+    pi.layout = d->layout ? d->layout : G.pipeLayout;
     VkPipeline p;
     VKC(vkCreateGraphicsPipelines(G.dev, VK_NULL_HANDLE, 1, &pi, NULL, &p));
     return p;
@@ -384,18 +394,53 @@ static void make_pipelines(void) {
     d.cull=VK_CULL_MODE_NONE; d.samples=G.samples;
     G.pSky = make_pipeline(&d);
 
+    /* post chain: fullscreen tri into hdrFmt (bloom) / surfFmt (composite) */
+    VkShaderModule pv  = load_shader("post.vert");
+    VkShaderModule dnf = load_shader("down.frag");
+    VkShaderModule upf = load_shader("up.frag");
+    VkShaderModule psf = load_shader("post.frag");
+    memset(&d, 0, sizeof d);
+    d.vs=pv; d.topo=VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+    d.cull=VK_CULL_MODE_NONE; d.samples=VK_SAMPLE_COUNT_1_BIT;
+    d.noDepth=1; d.fmt=G.hdrFmt; d.layout=G.postLayout;
+    d.fs=dnf;               G.pDown = make_pipeline(&d);
+    d.fs=upf; d.blendAdd=1; G.pUp   = make_pipeline(&d);
+    d.fs=psf; d.blendAdd=0; d.fmt=0; G.pPost = make_pipeline(&d);
+
+    /* LDR pass: 1x variants of icon-shaded world + UI for the swapchain */
+    memset(&d, 0, sizeof d);
+    d.vs=wv; d.fs=wf; d.topo=VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+    fill_mesh_vertex_input(&d);
+    d.cull=VK_CULL_MODE_NONE; d.cmp=VK_COMPARE_OP_GREATER;
+    d.depthTest=1; d.depthWrite=1; d.samples=VK_SAMPLE_COUNT_1_BIT;
+    G.pIcon = make_pipeline(&d);
+    memset(&d, 0, sizeof d);
+    d.vs=uv; d.fs=uf; d.topo=VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+    d.binds[0] = (VkVertexInputBindingDescription){0, sizeof(UIVert), VK_VERTEX_INPUT_RATE_VERTEX};
+    d.attrs[0] = (VkVertexInputAttributeDescription){0, 0, VK_FORMAT_R32G32_SFLOAT, 0};
+    d.attrs[1] = (VkVertexInputAttributeDescription){1, 0, VK_FORMAT_R32G32B32A32_SFLOAT, 8};
+    d.attrs[2] = (VkVertexInputAttributeDescription){2, 0, VK_FORMAT_R32G32_SFLOAT, 24};
+    d.attrs[3] = (VkVertexInputAttributeDescription){3, 0, VK_FORMAT_R32_SFLOAT, 32};
+    d.attrCount=4; d.bindCount=1;
+    d.blend=1; d.depthTest=1; d.depthWrite=1; d.cmp=VK_COMPARE_OP_ALWAYS;
+    d.cull=VK_CULL_MODE_NONE; d.samples=VK_SAMPLE_COUNT_1_BIT;
+    G.pUIFlat = make_pipeline(&d);
+
     vkDestroyShaderModule(G.dev, wv, NULL); vkDestroyShaderModule(G.dev, wi, NULL);
     vkDestroyShaderModule(G.dev, sv, NULL); vkDestroyShaderModule(G.dev, wf, NULL);
     vkDestroyShaderModule(G.dev, gf, NULL); vkDestroyShaderModule(G.dev, uv, NULL);
     vkDestroyShaderModule(G.dev, uf, NULL);
     vkDestroyShaderModule(G.dev, kv, NULL); vkDestroyShaderModule(G.dev, kf, NULL);
+    vkDestroyShaderModule(G.dev, pv, NULL); vkDestroyShaderModule(G.dev, dnf, NULL);
+    vkDestroyShaderModule(G.dev, upf, NULL); vkDestroyShaderModule(G.dev, psf, NULL);
 }
 
 /* ---------------- hot reload (F8): glslc sources -> spv, rebuild pipelines --- */
 
 static const char *SHADER_NAMES[] = {
     "world.vert","world_i.vert","world.frag","grid.frag","shadow.vert",
-    "ui.vert","ui.frag","sky.vert","sky.frag"
+    "ui.vert","ui.frag","sky.vert","sky.frag",
+    "post.vert","down.frag","up.frag","post.frag"
 };
 
 /* run glslc without a console flash on the WIN32 app */
@@ -440,7 +485,8 @@ int rk_reload_shaders(void) {
     }
     vkDeviceWaitIdle(G.dev);
     VkPipeline *pp[] = {&G.pGrid, &G.pWorld, &G.pWorldInst, &G.pGhostInst,
-                        &G.pLinesInst, &G.pMeshLine, &G.pShadow, &G.pUI, &G.pSky};
+                        &G.pLinesInst, &G.pMeshLine, &G.pShadow, &G.pUI, &G.pSky,
+                        &G.pDown, &G.pUp, &G.pPost, &G.pIcon, &G.pUIFlat};
     for (int i = 0; i < (int)(sizeof pp / sizeof pp[0]); i++)
         vkDestroyPipeline(G.dev, *pp[i], NULL);
     make_pipelines();
@@ -480,10 +526,11 @@ static VkPresentModeKHR pick_present_mode(void) {
 
 static void make_image(uint32_t w, uint32_t h, VkFormat fmt, VkImageUsageFlags usage,
                        VkImageAspectFlags aspect, VkSampleCountFlagBits samples,
+                       uint32_t mips,
                        VkImage *img, VkDeviceMemory *mem, VkImageView *view) {
     VkImageCreateInfo ii = {VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO};
     ii.imageType = VK_IMAGE_TYPE_2D; ii.format = fmt;
-    ii.extent = (VkExtent3D){w, h, 1}; ii.mipLevels = 1; ii.arrayLayers = 1;
+    ii.extent = (VkExtent3D){w, h, 1}; ii.mipLevels = mips; ii.arrayLayers = 1;
     ii.samples = samples; ii.tiling = VK_IMAGE_TILING_OPTIMAL;
     ii.usage = usage; ii.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
     ii.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
@@ -492,15 +539,88 @@ static void make_image(uint32_t w, uint32_t h, VkFormat fmt, VkImageUsageFlags u
     vkGetImageMemoryRequirements(G.dev, *img, &req);
     *mem = mem_alloc(req.size, req.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
     VKC(vkBindImageMemory(G.dev, *img, *mem, 0));
+    if (!view) return;
     VkImageViewCreateInfo vi = {VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO};
     vi.image = *img; vi.viewType = VK_IMAGE_VIEW_TYPE_2D; vi.format = fmt;
-    vi.subresourceRange = (VkImageSubresourceRange){aspect, 0, 1, 0, 1};
+    vi.subresourceRange = (VkImageSubresourceRange){aspect, 0, mips, 0, 1};
     VKC(vkCreateImageView(G.dev, &vi, NULL, view));
+}
+
+/* single-mip view of a mipped image (bloom chain attach/sample views) */
+static VkImageView mip_view(VkImage img, VkFormat fmt, uint32_t mip) {
+    VkImageViewCreateInfo vi = {VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO};
+    vi.image = img; vi.viewType = VK_IMAGE_VIEW_TYPE_2D; vi.format = fmt;
+    vi.subresourceRange = (VkImageSubresourceRange){VK_IMAGE_ASPECT_COLOR_BIT, mip, 1, 0, 1};
+    VkImageView v;
+    VKC(vkCreateImageView(G.dev, &vi, NULL, &v));
+    return v;
+}
+
+/* post-chain targets sized to the framebuffer: HDR scene image (msaa
+   resolve dst / direct target), bloom mip chain, 1x depth for the LDR
+   UI pass (only needed when the main depth buffer is multisampled). */
+static void post_create(void) {
+    VkImageUsageFlags u = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT |
+                          VK_IMAGE_USAGE_SAMPLED_BIT;
+    make_image(G.ext.width, G.ext.height, G.hdrFmt, u,
+               VK_IMAGE_ASPECT_COLOR_BIT, VK_SAMPLE_COUNT_1_BIT, 1,
+               &G.hdrImg, &G.hdrMem, &G.hdrView);
+    if (G.bloomOk) {
+        uint32_t bw = G.ext.width / 2 ? G.ext.width / 2 : 1;
+        uint32_t bh = G.ext.height / 2 ? G.ext.height / 2 : 1;
+        make_image(bw, bh, G.hdrFmt, u, VK_IMAGE_ASPECT_COLOR_BIT,
+                   VK_SAMPLE_COUNT_1_BIT, BLOOM_M,
+                   &G.bloomImg, &G.bloomMem, NULL);
+        for (int i = 0; i < BLOOM_M; i++)
+            G.bloomMipView[i] = mip_view(G.bloomImg, G.hdrFmt, (uint32_t)i);
+    }
+    if (G.samples != VK_SAMPLE_COUNT_1_BIT)
+        make_image(G.ext.width, G.ext.height, VK_FORMAT_D32_SFLOAT,
+                   VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT,
+                   VK_IMAGE_ASPECT_DEPTH_BIT, VK_SAMPLE_COUNT_1_BIT, 1,
+                   &G.uiDepthImg, &G.uiDepthMem, &G.uiDepthView);
+}
+
+static void post_destroy(void) {
+    if (G.hdrView) vkDestroyImageView(G.dev, G.hdrView, NULL);
+    if (G.hdrImg) { vkDestroyImage(G.dev, G.hdrImg, NULL); vkFreeMemory(G.dev, G.hdrMem, NULL); }
+    for (int i = 0; i < BLOOM_M; i++)
+        if (G.bloomMipView[i]) vkDestroyImageView(G.dev, G.bloomMipView[i], NULL);
+    if (G.bloomImg) { vkDestroyImage(G.dev, G.bloomImg, NULL); vkFreeMemory(G.dev, G.bloomMem, NULL); }
+    if (G.uiDepthView) vkDestroyImageView(G.dev, G.uiDepthView, NULL);
+    if (G.uiDepthImg) { vkDestroyImage(G.dev, G.uiDepthImg, NULL); vkFreeMemory(G.dev, G.uiDepthMem, NULL); }
+    G.hdrView = G.uiDepthView = VK_NULL_HANDLE;
+    G.hdrImg = G.bloomImg = G.uiDepthImg = VK_NULL_HANDLE;
+    memset(G.bloomMipView, 0, sizeof G.bloomMipView);
+    G.bloomLive = 0;
+}
+
+/* post descriptor sets reference per-swapchain views -> rewrite on resize */
+static void post_ds_write(void) {
+    if (!G.postDS[0]) return;
+    for (int i = 0; i <= BLOOM_M; i++) {
+        VkDescriptorImageInfo dii[2] = {
+            {G.postSamp, (i == 0 || !G.bloomOk) ? G.hdrView : G.bloomMipView[i - 1],
+                VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL},
+            {G.postSamp, G.bloomOk ? G.bloomMipView[0] : G.hdrView,
+                VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL},
+        };
+        VkWriteDescriptorSet w[2] = {0};
+        for (int k = 0; k < 2; k++) {
+            w[k].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+            w[k].dstSet = G.postDS[i]; w[k].dstBinding = k;
+            w[k].descriptorCount = 1;
+            w[k].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+            w[k].pImageInfo = &dii[k];
+        }
+        vkUpdateDescriptorSets(G.dev, 2, w, 0, NULL);
+    }
 }
 
 static void swapchain_destroy(void) {
     for (uint32_t i = 0; i < G.imgCount; i++)
         vkDestroyImageView(G.dev, G.views[i], NULL);
+    post_destroy();
     if (G.msaaView) vkDestroyImageView(G.dev, G.msaaView, NULL);
     if (G.depthView) vkDestroyImageView(G.dev, G.depthView, NULL);
     if (G.msaaImg) { vkDestroyImage(G.dev, G.msaaImg, NULL); vkFreeMemory(G.dev, G.msaaMem, NULL); }
@@ -550,13 +670,16 @@ static void swapchain_create(void) {
         VKC(vkCreateImageView(G.dev, &vi, NULL, &G.views[i]));
     }
     if (G.samples != VK_SAMPLE_COUNT_1_BIT)
-        make_image(ext.width, ext.height, G.surfFmt,
+        make_image(ext.width, ext.height, G.hdrFmt,
                    VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT,
-                   VK_IMAGE_ASPECT_COLOR_BIT, G.samples, &G.msaaImg, &G.msaaMem, &G.msaaView);
+                   VK_IMAGE_ASPECT_COLOR_BIT, G.samples, 1,
+                   &G.msaaImg, &G.msaaMem, &G.msaaView);
     make_image(ext.width, ext.height, VK_FORMAT_D32_SFLOAT,
                VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT,
-               VK_IMAGE_ASPECT_DEPTH_BIT, G.samples, &G.depthImg, &G.depthMem, &G.depthView);
+               VK_IMAGE_ASPECT_DEPTH_BIT, G.samples, 1,
+               &G.depthImg, &G.depthMem, &G.depthView);
     G.ext = ext;
+    post_create();
 
     if (G.imgCount > G.renderDoneCount) {
         VkSemaphoreCreateInfo si = {VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO};
@@ -570,6 +693,7 @@ void rk_swapchain_recreate(void) {
     vkDeviceWaitIdle(G.dev);
     swapchain_destroy();
     swapchain_create();
+    post_ds_write();
     G.needResize = 0;
 }
 
@@ -665,12 +789,23 @@ int rk_init(GLFWwindow *win) {
     G.hasTS = pp.limits.timestampComputeAndGraphics == VK_TRUE;
     G.tsPeriod = pp.limits.timestampPeriod;
 
+    /* HDR target: R16G16B16A16_SFLOAT where supported (universal on
+       desktop); bloom needs attachment blending on the same format. */
+    G.hdrFmt = VK_FORMAT_R16G16B16A16_SFLOAT;
+    VkFormatProperties fp;
+    vkGetPhysicalDeviceFormatProperties(G.phys, G.hdrFmt, &fp);
+    G.hdrOk = (fp.optimalTilingFeatures & VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT) &&
+              (fp.optimalTilingFeatures & VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT);
+    G.bloomOk = G.hdrOk &&
+        (fp.optimalTilingFeatures & VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BLEND_BIT);
+    if (!G.hdrOk) G.hdrFmt = VK_FORMAT_B8G8R8A8_UNORM;
+
     swapchain_create();
 
     /* shadow map + compare sampler */
     make_image(SHADOW_SIZE, SHADOW_SIZE, VK_FORMAT_D32_SFLOAT,
                VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
-               VK_IMAGE_ASPECT_DEPTH_BIT, VK_SAMPLE_COUNT_1_BIT,
+               VK_IMAGE_ASPECT_DEPTH_BIT, VK_SAMPLE_COUNT_1_BIT, 1,
                &G.shadowImg, &G.shadowMem, &G.shadowView);
     VkSamplerCreateInfo sci = {VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO};
     sci.magFilter = sci.minFilter = VK_FILTER_LINEAR;
@@ -682,13 +817,20 @@ int rk_init(GLFWwindow *win) {
     /* texture atlas image + pixel-art sampler (nearest, clamp) */
     make_image(RK_TEX_ATLAS, RK_TEX_ATLAS, VK_FORMAT_R8G8B8A8_UNORM,
                VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT,
-               VK_IMAGE_ASPECT_COLOR_BIT, VK_SAMPLE_COUNT_1_BIT,
+               VK_IMAGE_ASPECT_COLOR_BIT, VK_SAMPLE_COUNT_1_BIT, 1,
                &G.texImg, &G.texMem, &G.texView);
     VkSamplerCreateInfo tsi = {VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO};
     tsi.magFilter = tsi.minFilter = VK_FILTER_NEAREST;
     tsi.addressModeU = tsi.addressModeV = tsi.addressModeW =
         VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
     VKC(vkCreateSampler(G.dev, &tsi, NULL, &G.texSamp));
+
+    /* post-chain sampler: linear + clamp (bloom down/up, composite) */
+    VkSamplerCreateInfo psi = {VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO};
+    psi.magFilter = psi.minFilter = VK_FILTER_LINEAR;
+    psi.addressModeU = psi.addressModeV = psi.addressModeW =
+        VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+    VKC(vkCreateSampler(G.dev, &psi, NULL, &G.postSamp));
 
     /* descriptors: set0 = ubo/frame, set1 = shadow sampler + tex atlas */
     VkDescriptorSetLayoutBinding b0 = {0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1,
@@ -704,13 +846,23 @@ int rk_init(GLFWwindow *win) {
     };
     li.bindingCount = 2; li.pBindings = b1;
     VKC(vkCreateDescriptorSetLayout(G.dev, &li, NULL, &G.setLayout1));
+    /* post chain: b0 = source/hdr, b1 = bloom mip0 (composite) */
+    VkDescriptorSetLayoutBinding b2[2] = {
+        {0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1,
+            VK_SHADER_STAGE_FRAGMENT_BIT, NULL},
+        {1, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1,
+            VK_SHADER_STAGE_FRAGMENT_BIT, NULL},
+    };
+    li.bindingCount = 2; li.pBindings = b2;
+    VKC(vkCreateDescriptorSetLayout(G.dev, &li, NULL, &G.postSetLayout));
 
     VkDescriptorPoolSize psz[2] = {
         {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, MAX_FRAMES},
-        {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 2}
+        {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 2 + 2 * (BLOOM_M + 1)}
     };
     VkDescriptorPoolCreateInfo pci = {VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO};
-    pci.maxSets = MAX_FRAMES + 1; pci.poolSizeCount = 2; pci.pPoolSizes = psz;
+    pci.maxSets = MAX_FRAMES + 1 + BLOOM_M + 1;
+    pci.poolSizeCount = 2; pci.pPoolSizes = psz;
     VKC(vkCreateDescriptorPool(G.dev, &pci, NULL, &G.pool));
 
     {
@@ -731,6 +883,13 @@ int rk_init(GLFWwindow *win) {
         }
         vkUpdateDescriptorSets(G.dev, 2, w, 0, NULL);
     }
+    for (int i = 0; i <= BLOOM_M; i++) {
+        VkDescriptorSetAllocateInfo dai = {VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO};
+        dai.descriptorPool = G.pool; dai.descriptorSetCount = 1;
+        dai.pSetLayouts = &G.postSetLayout;
+        VKC(vkAllocateDescriptorSets(G.dev, &dai, &G.postDS[i]));
+    }
+    post_ds_write();
 
     VkPushConstantRange pcr = {VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(Push)};
     VkDescriptorSetLayout lset[2] = {G.setLayout0, G.setLayout1};
@@ -738,6 +897,11 @@ int rk_init(GLFWwindow *win) {
     pli.setLayoutCount = 2; pli.pSetLayouts = lset;
     pli.pushConstantRangeCount = 1; pli.pPushConstantRanges = &pcr;
     VKC(vkCreatePipelineLayout(G.dev, &pli, NULL, &G.pipeLayout));
+    VkPushConstantRange ppcr = {VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
+                                0, sizeof(PostPC)};
+    pli.setLayoutCount = 1; pli.pSetLayouts = &G.postSetLayout;
+    pli.pPushConstantRanges = &ppcr;
+    VKC(vkCreatePipelineLayout(G.dev, &pli, NULL, &G.postLayout));
 
     VkCommandPoolCreateInfo cpi = {VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO};
     cpi.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
@@ -848,6 +1012,14 @@ void rk_shutdown(void) {
     vkDestroyPipeline(G.dev, G.pShadow, NULL);
     vkDestroyPipeline(G.dev, G.pUI, NULL);
     vkDestroyPipeline(G.dev, G.pSky, NULL);
+    vkDestroyPipeline(G.dev, G.pDown, NULL);
+    vkDestroyPipeline(G.dev, G.pUp, NULL);
+    vkDestroyPipeline(G.dev, G.pPost, NULL);
+    vkDestroyPipeline(G.dev, G.pIcon, NULL);
+    vkDestroyPipeline(G.dev, G.pUIFlat, NULL);
+    vkDestroySampler(G.dev, G.postSamp, NULL);
+    vkDestroyPipelineLayout(G.dev, G.postLayout, NULL);
+    vkDestroyDescriptorSetLayout(G.dev, G.postSetLayout, NULL);
     vkDestroyPipelineLayout(G.dev, G.pipeLayout, NULL);
     vkDestroyDescriptorPool(G.dev, G.pool, NULL);
     vkDestroyDescriptorSetLayout(G.dev, G.setLayout0, NULL);

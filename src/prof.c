@@ -18,7 +18,7 @@ static double t0[PZ_N], acc[PZ_N];          /* current frame */
 static double fr[WIN], zw[PZ_N][WIN];       /* ring: frame + zone ms */
 static int    fn, fc;                       /* ring head, fill count */
 static int    cnt[PC_N];                    /* counters, last frame */
-static float  gpu[3];                       /* shadow, main, total ms */
+static float  gpu[4];                       /* shadow, main, post, total ms */
 static double tFrame, tLastLog;
 static int    s_show;
 
@@ -60,9 +60,9 @@ static void report(void) {
         fprintf(stderr, " %s %.2f", ZN[z], a);
     }
     fprintf(stderr,
-        " | gpu %.2f (sh %.2f main %.2f)"
+        " | gpu %.2f (sh %.2f main %.2f post %.2f)"
         " | draws %d inst %d uiv %d mv %d blocks %d models %d\n",
-        gpu[2], gpu[0], gpu[1],
+        gpu[3], gpu[0], gpu[1], gpu[2],
         cnt[PC_DRAWS], cnt[PC_INST], cnt[PC_UIVERTS], cnt[PC_MESHVERTS],
         cnt[PC_BLOCKS], cnt[PC_MODELS]);
 }
@@ -73,7 +73,7 @@ void prof_frame(void) {
     for (int z = 0; z < PZ_N; z++) zw[z][fn] = acc[z] * 1000.0;
     fn = (fn + 1) % WIN;
     if (fc < WIN) fc++;
-    float g[3];
+    float g[4];
     if (rk_gpu_times(g)) memcpy(gpu, g, sizeof gpu);
     memset(acc, 0, sizeof acc);
     tFrame = now;
@@ -100,8 +100,8 @@ void prof_draw(void) {
         snprintf(b + strlen(b), sizeof b - strlen(b), "%s %.2f  ", ZN[z], a);
     }
     ui_text(x + 8, y, b, 1, 0.8f, 0.85f, 1.0f, 1); y += lh;
-    snprintf(b, sizeof b, "gpu %4.2f = sh %.2f + main %.2f",
-             gpu[2], gpu[0], gpu[1]);
+    snprintf(b, sizeof b, "gpu %4.2f = sh %.2f + main %.2f + post %.2f",
+             gpu[3], gpu[0], gpu[1], gpu[2]);
     ui_text(x + 8, y, b, 1, 0.8f, 0.85f, 1.0f, 1); y += lh;
     snprintf(b, sizeof b, "draws %d inst %d uiv %d mv %d",
              cnt[PC_DRAWS], cnt[PC_INST], cnt[PC_UIVERTS], cnt[PC_MESHVERTS]);

@@ -144,6 +144,6 @@ int  rk_reload_shaders(void);               /* F8: glslc + pipeline rebuild */
 /* --- profiling --- */
 typedef struct { int draws, insts, uiVerts, meshVerts, models; } RkStats;
 void rk_query_stats(RkStats *s);
-int  rk_gpu_times(float out[3]);   /* ms: shadow, main, total. 0 = none yet */
+int  rk_gpu_times(float out[4]);   /* ms: shadow, main, post, total. 0 = none */
 
 #endif /* RK_H */

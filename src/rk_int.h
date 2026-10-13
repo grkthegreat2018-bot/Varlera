@@ -20,6 +20,7 @@
 #define MAX_INST     8192
 #define MAX_Q        1024
 #define SHADOW_SIZE  2048
+#define BLOOM_M      5          /* bloom mip count (base = fb/2) */
 
 #define VKC(x) do { VkResult _r = (x); if (_r != VK_SUCCESS) { \
     fprintf(stderr, "VK error %d at %s:%d\n", _r, __FILE__, __LINE__); exit(1); } } while (0)
@@ -35,6 +36,7 @@ typedef struct {
 
 typedef struct { float x, y, w, h, r, g, b, a;
                  float u0, v0, u1, v1; int tex; } UIRect;
+typedef struct { float texel[2]; float a, b; } PostPC;
 
 v3 rk_light_dir(void);
 void rk_swapchain_recreate(void);
@@ -89,6 +91,22 @@ typedef struct {
     VkPipelineLayout pipeLayout;
     VkPipeline pGrid, pWorld, pWorldInst, pGhostInst, pLinesInst, pShadow, pUI, pSky;
     VkPipeline pMeshLine;            /* non-instanced LINE_LIST (wireframe) */
+
+    /* HDR post chain: scene -> hdrImg (msaa resolve or direct) -> bloom
+       down/up mip chain -> composite(tonemap) -> swapchain -> LDR UI pass.
+       hdrOk=0 falls back to surfFmt for the scene target (passthrough). */
+    VkFormat hdrFmt;
+    int hdrOk, bloomOk, bloomLive;
+    VkImage hdrImg;        VkImageView hdrView;  VkDeviceMemory hdrMem;
+    VkImage bloomImg;      VkDeviceMemory bloomMem;
+    VkImageView bloomMipView[BLOOM_M];
+    VkImage uiDepthImg;    VkImageView uiDepthView; VkDeviceMemory uiDepthMem;
+    VkDescriptorSetLayout postSetLayout;
+    VkPipelineLayout postLayout;
+    VkSampler postSamp;
+    VkDescriptorSet postDS[BLOOM_M + 1];  /* 0: hdr+bloom0, i: bloom mip i-1 */
+    VkPipeline pDown, pUp, pPost;         /* bloom down/up + composite */
+    VkPipeline pIcon, pUIFlat;            /* 1x variants for the LDR UI pass */
     VkCommandPool cmdPool;
 
     struct {
@@ -135,7 +153,7 @@ typedef struct {
     double t;
     int hasTS;
     double tsPeriod;
-    float gpuMs[3];                         /* shadow, main, total */
+    float gpuMs[4];                         /* shadow, main, post, total */
 
     /* screenshot readback: copy swapchain image -> staging buf this frame,
        write the .bmp next frame (fence guarantees completion) */
