@@ -15,6 +15,7 @@ layout(set = 0, binding = 0) uniform UBO {
     vec4 fogColor;
     vec4 fogParams;
     vec4 texRect[64];      /* unused here - keeps groundCol offset aligned */
+    float texFps[64];      /* unused - keeps layout aligned */
     vec4 groundCol;
 } u;
 

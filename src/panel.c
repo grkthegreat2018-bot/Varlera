@@ -306,7 +306,7 @@ static int custom_at(float x, float y) {
 }
 
 /* ---- TEX tab: art-tool row + mode/type + scrollable preview grid ---- */
-static const char *TEXMODE_NAME[] = {"STRETCH", "LOOP", "PROC"};
+static const char *TEXMODE_NAME[] = {"STRETCH", "LOOP", "PROC", "ANIM"};
 static const char *TEXMAT_NAME[] = {"MATTE", "GLOSS", "METAL", "GLOW"};
 static float alpha_y(void) { return CUS_Y + ((A.nCustoms + 3) / 4) * 34.0f + 22.0f; }
 #define TG_TOP   178.0f   /* texture grid top y (below MODE + MAT rows) */
@@ -477,7 +477,7 @@ int panel_press(double x, double y) {
         }
         /* MODE / TYPE */
         if (in_rect(fx, fy, px + 62, 114, 66, 22)) {
-            A.paintTexM = (A.paintTexM & ~3) | ((A.paintTexM + 1) % 3);
+            A.paintTexM = (A.paintTexM & ~3) | ((A.paintTexM + 1) % 4);
             apply_tex_sel(); return 1;
         }
         if (in_rect(fx, fy, px + 62, 140, 66, 22)) {
@@ -489,6 +489,15 @@ int panel_press(double x, double y) {
         if (in_rect(fx, fy, px + 138, 114, 80, 22)) {
             A.paintTexM ^= TEXM_OVR;
             apply_tex_sel(); return 1;
+        }
+        /* ANIM fps stepper sits beside MAT (applies to selected texture) */
+        if ((A.paintTexM & 3) == TEXM_ANIM &&
+            in_rect(fx, fy, px + 138, 140, 80, 22)) {
+            static const float STEPS[] = {0, 1, 2, 4, 8, 12, 16, 24};
+            int cur = 0; float fps = tex_fps(A.paintTex);
+            for (int i = 1; i < 8; i++) if (fps >= STEPS[i]) cur = i;
+            tex_set_fps(A.paintTex, STEPS[(cur + 1) % 8]);
+            return 1;
         }
         /* texture preview cells */
         int first = (int)texScroll * TEXCOLS;
@@ -790,6 +799,16 @@ static void draw_tex(float px) {
     int hovMat = in_rect((float)A.mx,(float)A.my, px + 62, 140, 66, 22);
     rk_ui_rect(px + 62, 140, 66, 22, 0.20f + hovMat*0.06f, 0.24f + hovMat*0.06f, 0.32f + hovMat*0.06f, 1);
     ui_text(px + 62 + (66 - ui_text_w(mn,1)) * 0.5f, 147, mn, 1, 0.9f,0.9f,0.95f, 1);
+
+    /* ANIM mode: selected sheet's tiles become frames; FPS cycles rate */
+    if ((A.paintTexM & 3) == TEXM_ANIM) {
+        char fb[16]; snprintf(fb, sizeof fb, "FPS %.0f", tex_fps(A.paintTex));
+        int hovF = in_rect((float)A.mx,(float)A.my, px + 138, 140, 80, 22);
+        rk_ui_rect(px + 138, 140, 80, 22, 0.20f + hovF*0.06f,
+                   0.24f + hovF*0.06f, 0.32f + hovF*0.06f, 1);
+        ui_text(px + 138 + (80 - ui_text_w(fb,1)) * 0.5f, 147, fb, 1,
+                0.9f,0.9f,0.95f, 1);
+    }
 
     /* texture preview grid */
     int first = (int)texScroll * TEXCOLS;

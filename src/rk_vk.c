@@ -87,6 +87,11 @@ static void build_mesh_data(void) {
 
 /* ---------------- texture atlas ---------------- */
 
+void rk_tex_fps(int id, float fps) {
+    if (id < 0 || id >= RK_TEX_MAX) return;
+    G.ubo.texFps[id] = fps;
+}
+
 void rk_tex_rect(int id, float u0, float v0, float tw, float th) {
     if (id < 0 || id >= RK_TEX_MAX) return;
     G.ubo.texRect[id][0] = u0; G.ubo.texRect[id][1] = v0;

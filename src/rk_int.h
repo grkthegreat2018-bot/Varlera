@@ -31,6 +31,7 @@ typedef struct {
     m4 viewProj, iconVP, shadowVP;
     float camPos[4], lightDir[4], fogColor[4], fogParams[4];
     float texRect[RK_TEX_MAX][4];   /* u0,v0,tileW,tileH per texture id */
+    float texFps[RK_TEX_MAX];       /* flipbook fps per id (mode 3) */
     float groundCol[4];             /* grid base color (world-settings tint) */
 } UBO;
 

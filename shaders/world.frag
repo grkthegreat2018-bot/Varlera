@@ -19,6 +19,8 @@ layout(set = 0, binding = 0) uniform UBO {
     vec4 fogColor;
     vec4 fogParams;
     vec4 texRect[64];
+    float texFps[64];       /* flipbook rate per texture id (mode 3) */
+    vec4 groundCol;
 } u;
 
 layout(set = 1, binding = 0) uniform sampler2DShadow shadowMap;
@@ -66,12 +68,19 @@ vec4 sampleTex(vec3 n, uint tid, uint mode, out float cov) {
         tuv = (pp / fs + 0.5) * tr.zw;    /* stretch whole sheet across face */
     } else if (mode == 1u) {
         tuv = mod(pp + 0.5, tr.zw);       /* loop whole sheet every tileW/H units */
-    } else {
+    } else if (mode == 2u) {
         vec2 cell = floor(pp + 0.5);
         uint h = texhash(uvec3(uvec2(cell + 1024.0), uint(tid)), vSeed);
         int sw = int(tr.z), sh = int(tr.w);
         vec2 st = vec2(h % uint(sw), (h / uint(sw)) % uint(sh));
         tuv = st + fract(pp + 0.5);       /* random sub-tile per unit cell */
+    } else {
+        /* flipbook: sheet tiles are frames, row-major, stepped by time*fps */
+        int fw = int(tr.z), nf = fw * int(tr.w);
+        float fps = u.texFps[tid];
+        int f = (nf > 1 && fps > 0.0) ? int(u.camPos.w * fps) % nf : 0;
+        vec2 st = vec2(f % fw, f / fw);
+        tuv = st + clamp(pp / fs + 0.5, 0.0, 1.0);  /* stretched in frame */
     }
     cov = 1.0;
     return texture(texAtlas, tr.xy + tuv * TUV);

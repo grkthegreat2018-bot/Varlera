@@ -20,6 +20,7 @@ uint8_t g_atlas[RK_TEX_ATLAS * RK_TEX_ATLAS * 4];
 
 static uint8_t s_used[TEX_MAX];
 static uint8_t s_tiles[TILES][TILES];   /* tile allocation map */
+static float   s_fps[TEX_MAX];          /* flipbook rate (TEXM_ANIM sheets) */
 
 static void put(int x, int y, uint8_t r, uint8_t g, uint8_t b, uint8_t a) {
     if (x < 0 || y < 0 || x >= ATW || y >= ATW) return;
@@ -148,6 +149,15 @@ void tex_sync_rect(int id) {
     const Tex *t = &g_tex[id];
     float k = 1.0f / TILES;
     rk_tex_rect(id, t->tx * k, t->ty * k, (float)t->tw, (float)t->th);
+    rk_tex_fps(id, s_fps[id]);
+}
+
+float tex_fps(int id) { return (id > 0 && id < TEX_MAX) ? s_fps[id] : 0.0f; }
+
+void tex_set_fps(int id, float fps) {
+    if (id <= 0 || id >= TEX_MAX) return;
+    s_fps[id] = fps < 0.0f ? 0.0f : fps > 60.0f ? 60.0f : fps;
+    rk_tex_fps(id, s_fps[id]);
 }
 
 static int alloc_tiles(int tw, int th, int *outx, int *outy) {
@@ -222,6 +232,9 @@ int tex_save(const char *path) {
         for (int y = 0; y < t->th * TEX_TILE; y++)
             fwrite(px + (size_t)y * ATW * 4, 4, (size_t)t->tw * TEX_TILE, f);
     }
+    /* flipbook fps trailer: v1 readers stop after records, so this is a
+       compatible tail. Old loads leave s_fps zeroed (static sheets). */
+    fwrite(s_fps, sizeof(float), TEX_MAX, f);
     fclose(f);
     return 1;
 }
@@ -260,6 +273,11 @@ int tex_load(const char *path) {
         }
         tex_sync_rect(i);
     }
+    /* optional flipbook-fps trailer (v2 tail; absent on older saves) */
+    memset(s_fps, 0, sizeof s_fps);
+    fread(s_fps, sizeof(float), TEX_MAX, f);   /* short read -> rest stays 0 */
+    for (int i = 1; i < TEX_MAX; i++)
+        if (s_used[i]) rk_tex_fps(i, s_fps[i]);
     font_reserve();
     fclose(f);
     return 1;

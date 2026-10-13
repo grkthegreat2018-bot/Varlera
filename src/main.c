@@ -337,6 +337,7 @@ int main(void) {
     const char *envParts = getenv("VARLERA_PARTS");     /* test hook: burst test */
     const char *envExit  = getenv("VARLERA_EXIT");      /* test hook: quit at frame N */
     const char *envPlay  = getenv("VARLERA_PLAY");      /* test hook: play @30, edit @90 */
+    const char *envAnim  = getenv("VARLERA_ANIM");      /* test hook: flipbook block @10 */
     const char *envPlace = getenv("VARLERA_PLACE");     /* test hook: place_commit path at frame 20 */
     const char *envTexPng = getenv("VARLERA_TEXPNG");   /* test hook: png export+reimport */
     if (envTab) A.panelTab = atoi(envTab);
@@ -424,6 +425,17 @@ int main(void) {
             particles_burst(P_SPARK,  v3_make(0, 3.5f, 2), NULL, n);
         }
         if (envShot && frameNo == 45) rk_screenshot(envShot);
+        if (envShot && strchr(envShot, ',') && frameNo == 90) {
+            rk_screenshot(strchr(envShot, ',') + 1);    /* ",second.bmp" */
+        }
+        if (envAnim && frameNo == 10) {
+            /* flipbook: STONE3 (id 10) is a 3x3 sheet -> 9 frames @ 8fps */
+            tex_set_fps(10, 24.0f);
+            static const float AC[3] = {0.85f, 0.85f, 0.85f};
+            int ni = world_add(v3_make(0, 1.5f, 4), v3_make(2,2,2),
+                               RK_MESH_CUBE, 0, AC);
+            if (ni >= 0) { g_blocks[ni].tex = 10; g_blocks[ni].texm = TEXM_ANIM; }
+        }
         if (envPlace && frameNo == 20) {
             static const float COL[3] = {0.3f, 0.5f, 0.9f};
             for (int i = 0; i < 4; i++) {     /* texm 0,1,2,4 -> which vanish? */

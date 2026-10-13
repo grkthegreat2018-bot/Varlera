@@ -58,6 +58,7 @@ typedef enum {
 #define TEXM_STRETCH 0
 #define TEXM_LOOP    1
 #define TEXM_PROC    2
+#define TEXM_ANIM    3              /* sheet tiles = flipbook frames */
 #define TEXM_OVR     4
 #define TEXM_MAT(m)  ((uint8_t)((m) & 3) << 3)
 #define TEXM_MATTE   0
@@ -127,6 +128,7 @@ void rk_meshlines(const Vert *v, uint32_t n, const float model[16],
 #define RK_TEX_MAX   64            /* texture records (UBO table size) */
 void rk_tex_upload(const uint8_t *rgba);           /* push whole atlas */
 void rk_tex_rect(int id, float u0, float v0, float tw, float th); /* tiles */
+void rk_tex_fps(int id, float fps);   /* flipbook rate for TEXM_ANIM */
 
 void rk_ui_rect(float px, float py, float pw, float ph, float r, float g, float b, float a);
 /* textured UI quad sampling atlas region [u0,v0]-[u1,v1] */
