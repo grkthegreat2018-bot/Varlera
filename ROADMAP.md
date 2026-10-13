@@ -7,10 +7,10 @@ unblock and de-risk later ones.
 
 Status: **✅** shipped (commit in parens) · **⏳** partially landed.
 
-Measured baseline (profiler, `F3` / stderr `prof |`): GPU ~0.04ms,
-frame ~0.52ms total, `uiv` ~810 verts/frame (post-font-atlas; was ~8k).
-Biggest remaining CPU cost is submit ~0.43ms. Re-measure after each
-perf item.
+Measured baseline (profiler, `F3` / stderr `prof |`): GPU ~0.08ms
+(sh 0.01 / main 0.04 / post 0.04), frame ~0.65ms total, `uiv` ~810
+verts/frame (post-font-atlas; was ~8k). Biggest remaining CPU cost is
+submit ~0.55ms. Re-measure after each perf item.
 
 ## Tier 1 — easy wins
 
@@ -22,7 +22,7 @@ perf item.
 | ⏳ Stylized skybox/ground `8d2a896` | S | `rk.c`, `edit.c` env presets | Sky pass landed (gradient dome + sun disc via env presets). Ground plane styles pending. |
 | ⏳ Side panel polish | S | `panel.c` | Search + richer tooltips landed; icon materials, hover states, collapse animation pending. |
 | ✅ Object indexing + metadata `756a1fc` | S | `world.c`, `model.c`, `panel.c` | Search on SHAPES/MODELS/PROPS, info readout w/ stable id, full script rows (TRIG/ACT/TGT/PARAM/NAME), dead ACT_COLOR/TEX/DEL wired live. |
-| ⏳ More default block shapes `353686d` | S | `meshgen.c`, `panel.c` | Pass 1 landed: Slab/Plate/Beam/Pipe/Arch/Ring. BW parity pass remains. |
+| ⏳ More default block shapes `353686d` | S | `meshgen.c`, `panel.c` | Pass 1 landed: Slab/Plate/Beam/Pipe/Arch/Ring. `6fd575f`: cageball reworked to a real birdcage (meridian rib tubes + latitude rings, was a zero-thickness shell). BW parity pass remains. |
 | ⏳ User settings + controls `5be4a7d` | S→M | `main.c`, `camera.c`, `settings.c` | Core file + FOV/invert-Y landed; rebindable keys, UI scale, autosave interval pending. |
 | ⏳ QOL pass | S | `panel.c`, `edit.c`, `main.c` | Block search + toasts landed; hotkey hints bar, drag multi-select pending. |
 | ⏳ Debugging v1 `d0d6685` | S | `prof.c`, `main.c`, `log.c` | `varlera.log` stderr tee + crash minidump landed; overlay page 2 + validation hotkey pending. |
@@ -62,9 +62,9 @@ perf item.
 | ⏳ Codebase docs + tests | M→ongoing | `AGENTS.md`, `CONTRIBUTING.md`, `tests/` | AGENTS.md kept current through every commit; `/W4` clean + file splits done (`rk_vk`/`meshgen`/`marching`). Pending: `CONTRIBUTING.md`, more tests. |
 | ⏳ Aseprite-like art tool | M | `art.c`, `tex.c` | `art.c` modal exists (PEN/ERASE/FILL/LINE/RECT/PICK + MIRROR/UNDO, wheel zoom, RMB pan). Pending: layers, selection/move, frame timeline. |
 | Object physics stats (data) | M | `world.c`, `panel.c` | `Block` gains traction/bounce/weight fields + info-panel editing — data model + persistence only; runtime effect lands with the physics items below. |
-| Particle system | M | new `particles.c`, `rk.c`, `tex.c`, `world.c` | Fixed pool (~4k): billboard sprites sampling atlas art (2D) + instanced sculpted-mesh particles via the `RkInst` path (3D). Emitters keyed by `trig`/`act` rows (SPIN→sparks, BOOST→smoke); gravity/fade params; `prof_count` a `PC_PARTICLES` slot. No new draw infrastructure needed. |
-| Post chain: bloom + tonemap | M | `rk.c`, `rk_vk.c`, new shaders | Downsample+blur+composite after MSAA resolve (resolve pass already exists); emissive material flags feed the bright pass. Adds filmic tonemap — current output is clamped sRGB. |
-| Per-vertex AO bake | M | `model.c` bake, `meshgen.c` | Raycast occlusion per baked vert (blocks + sculpted), stored in vert color multiplier — soft contact shading for free at draw time. |
+| ⏳ Particle system `a4dd47c` | M | `particles.c`, `rk.c`, `world.c` | Landed: fixed 1024-pool, 4 emitters (FIRE/SMOKE/DEBRIS/SPARK), gravity+drag sim, draws through instanced `rk_ghost` path (GLOW particles feed bloom), emitters on script acts + placement puff, `PC_PARTS` profiling, `VARLERA_PARTS` test hook. Pending: billboard sprites sampling atlas art (2D flavor), more emitter kinds, per-emitter params in script rows. |
+| ✅ Post chain: bloom + tonemap `43f8eb5` | M | `rk.c`, `rk_vk.c`, new shaders | HDR R16F scene target (MSAA resolves into it) → 4-mip bright-pass downsample + tent-filter upsample bloom chain → ACES tonemap composite; UI/icons ride a separate LDR pass so they stay crisp. `post.vert`/`down.frag`/`up.frag`/`post.frag`; GPU cost ~0.04ms at 800 blocks. |
+| ⏳ Per-vertex AO bake `8c778df` | M | `model.c` bake, `meshgen.c` | Landed for fused-block models: 8-ray hemisphere occlusion vs child AABBs, darkens baked vert color (soft contact shading). Sculpted-topo models pending — needs a BVH or grid accel to stay affordable at bake time. |
 | Live collision overhaul | M→L | `world.c`, `edit.c`, `camera.c` | Continuous collision for fast/moving blocks (current settle assumes dt steps), capsule player collider, joint-constraint solver groundwork for NPCs. |
 
 ## Tier 3 — hard (cross-cutting)
@@ -118,8 +118,9 @@ perf item.
 3. Texture menu → art tool (`art.c` extracted; tools live, layers pending).
 4. ~~World data v4~~ ✅ core landed; better I/O + menus + world-settings
    schema next (app-state refactor is the gateway to everything UI).
-5. Greedy-mesh play mode + mesh cache + material flags + particle
-   system + bloom/AO + flipbook anim + assembly sculpt mode +
+5. Greedy-mesh play mode + mesh cache + ~~material flags~~ ✅ +
+   ~~particle system~~ ✅ (`a4dd47c`) + ~~bloom~~ ✅/`AO` ✅ +
+   flipbook anim + assembly sculpt mode +
    auto-merge (perf and content, needed at scale).
 6. Collision overhaul → building overhaul → rigid-body physics +
    joints + physics stats runtime → player controller

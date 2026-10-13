@@ -27,9 +27,15 @@ links m/dl/pthread. Win32-only code (file dialog, DPI awareness) is `_WIN32`
   sampler + 4-tap PCF), instanced drawing (`RkInst` = pos/scale/RGBA8/flags;
   bits: 0 unlit, 1-2 rot90, 3 nofog, 4 iconVP, 5-10 texid, 11-12 texmode,
   13 texoverride, 14 vcol, 15 spin, 17-18 material MATTE/GLOSS/METAL/GLOW —
-  Blinn spec or self-bright in world.frag, GLOW feeds future bloom),
+  Blinn spec or self-bright in world.frag, GLOW feeds the bloom bright pass),
   deferred command queue
-  replayed for shadow pass. UI quads are NDC rects (`UIVert` pos/col/uv/tex
+  replayed for shadow pass. HDR post chain: scene renders into an R16F
+  target (UNORM fallback), 4-mip bloom downsample (soft-knee bright pass) +
+  tent upsample/add, then `post.frag` ACES tonemap to the swapchain; icons
+  + UI draw in a second LDR pass (fresh 1x depth `uiDepth`) so they are
+  never tonemapped. Post shaders: `post.vert` fullscreen tri,
+  `down.frag`/`up.frag` mip chain, `post.frag` composite — all hot-reloadable
+  via F8. UI quads are NDC rects (`UIVert` pos/col/uv/tex
   — `rk_ui_rect` solid, `rk_ui_texrect` samples the atlas via set1 binding 1
   for real texture previews). `rk_init` returns 1 on success.
 - `src/rk_vk.c` — renderer init/resources: instance/device pick, swapchain,
@@ -40,7 +46,10 @@ links m/dl/pthread. Win32-only code (file dialog, DPI awareness) is `_WIN32`
   `VKC`, `rk_swapchain_recreate`, `rk_light_dir`.
 - `src/meshgen.c` / `.h` — CPU generation of the built-in unit-box shape
   meshes (`meshgen_shape` emits one shape for CPU bakes;
-  `meshgen_build_all` emits all + wireframe box + grid plane).
+  `meshgen_build_all` emits all + wireframe box + grid plane). CAGEBALL is
+  a birdcage built from `tube_arc` swept-tube rings (4 meridian ribs +
+  latitude rings, ~3.7k verts) — keep generated shapes under 4k verts:
+  sculpt.c's per-shape buffer is `soup[4096]`, model.c's is `tmp[8192]`.
 - `src/app.h` — shared `App A` global (window, camera, mode, selection, drag state).
 - `src/main.c` — entry, glfw callbacks -> dispatch, frame loop.
 - `src/camera.c` — free-fly cam (yaw/pitch basis, ray gen, WASD/QE move).
@@ -48,7 +57,9 @@ links m/dl/pthread. Win32-only code (file dialog, DPI awareness) is `_WIN32`
   move/resize/marquee state machine, selection outlines + 6 per-face resize
   handles (opposite face anchored, block recenters), fuse/unfuse (ctrl+B/U).
 - `src/model.c` — fused-block baking: per-child vertex colors + texture layers
-  (`Vert.tex` float, -1 = inherit), internal cube face culling, `models.bw`
+  (`Vert.tex` float, -1 = inherit), internal cube face culling, baked vertex
+  AO (`bake_ao`: 8-ray hemisphere occlusion vs child AABBs darkens the vert
+  color — fused/premade path only, sculpted topo needs accel first), `models.bw`
   persistence + `rk_model_mesh_add` upload. v7 stores per-vert material id
   (`mvtex`, int8 -1 = inherit) + layer lock (`mvlock`) + `adv` flag; v6 and
   older migrate. `models_bake_builtins()` seeds pack 1
@@ -113,10 +124,17 @@ links m/dl/pthread. Win32-only code (file dialog, DPI awareness) is `_WIN32`
   _confirm_draw`; shared chrome constants (`PW`, `in_rect`, `panel_x`)
   live in panel.h.
 - `src/prof.c` / `prof.h` — frame cost logging. `prof_zone_begin/end(PZ_*)`
-  around frame phases; `prof_count(PC_*)` for draws/insts/verts/blocks.
-  GPU times come from `rk_gpu_times` (per-in-flight timestamp query pools:
-  shadow pass, main pass, total). `prof_frame()` accumulates a 120-frame
-  ring; `prof_draw()` renders the overlay. Add zones, not printf spam.
+  around frame phases; `prof_count(PC_*)` for draws/insts/verts/blocks/
+  particles (`PC_PARTS`). GPU times come from `rk_gpu_times` (per-in-flight
+  timestamp query pools: shadow / main / post / total). `prof_frame()`
+  accumulates a 120-frame ring; `prof_draw()` renders the overlay.
+  Add zones, not printf spam.
+- `src/particles.c` / `.h` — fixed-pool (1024) CPU particle system:
+  `particles_burst(kind, pos, vel, n)` with FIRE/SMOKE/DEBRIS/SPARK presets,
+  gravity+drag sim, life-fade size/alpha. Draws via `rk_ghost` instanced
+  cubes — GLOW-flagged kinds feed the bloom bright pass for free.
+  Emitters: script trigger edges in `physics.c` (BOOST→smoke/sparks,
+  DELETE→debris, etc.) + placement puff in `edit.c`.
 - `src/settings.c` — settings.bw v1: window rect/fullscreen, cam speed/fov/
   invertY, prof overlay, guide toggle + seen bitmask (pad-carved, same size).
   `settings_load` pre-window, `apply` post-cam_init,
@@ -135,10 +153,15 @@ links m/dl/pthread. Win32-only code (file dialog, DPI awareness) is `_WIN32`
   build_all off[] + panel ASSETS/CATS row.
 - Screenshot: F12 or `VARLERA_SHOT=out.bmp` (auto at frame 45) —
   swapchain TRANSFER_SRC copy -> staging -> 24bpp BMP next frame.
+- Other test hooks (all in `main.c` init/frame block): `VARLERA_GEN=N`
+  block scatter, `VARLERA_GENGLOW=N` every-Nth block GLOW, `VARLERA_TAB=N`
+  open panel tab, `VARLERA_PARTS=N` particle burst at frame 20,
+  `VARLERA_EXIT=N` quit at frame N (clean-shutdown validation checks),
+  `VARLERA_SAVE`/`VARLERA_BWX`/`VARLERA_BWXIN` world IO at frame 50.
 - Shader hot-reload: F8 or `VARLERA_RELOAD=1` (fires once at frame 60).
   `rk_reload_shaders` re-runs glslc per shader (GLSLC + SHADER_SRC baked as
   compile defines; CreateProcess CREATE_NO_WINDOW on Win32, system() on
-  Linux), failed compiles keep the old .spv, then all 9 pipelines are
+  Linux), failed compiles keep the old .spv, then all 14 pipelines are
   destroyed/recreated under vkDeviceWaitIdle.
 - Frustum culling: `aabb_in_frustum` (math3d) in edit_draw_world;
   off-camera opaque blocks go to `rk_caster` (K_CASTER = shadow pass
