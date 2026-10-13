@@ -61,6 +61,7 @@ add_executable(varlera WIN32
   src/bundle.c
   src/log.c
   src/settings.c
+  src/lzss.c
 )
 add_dependencies(varlera shaders)
 target_include_directories(varlera PRIVATE src ${VULKAN_INCLUDE_DIR})
@@ -83,7 +84,7 @@ add_custom_command(TARGET varlera POST_BUILD
 
 # --- unit tests (link only what they need; no Vulkan/glfw) ---
 enable_testing()
-add_executable(world_v4_test tests/world_v4.c src/world.c)
+add_executable(world_v4_test tests/world_v4.c src/world.c src/lzss.c)
 target_include_directories(world_v4_test PRIVATE src)
 if(MSVC)
   target_compile_options(world_v4_test PRIVATE /W4 /wd4201)

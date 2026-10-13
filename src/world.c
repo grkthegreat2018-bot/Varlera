@@ -1,4 +1,5 @@
 ﻿#include "world.h"
+#include "lzss.h"
 #include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -103,7 +104,7 @@ void world_delete(int i) {
 /* ---------------- save/load ---------------- */
 
 #define BW_MAGIC 0x42574C42u  /* 'BWLB' */
-#define BW_VER   6              /* v6 = v5 layout; mesh base moved 16->32 */
+#define BW_VER   7              /* v7 = v6 records LZSS-compressed as a blob */
 #define BW_VER1_BLKSZ 40      /* v1: no trig/act */
 #define BW_VER2_BLKSZ 44      /* v2: +trig/act; no texm/alpha/id/name */
 #define BW_VER3_BLKSZ 64      /* v3: raw Block */
@@ -175,6 +176,13 @@ int world_save(const char *path, const char *name) {
     hdr.created = s_created; hdr.modified = (uint32_t)time(NULL);
     snprintf((char *)hdr.name, 32, "%s", name && name[0] ? name : "world");
     if (fwrite(&hdr, sizeof hdr, 1, f) != 1) { fclose(f); return 0; }
+
+    /* v7: serialize all records to memory, then write one LZSS blob.
+     * Worst record = 18 head + 3 col + 24 raw pos + 12 name = 57B. */
+    size_t cap = (size_t)g_nb * 64 + 64;
+    uint8_t *rec = malloc(cap);
+    if (!rec) { fclose(f); return 0; }
+    size_t rn = 0;
     int ok = 1;
     for (int i = 0; i < g_nb && ok; i++) {
         const Block *b = &g_blocks[i];
@@ -192,18 +200,28 @@ int world_save(const char *path, const char *name) {
         uint8_t col3[3];
         for (int c = 0; c < 3; c++)
             col3[c] = (uint8_t)(clampf(b->col[c], 0.0f, 1.0f) * 255.0f + 0.5f);
-        ok = fwrite(head, 18, 1, f) == 1 && fwrite(col3, 3, 1, f) == 1;
-        if (raw) ok &= fwrite(b->pos.e, 4, 6, f) == 6;      /* pos+size are contiguous */
-        else {
+        memcpy(rec + rn, head, 18); rn += 18;
+        memcpy(rec + rn, col3, 3);  rn += 3;
+        if (raw) {
+            memcpy(rec + rn, b->pos.e, 24); rn += 24;   /* pos+size contiguous */
+        } else {
             int16_t q[6];
             for (int c = 0; c < 3; c++) {
                 q[c]   = (int16_t)floorf(b->pos.e[c] * 16.0f + 0.5f);
                 q[c+3] = (int16_t)floorf(b->size.e[c] * 16.0f + 0.5f);
             }
-            ok &= fwrite(q, 12, 1, f) == 1;
+            memcpy(rec + rn, q, 12); rn += 12;
         }
-        if (fl & BF4_NAME) ok &= fwrite(b->name, 12, 1, f) == 1;
+        if (fl & BF4_NAME) { memcpy(rec + rn, b->name, 12); rn += 12; }
     }
+    /* {rawBytes, compBytes} + blob; compBytes 0 = stored raw (enc failure) */
+    uint8_t *comp = malloc(lzss_bound(rn));
+    size_t cn = comp ? lzss_encode(rec, rn, comp) : 0;
+    uint32_t wh[2] = { (uint32_t)rn, (uint32_t)cn };
+    ok &= fwrite(wh, 8, 1, f) == 1;
+    if (cn) ok &= fwrite(comp, cn, 1, f) == 1;
+    else    ok &= fwrite(rec, rn, 1, f) == 1;
+    free(rec); free(comp);
     s_wset.magic = WS_MAGIC;                 /* settings trailer (v4+) */
     ok &= fwrite(&s_wset, sizeof s_wset, 1, f) == 1;
     uint32_t mh[2] = {MS_MAGIC, MSG_MAX};    /* message table trailer */
@@ -244,17 +262,42 @@ int world_load(const char *path, char *nameOut) {
     memset(g_msgs, 0, sizeof g_msgs);
     if (ver >= 3 && fread(&g_nextid, 4, 1, f) != 1) g_nextid = 1;
     int ok = 1;
-    if (ver >= 4) {                            /* v4/v5: meta header + packed */
+    if (ver >= 4) {                            /* v4+: meta header + packed */
         uint8_t rest[40];                      /* created, modified, name[32] */
         if (fread(rest, 1, 40, f) != 40) { fclose(f); g_nb = 0; return 0; }
         memcpy(&s_created, rest, 4);
         if (nameOut && rest[8]) { memcpy(nameOut, rest + 8, 32); nameOut[31] = 0; }
         int hsz = ver >= 5 ? 18 : 15;          /* v5 adds stat bytes */
+        /* v7: records arrive as one LZSS blob {rawBytes, compBytes} */
+        uint8_t *blob = NULL; const uint8_t *bp = NULL, *bend = NULL;
+        if (ver >= 7) {
+            uint32_t wh[2];
+            if (fread(wh, 8, 1, f) != 1) { fclose(f); g_nb = 0; return 0; }
+            blob = malloc(wh[0] ? wh[0] : 1);
+            if (!blob) { fclose(f); g_nb = 0; return 0; }
+            if (wh[1]) {
+                uint8_t *comp = malloc(wh[1]);
+                if (!comp || fread(comp, wh[1], 1, f) != 1 ||
+                    lzss_decode(comp, wh[1], blob, wh[0]) != wh[0]) {
+                    free(comp); free(blob); fclose(f); g_nb = 0; return 0;
+                }
+                free(comp);
+            } else if (fread(blob, wh[0], 1, f) != 1 && wh[0]) {
+                free(blob); fclose(f); g_nb = 0; return 0;
+            }
+            bp = blob; bend = blob + wh[0];
+        }
         for (int i = 0; i < g_nb && ok; i++) {
             Block *b = &g_blocks[i];
             memset(b, 0, sizeof *b);
             uint8_t head[18], col3[3];
-            ok = fread(head, (size_t)hsz, 1, f) == 1 && fread(col3, 3, 1, f) == 1;
+            /* record source: decompressed blob (v7) or the file (v4-v6) */
+            if (bp) {
+                ok = (size_t)(bend - bp) >= (size_t)hsz + 3;
+                if (ok) { memcpy(head, bp, hsz); memcpy(col3, bp + hsz, 3); bp += hsz + 3; }
+            } else {
+                ok = fread(head, (size_t)hsz, 1, f) == 1 && fread(col3, 3, 1, f) == 1;
+            }
             if (!ok) break;
             memcpy(&b->id, head + 1, 4);
             b->shape = head[5];  b->rot = head[6];  b->tex = head[7];
@@ -267,7 +310,21 @@ int world_load(const char *path, char *nameOut) {
                 b->traction = BS_TRACT; b->bounce = BS_BOUNCE; b->weight = BS_WEIGHT;
             }
             for (int c = 0; c < 3; c++) b->col[c] = col3[c] / 255.0f;
-            if (head[0] & BF4_RAWPOS) ok = fread(b->pos.e, 4, 6, f) == 6;
+            size_t pn = (head[0] & BF4_RAWPOS) ? 24 : 12;
+            if (bp) {
+                ok = (size_t)(bend - bp) >= pn;
+                if (ok) {
+                    if (pn == 24) memcpy(b->pos.e, bp, 24);
+                    else {
+                        int16_t q[6]; memcpy(q, bp, 12);
+                        for (int c = 0; c < 3; c++) {
+                            b->pos.e[c]  = q[c]   / 16.0f;
+                            b->size.e[c] = q[c+3] / 16.0f;
+                        }
+                    }
+                    bp += pn;
+                }
+            } else if (head[0] & BF4_RAWPOS) ok = fread(b->pos.e, 4, 6, f) == 6;
             else {
                 int16_t q[6];
                 ok = fread(q, 12, 1, f) == 1;
@@ -276,11 +333,15 @@ int world_load(const char *path, char *nameOut) {
                     b->size.e[c] = q[c+3] / 16.0f;
                 }
             }
-            if (head[0] & BF4_NAME) ok &= fread(b->name, 12, 1, f) == 1;
+            if (ok && (head[0] & BF4_NAME)) {
+                if (bp) { ok = (size_t)(bend - bp) >= 12; if (ok) { memcpy(b->name, bp, 12); bp += 12; } }
+                else    ok = fread(b->name, 12, 1, f) == 1;
+            }
             if (b->alpha <= 0.0f) b->alpha = 1.0f;
             if (b->id >= g_nextid) g_nextid = b->id + 1;
             if (!b->id) b->id = g_nextid++;
         }
+        free(blob);
         /* settings trailer is optional: absent on pre-trailer v4 files */
         WSet ws;
         if (ok && fread(&ws, sizeof ws, 1, f) == 1 && ws.magic == WS_MAGIC)
@@ -313,7 +374,7 @@ int world_load(const char *path, char *nameOut) {
     if (!ok) { g_nb = 0; return 0; }
     /* v<6 predates RK_MESH_BASE_MODEL 16->32 (built-ins grew to 17 ids);
        saved fused-model refs shift up to the new base */
-    if (ver < 6)
+    if (ver < 6 && ver >= 4)
         for (int i = 0; i < g_nb; i++)
             if (g_blocks[i].shape >= 16) g_blocks[i].shape += 16;
     g_un = g_re = 0;

@@ -101,6 +101,25 @@ int main(void) {
     CHECK(!g_msgs[3][0]);                        /* msgs reset on v3 load */
     remove("test_v3_tmp.bw");
 
+    /* v7 LZSS blob: a bulk scene must compress far below the raw record size */
+    memset(g_blocks, 0, sizeof g_blocks); g_nb = 0;
+    memset(&b, 0, sizeof b);
+    b.size = v3_make(1, 1, 1); b.alpha = 1.0f; b.shape = 0;
+    for (int i = 0; i < 300; i++) {
+        b.pos = v3_make((float)(i % 20), 0.5f, (float)(i / 20));
+        b.id = 0;
+        CHECK(world_addb(&b) == i);
+    }
+    CHECK(world_save("test_v7_tmp.bw", "bulk"));
+    f = fopen("test_v7_tmp.bw", "rb"); fseek(f, 0, SEEK_END);
+    sz = ftell(f); fclose(f);
+    CHECK(sz < 300 * 33 / 3);                    /* >3x under ~33B/block raw */
+    memset(g_blocks, 0, sizeof g_blocks); g_nb = 0;
+    CHECK(world_load("test_v7_tmp.bw", NULL));
+    CHECK(g_nb == 300 && g_blocks[299].pos.x == 19.0f &&
+          g_blocks[299].pos.z == 14.0f);
+    remove("test_v7_tmp.bw");
+
     /* corrupt-version rejection */
     f = fopen("test_v4_tmp.bw", "rb");
     uint8_t bad[16] = {0}; fread(bad, 1, 16, f); fclose(f);
