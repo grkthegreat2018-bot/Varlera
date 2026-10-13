@@ -4,6 +4,9 @@
  * return to edit mode. See world.h for Block fields. */
 #include "physics.h"
 #include "world.h"
+#include "model.h"
+#include "app.h"
+#include "rk.h"
 #include "toast.h"
 #include "particles.h"
 #include <math.h>
@@ -11,6 +14,9 @@
 #include <stdlib.h>
 
 static float boost_step(int i, float dt);
+static int tgt_match(const Block *src, const Block *b);
+typedef struct { int cz, cx, i; } SupCell;
+static int cmp_cell(const void *pa, const void *pb);
 
 static float g_velY[MAX_BLOCKS];
 static uint16_t s_prevHeld;           /* last frame's trigHeld -> edge detect */
@@ -25,12 +31,164 @@ static v3    s_dragOff;               /* grab hit point - block center */
 static float s_dragT;                 /* ray distance at grab */
 static v3    s_dragRO, s_dragRD;      /* latest cursor ray (world_drag_move) */
 
+/* ---- greedy merge: settled script-free unreachable blocks bake into one
+ * transient mesh per touching cluster at play entry. Members keep their
+ * g_blocks slots (support/pick unchanged) but skip draw+settle via
+ * BF_MERGED; a script touch / drag grab / delete dissolves the cluster. */
+#define MRG_MAX_CLS 24
+typedef struct { int mesh; v3 pos, size; } MCls;
+static MCls   s_cls[MRG_MAX_CLS];
+static int    s_nCls;
+static int    s_baked;                   /* transient meshes added this play */
+static int16_t s_blkCls[MAX_BLOCKS];     /* block idx -> cluster, -1 none */
+
+static void merge_dissolve(int ci) {
+    if (ci < 0 || ci >= s_nCls) return;
+    for (int i = 0; i < g_nb; i++) {
+        if (s_blkCls[i] == ci) { g_blocks[i].flags &= (uint8_t)~BF_MERGED; s_blkCls[i] = -1; }
+        else if (s_blkCls[i] > ci) s_blkCls[i]--;
+    }
+    s_cls[ci] = s_cls[--s_nCls];
+}
+
+static int uf_find(int *uf, int i) {
+    while (uf[i] != i) { uf[i] = uf[uf[i]]; i = uf[i]; }
+    return i;
+}
+
+static void merge_build(void) {
+    static uint8_t reach[MAX_BLOCKS], elig[MAX_BLOCKS];
+    static int     uf[MAX_BLOCKS];
+    s_nCls = 0;
+    for (int i = 0; i < g_nb; i++) s_blkCls[i] = -1;
+
+    /* reachable = targetable by a mutating discrete act (or self-acting) */
+    memset(reach, 0, (size_t)g_nb);
+    for (int s = 0; s < g_nb; s++) {
+        const Block *sb = &g_blocks[s];
+        if (sb->act != ACT_COLOR && sb->act != ACT_TEX && sb->act != ACT_DEL) continue;
+        if ((sb->tgt & 3) == TGT_SELF) { reach[s] = 1; continue; }
+        for (int t = 0; t < g_nb; t++)
+            if (tgt_match(sb, &g_blocks[t])) reach[t] = 1;
+    }
+    int ne = 0;
+    for (int i = 0; i < g_nb; i++) {
+        const Block *b = &g_blocks[i];
+        /* ineligible: scripted/reachable, translucent, material-finished,
+           spinning, locked, or non-STRETCH textured (bake can't carry it) */
+        elig[i] = (uint8_t)(b->act == ACT_NONE && !reach[i]
+            && !(b->flags & (BF_LOCKED | BF_GLASS | BF_SPIN))
+            && b->alpha >= 0.999f
+            && !(b->texm & (TEXM_OVR | TEXM_MAT(3)))
+            && !(b->tex && (b->texm & 3) != TEXM_STRETCH));
+        uf[i] = i;
+        ne += elig[i];
+    }
+    if (ne < 2) return;
+
+    /* XZ cell broadphase over the eligible set -> union touching AABBs.
+     * Cell size = max eligible XZ extent: touching pairs always share or
+     * neighbor cells. */
+    static SupCell ec[MAX_BLOCKS];
+    float cs = 1.0f;
+    int en = 0;
+    for (int i = 0; i < g_nb; i++) if (elig[i]) {
+        v3 es = block_eff_size(&g_blocks[i]);
+        if (es.x > cs) cs = es.x;
+        if (es.z > cs) cs = es.z;
+    }
+    if (cs < 4.0f) cs = 4.0f;
+    float ci1 = 1.0f / cs;
+    for (int i = 0; i < g_nb; i++) if (elig[i]) {
+        ec[en].cx = (int)floorf(g_blocks[i].pos.x * ci1);
+        ec[en].cz = (int)floorf(g_blocks[i].pos.z * ci1);
+        ec[en].i = i; en++;
+    }
+    qsort(ec, (size_t)en, sizeof ec[0], cmp_cell);
+    for (int i = 0; i < g_nb; i++) {
+        if (!elig[i]) continue;
+        v3 es = block_eff_size(&g_blocks[i]);
+        int tx = (int)floorf(g_blocks[i].pos.x * ci1);
+        int tz = (int)floorf(g_blocks[i].pos.z * ci1);
+        for (int dz = -1; dz <= 1; dz++)
+        for (int dx = -1; dx <= 1; dx++) {
+            int lo = 0, hi = en, kz = tz + dz, kx = tx + dx;
+            while (lo < hi) { int m = (lo + hi) >> 1;
+                if (ec[m].cz < kz || (ec[m].cz == kz && ec[m].cx < kx))
+                    lo = m + 1;
+                else hi = m;
+            }
+            for (int k = lo; k < en && ec[k].cz == kz && ec[k].cx == kx; k++) {
+                int j = ec[k].i;
+                if (j <= i) continue;
+                v3 eb = block_eff_size(&g_blocks[j]);
+                float dxo = fabsf(g_blocks[i].pos.x - g_blocks[j].pos.x)
+                          - (es.x + eb.x) * 0.5f;
+                float dzo = fabsf(g_blocks[i].pos.z - g_blocks[j].pos.z)
+                          - (es.z + eb.z) * 0.5f;
+                float dyo = fabsf(g_blocks[i].pos.y - g_blocks[j].pos.y)
+                          - (es.y + eb.y) * 0.5f;
+                if (dxo < 0.06f && dzo < 0.06f && dyo < 0.06f) {
+                    int ra = uf_find(uf, i), rb = uf_find(uf, j);
+                    if (ra != rb) uf[rb] = ra;
+                }
+            }
+        }
+    }
+
+    /* cluster roots -> transient bakes (skip oversized/singleton groups) */
+    static Block memb[MODEL_MAX_CHILDREN];
+    for (int i = 0; i < g_nb && s_nCls < MRG_MAX_CLS; i++) {
+        if (!elig[i] || uf_find(uf, i) != i) continue;
+        int nm = 0;
+        for (int j = i; j < g_nb; j++)
+            if (elig[j] && uf_find(uf, j) == i) nm++;
+        if (nm < 2 || nm > MODEL_MAX_CHILDREN) continue;
+        nm = 0;
+        for (int j = i; j < g_nb; j++)
+            if (elig[j] && uf_find(uf, j) == i) memb[nm++] = g_blocks[j];
+        v3 pivot, size;
+        int mesh = model_bake_transient(memb, nm, &pivot, &size);
+        if (mesh < 0) continue;                        /* vert/slot cap hit */
+        s_cls[s_nCls].mesh = mesh;
+        s_cls[s_nCls].pos = pivot; s_cls[s_nCls].size = size;
+        int ci = s_nCls++;
+        for (int j = 0; j < g_nb; j++)
+            if (elig[j] && uf_find(uf, j) == i) {
+                g_blocks[j].flags |= BF_MERGED;
+                s_blkCls[j] = (int16_t)ci;
+            }
+    }
+    if (s_nCls) { rk_models_commit(); s_baked += s_nCls; }
+}
+
+int world_merged_count(void) { return s_nCls; }
+
+void world_merged_draw(void) {
+    /* cluster inst: unit-normalized mesh scaled back to the group AABB */
+    float pl[6][4]; frustum_planes(A.viewProj, pl);
+    for (int i = 0; i < s_nCls; i++) {
+        const MCls *c = &s_cls[i];
+        RkInst in;
+        memcpy(in.pos, c->pos.e, 12);
+        memcpy(in.scale, c->size.e, 12);
+        in.color = 0xFFFFFFFFu; in.flags = RKIF_VCOL;
+        v3 half = v3_scale(c->size, 0.5f);
+        if (aabb_in_frustum(pl, c->pos, half)) rk_world(c->mesh, &in, 1);
+        else if (rk_can_shadow_cast(c->pos, half)) rk_caster(c->mesh, &in, 1);
+    }
+}
+
 int world_drag_grab(v3 ro, v3 rd) {
     s_dragI = -1;
     if (world_wset()->dragOff) return 0;
     int idx = -1, ax = -1; float t = 0, sg = 0;
     if (!world_pick_block(ro, rd, &idx, &t, &ax, &sg)) return 0;
     Block *b = &g_blocks[idx];
+    if (b->flags & BF_MERGED) {             /* grabbing pops the cluster */
+        merge_dissolve(s_blkCls[idx]);
+        b = &g_blocks[idx];
+    }
     if (b->flags & BF_NOPHYS) return 0;
     s_dragI = idx;
     s_dragT = t;
@@ -51,6 +209,8 @@ void world_reset_physics(void) {
     s_prevHeld = 0;
     s_dragI = -1;
     particles_reset();
+    s_nCls = 0;
+    for (int i = 0; i < g_nb; i++) s_blkCls[i] = -1;
 }
 
 /* held-trigger emitters (BOOST exhaust / SPIN sparks) — runs for every
@@ -83,10 +243,13 @@ void world_snapshot_play(void) {
     g_playBackupN = g_nb;
     memcpy(g_playBackup, g_blocks, sizeof(Block) * g_nb);
     world_reset_physics();
+    merge_build();                       /* greedy cluster meshes -> GPU */
 }
 
 void world_restore_play(void) {
     if (g_playBackupN < 0) return;
+    if (s_baked) models_rebake_all();    /* drop transient slots: ids stay dense */
+    s_baked = 0;
     g_nb = g_playBackupN;
     memcpy(g_blocks, g_playBackup, sizeof(Block) * g_nb);
     g_playBackupN = -1;
@@ -98,7 +261,6 @@ void world_restore_play(void) {
 static v3     g_es[MAX_BLOCKS];
 static float  g_cellInv;
 static int    g_cellN;
-typedef struct { int cz, cx, i; } SupCell;
 static SupCell g_cell[MAX_BLOCKS];
 
 static int cmp_cell(const void *pa, const void *pb) {
@@ -186,6 +348,7 @@ void world_physics(float dt, uint16_t trigHeld) {
         for (int t = 0; t < g_nb; t++) {
             Block *b = &g_blocks[t];
             if (!tgt_match(s, b)) continue;
+            if (b->flags & BF_MERGED) merge_dissolve(s_blkCls[t]);
             if (s->act == ACT_COLOR) {
                 memcpy(b->col, g_palette[s->actParam & 15], sizeof b->col);
                 particles_burst(P_PUFF, b->pos, NULL, 1);
@@ -198,9 +361,11 @@ void world_physics(float dt, uint16_t trigHeld) {
     int ndel = 0;
     for (int i = g_nb - 1; i >= 0; i--)     /* descending: swap-removes pull */
         if (delMark[i]) {                     /* debris burst, then delete */
+            if (g_blocks[i].flags & BF_MERGED) merge_dissolve(s_blkCls[i]);
             particles_burst(P_DEBRIS, g_blocks[i].pos, g_blocks[i].col, 6);
             particles_burst(P_PUFF, g_blocks[i].pos, NULL, 2);
             world_delete(i); ndel++;
+            s_blkCls[i] = s_blkCls[g_nb];     /* swapped-in tail's cluster id */
         }
     if (ndel) { memset(g_velY, 0, sizeof(float) * g_nb); s_dragI = -1; }
 
@@ -237,7 +402,7 @@ void world_physics(float dt, uint16_t trigHeld) {
     for (int i = 0; i < g_nb; i++) {
         Block *b = &g_blocks[i];
         emit_continuous(i, dt, trigHeld);   /* thrusters/sparks run always */
-        if (b->flags & (BF_NOPHYS | BF_LOCKED)) continue;
+        if (b->flags & (BF_NOPHYS | BF_LOCKED | BF_MERGED)) continue;
         v3 es = g_es[i];
         /* kinematic drag: follow cursor ray, can't sink through support */
         if (i == s_dragI) {

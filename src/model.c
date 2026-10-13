@@ -252,6 +252,30 @@ int model_bake(const Block *children, int n) {
     return g_nmodels++;
 }
 
+/* model_bake without the Model record: derives pivot/size from the group
+ * AABB and returns a raw mesh id (slot consumed until models_rebake_all). */
+int model_bake_transient(const Block *abs, int n, v3 *pivot, v3 *size) {
+    if (n < 1 || n > MODEL_MAX_CHILDREN) return -1;
+    v3 lo = v3_make(1e9f,1e9f,1e9f), hi = v3_make(-1e9f,-1e9f,-1e9f);
+    for (int i = 0; i < n; i++) {
+        v3 es = block_eff_size(&abs[i]);
+        for (int a = 0; a < 3; a++) {
+            float l = abs[i].pos.e[a] - es.e[a]*0.5f;
+            float h = abs[i].pos.e[a] + es.e[a]*0.5f;
+            if (l < lo.e[a]) lo.e[a] = l;
+            if (h > hi.e[a]) hi.e[a] = h;
+        }
+    }
+    *pivot = v3_scale(v3_add(lo, hi), 0.5f);
+    *size  = v3_sub(hi, lo);
+    Block rel[MODEL_MAX_CHILDREN];
+    for (int i = 0; i < n; i++) {
+        rel[i] = abs[i];
+        rel[i].pos = v3_sub(abs[i].pos, *pivot);
+    }
+    return bake_mesh(rel, n, *size);
+}
+
 /* sculpted vertex-edited mesh -> model (verts arrive centered on AABB) */
 int model_sculpt_topo(const float (*vx)[3], const uint8_t (*vc)[3],
                       const int8_t *vt, const uint8_t *vl,

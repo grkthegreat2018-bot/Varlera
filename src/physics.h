@@ -21,4 +21,11 @@ void world_reset_physics(void); /* restores pre-play transforms */
 void world_snapshot_play(void); /* capture state before physics mutates it */
 void world_restore_play(void);
 
+/* greedy mesh merge: at play entry, settled script-free touching block
+ * clusters bake into transient meshes (one draw each). Members stay in
+ * g_blocks for support/pick but skip draw+settle via BF_MERGED; a script
+ * touch, drag grab, or delete dissolves its cluster back to blocks. */
+int  world_merged_count(void);
+void world_merged_draw(void);
+
 #endif

@@ -336,6 +336,7 @@ int main(void) {
     const char *envTab   = getenv("VARLERA_TAB");       /* test hook: open tab */
     const char *envParts = getenv("VARLERA_PARTS");     /* test hook: burst test */
     const char *envExit  = getenv("VARLERA_EXIT");      /* test hook: quit at frame N */
+    const char *envPlay  = getenv("VARLERA_PLAY");      /* test hook: play @30, edit @90 */
     const char *envPlace = getenv("VARLERA_PLACE");     /* test hook: place_commit path at frame 20 */
     const char *envTexPng = getenv("VARLERA_TEXPNG");   /* test hook: png export+reimport */
     if (envTab) A.panelTab = atoi(envTab);
@@ -464,6 +465,26 @@ int main(void) {
         }
         if (envBwxIn && frameNo == 50 && bundle_load(envBwxIn, A.worldName))
             fprintf(stderr, "bundle loaded %s\n", envBwxIn);
+        if (envPlay && frameNo == 30) {
+            app_toggle_mode();
+            fprintf(stderr, "merge-test: %d clusters baked over %d blocks\n",
+                    world_merged_count(), g_nb);
+        }
+        if (envPlay && frameNo == 60) {      /* mid-play: members still hidden */
+            int nmerg = 0;
+            for (int i = 0; i < g_nb; i++)
+                nmerg += (g_blocks[i].flags & BF_MERGED) != 0;
+            fprintf(stderr, "merge-test: play %d merged blocks, %d clusters\n",
+                    nmerg, world_merged_count());
+        }
+        if (envPlay && frameNo == 90) {      /* back to edit: flags restored */
+            app_toggle_mode();
+            int nmerg = 0;
+            for (int i = 0; i < g_nb; i++)
+                nmerg += (g_blocks[i].flags & BF_MERGED) != 0;
+            fprintf(stderr, "merge-test: edit %d merged flags left (want 0)\n",
+                    nmerg);
+        }
         if (envReload && frameNo == 60) {
             toast_say(rk_reload_shaders() ? "shaders reloaded"
                                           : "shader reload: compile errors");

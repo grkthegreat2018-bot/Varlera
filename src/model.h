@@ -32,6 +32,9 @@ extern int g_nmodels;
 
 void models_init(void);                                  /* load models.bw if present */
 int  model_bake(const Block *children, int n);           /* returns model idx or -1 */
+/* transient mesh bake — no Model record (play-mode greedy clusters);
+   abs -> pivot/size derived from the group AABB. returns mesh id or -1 */
+int  model_bake_transient(const Block *abs, int n, v3 *pivot, v3 *size);
 int  model_sculpt_topo(const float (*vx)[3], const uint8_t (*vc)[3],
                        const int8_t *vt, const uint8_t *vl,
                        const uint16_t (*fc)[3], int nv, int nf,

@@ -30,6 +30,7 @@ typedef struct {
 #define BF_NOPHYS   4           /* exempt from play-mode gravity */
 #define BF_SPIN     8           /* legacy: always spin (migrated to trig/act) */
 #define BF_GLASS    16          /* translucent render */
+#define BF_MERGED   32          /* play mode: drawn via greedy cluster mesh */
 
 /* Block.tgt values (script target scope) */
 #define TGT_SELF   0            /* action applies to this block */

@@ -608,6 +608,7 @@ void edit_draw_world(void) {
     int gn = 0;
     for (int i = 0; i < g_nb; i++) {
         Block *b = &g_blocks[i];
+        if (b->flags & BF_MERGED) continue;   /* drawn via merged cluster */
         v3 es = block_eff_size(b);
         v3 half = v3_scale(es, 0.5f);
         int vis = aabb_in_frustum(pl, b->pos, half);
@@ -629,6 +630,7 @@ void edit_draw_world(void) {
         if (cnt[m]) rk_world(m, insts[m], cnt[m]);
         if (ccnt[m]) rk_caster(m, cinsts[m], ccnt[m]);
     }
+    world_merged_draw();                    /* play-mode cluster meshes */
 
     /* translucent: sort by view depth, emit runs of same mesh */
     for (int i = 1; i < gn; i++) {            /* insertion sort, far first */
