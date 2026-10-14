@@ -72,6 +72,9 @@ typedef enum {
 #define TEXM_GLOSS   1
 #define TEXM_METAL   2
 #define TEXM_GLOW    3
+/* texm bits 5-6 are free of the render path: game-object flags */
+#define TEXM_HAZARD  0x20         /* walk mode: touching costs a heart */
+#define TEXM_PICKUP  0x40         /* walk mode: touching collects (score) */
 
 typedef struct {
     float pos[3];

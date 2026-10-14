@@ -80,7 +80,8 @@ static void merge_build(void) {
         elig[i] = (uint8_t)(b->act == ACT_NONE && !reach[i]
             && !(b->flags & (BF_LOCKED | BF_GLASS | BF_SPIN))
             && b->alpha >= 0.999f
-            && !(b->texm & (TEXM_OVR | TEXM_MAT(3)))
+            && !(b->texm & (TEXM_OVR | TEXM_MAT(3) |
+                            TEXM_HAZARD | TEXM_PICKUP))
             && !(b->tex && (b->texm & 3) != TEXM_STRETCH));
         uf[i] = i;
         ne += elig[i];
@@ -454,12 +455,16 @@ static float boost_step(int i, float dt) {
  * per-axis, push back out on overlap. y=0 is the world floor. */
 static v3   s_plPos, s_plVel, s_plSpawn, s_plSavedCam;
 static int  s_plGround, s_plActive, s_goalsTotal;
-static uint8_t s_goalHit[MAX_BLOCKS];
+static int  s_hp, s_score; static float s_hurtT;
+static uint8_t s_goalHit[MAX_BLOCKS], s_taken[MAX_BLOCKS];
 #define PL_R   0.32f
 #define PL_H   1.75f
 #define PL_EYE 1.62f
 
 int world_player_active(void) { return s_plActive; }
+int world_player_hp(void)     { return s_hp; }
+int world_player_score(void)  { return s_score; }
+int world_player_taken(int i) { return s_plActive && s_taken[i]; }
 
 void world_player_enter(void) {
     s_plActive = world_wset()->playerMode & 1;
@@ -474,6 +479,8 @@ void world_player_enter(void) {
             break;
         }
     memset(s_goalHit, 0, sizeof s_goalHit);
+    memset(s_taken, 0, sizeof s_taken);
+    s_hp = 3; s_score = 0; s_hurtT = 0.0f;
     s_goalsTotal = 0;
     for (int i = 0; i < g_nb; i++)
         if (g_blocks[i].flags & BF_GOAL) s_goalsTotal++;
@@ -492,6 +499,7 @@ static void pl_move_axis(float dt, int axis) {
     for (int i = 0; i < g_nb; i++) {
         const Block *b = &g_blocks[i];
         if (b->flags & BF_NOCOLLIDE) continue;
+        if (b->texm & TEXM_PICKUP) continue;    /* walk through pickups */
         v3 bh = v3_scale(block_eff_size(b), 0.5f);
         v3 d = v3_sub(c, b->pos);
         float ox = ph[0] + bh.x - fabsf(d.x);
@@ -554,6 +562,39 @@ void world_player_tick(float dt) {
             snprintf(msg, sizeof msg, done >= s_goalsTotal
                      ? "ALL GOALS!" : "GOAL %d/%d", done, s_goalsTotal);
             toast_say(msg);
+        }
+    }
+    /* hazard + pickup sweep: same player-AABB test as goals */
+    if (s_hurtT > 0.0f) s_hurtT -= dt;
+    for (int i = 0; i < g_nb; i++) {
+        const Block *b = &g_blocks[i];
+        int t = b->texm & (TEXM_HAZARD | TEXM_PICKUP);
+        if (!t || s_taken[i]) continue;
+        v3 c = v3_make(s_plPos.x, s_plPos.y + PL_H * 0.5f, s_plPos.z);
+        const float ph[3] = {PL_R, PL_H * 0.5f, PL_R};
+        v3 bh = v3_scale(block_eff_size(b), 0.5f);
+        v3 d = v3_sub(c, b->pos);
+        if (ph[0] + bh.x - fabsf(d.x) <= 0.0f) continue;
+        if (ph[1] + bh.y - fabsf(d.y) <= 0.0f) continue;
+        if (ph[2] + bh.z - fabsf(d.z) <= 0.0f) continue;
+        if (t & TEXM_PICKUP) {
+            s_taken[i] = 1; s_score++;
+            particles_burst(P_SPARK, b->pos, NULL, 10);
+            char msg[20]; snprintf(msg, sizeof msg, "+1  (%d)", s_score);
+            toast_say(msg);
+        } else if (s_hurtT <= 0.0f) {
+            s_hurtT = 1.0f; s_hp--;
+            v3 k = v3_norm(v3_make(d.x, 0, d.z));
+            s_plVel = v3_add(s_plVel,
+                             v3_add(v3_scale(k, 6.0f), v3_make(0, 4.0f, 0)));
+            particles_burst(P_DEBRIS, b->pos, NULL, 8);
+            if (s_hp <= 0) {
+                s_plPos = s_plSpawn; s_plVel = v3_make(0, 0, 0);
+                s_hp = 3; toast_say("RESPAWNED");
+            } else {
+                char msg[20]; snprintf(msg, sizeof msg, "OUCH! HP %d", s_hp);
+                toast_say(msg);
+            }
         }
     }
     A.camPos = v3_make(s_plPos.x, s_plPos.y + PL_EYE, s_plPos.z);

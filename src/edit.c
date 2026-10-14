@@ -610,6 +610,7 @@ void edit_draw_world(void) {
     for (int i = 0; i < g_nb; i++) {
         Block *b = &g_blocks[i];
         if (b->flags & BF_MERGED) continue;   /* drawn via merged cluster */
+        if (A.app == APP_PLAY && world_player_taken(i)) continue;
         v3 es = block_eff_size(b);
         v3 half = v3_scale(es, 0.5f);
         int vis = aabb_in_frustum(pl, b->pos, half);

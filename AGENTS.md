@@ -129,7 +129,11 @@ links m/dl/pthread. Win32-only code (file dialog, DPI awareness) is `_WIN32`
   (`WSet.playerMode` FLY/WALK): `world_player_enter/exit/tick` —
   kinematic feet-anchored box vs block AABBs, axis-separated push-out,
   jump/step-walk, y=0 floor + void respawn; tick replaces `cam_frame`
-  and writes A.camPos to eye height. Game flags: `BF_SPAWN` (spawn at
+  and writes A.camPos to eye height. texm game bits (`TEXM_HAZARD` 0x20,
+  `TEXM_PICKUP` 0x40 — free render bits): hazard touch = -1 heart +
+  knockback + 1s invuln, 0 hearts = respawn at 3; pickups are
+  non-solid, collect on touch (`s_taken` hides them till restore).
+  HUD: HP/score bottom-left in play mode. Game flags: `BF_SPAWN` (spawn at
   block top) + `BF_GOAL` (touch -> burst + `GOAL n/m` toast, deduped per
   play session) — script-menu SPAWN/GOAL toggle rows.
 - `src/filepick.c` — OS pickers shared by panel_world/sculpt: `pick_save_path`/

@@ -8,6 +8,7 @@
 #include "sculpt.h"
 #include "menu.h"
 #include "toast.h"
+#include "physics.h"
 #include "filepick.h"
 #include "font.h"
 #include "math3d.h"
@@ -954,6 +955,15 @@ void panel_draw(void) {
     if (A.app == APP_PLAY) {
         ui_text((float)A.fbw/2 - 90, (float)A.fbh - 26,
                 "PLAY MODE - TAB TO EDIT", 1, 1,1,1, 0.6f);
+        if (world_player_active()) {              /* walk-mode HUD */
+            char hud[40];
+            int hp = world_player_hp();
+            snprintf(hud, sizeof hud, "HP %d%d%d  SCORE %d",
+                     hp > 0, hp > 1, hp > 2, world_player_score());
+            ui_text(12, (float)A.fbh - 30, hud, 2,
+                    hp > 1 ? 1.0f : 1.0f, hp > 1 ? 0.35f : 0.2f,
+                    hp > 1 ? 0.35f : 0.2f, 1);
+        }
         rk_ui_flush();
         return;
     }
@@ -1061,11 +1071,11 @@ void panel_draw(void) {
 /* ---- block script menu: floats above the selection ---- */
 enum { SM_GRAV, SM_COLL, SM_LOCK, SM_NAME, SM_TRIG, SM_ACT, SM_TGT, SM_PARAM,
        SM_MSG, SM_TRACT, SM_BOUNCE, SM_WEIGHT, SM_SPAWN, SM_GOAL,
-       SM_UNFUSE, SM_FUSE, SM_EDIT, SM_SHADE };
+       SM_UNFUSE, SM_FUSE, SM_EDIT, SM_SHADE, SM_HAZARD, SM_PICKUP };
 static const char *SM_LABEL[] = {"GRAVITY","COLLIDE","LOCKED","NAME","TRIG","ACT",
                                  "TGT","PARAM","MSG","TRAC","BOUNCE","WEIGHT",
                                  "SPAWN","GOAL","UNFUSE","FUSE ALL","RESCULPT",
-                                 "SHADE"};
+                                 "SHADE","HAZARD","PICKUP"};
 static const char *TRIG_NAME[N_TRIGS] = {"ALWAYS","SPACE","W","A","S","D","E","Q","CLICK"};
 static const char *ACT_NAME[N_ACTS] = {"NONE","SPIN","GLOW","BOOST","COLOR","TEX",
                                        "DELETE","SAY","TITLE"};
@@ -1097,6 +1107,7 @@ static int script_layout(float *bx, float *by, int acts[20]) {
         if (g_blocks[sel_first()].act >= ACT_SAY) acts[nr++] = SM_MSG;
         acts[nr++] = SM_TRACT; acts[nr++] = SM_BOUNCE; acts[nr++] = SM_WEIGHT;
         acts[nr++] = SM_SPAWN; acts[nr++] = SM_GOAL;
+        acts[nr++] = SM_HAZARD; acts[nr++] = SM_PICKUP;
         int si0 = sel_first();
         int sh = g_blocks[si0].shape;
         if (sh >= RK_MESH_BASE_MODEL) {
@@ -1124,6 +1135,8 @@ static int script_state(int act, const Block *b) {
     case SM_LOCK: return  (b->flags & BF_LOCKED);
     case SM_SPAWN: return (b->flags & BF_SPAWN);
     case SM_GOAL: return  (b->flags & BF_GOAL);
+    case SM_HAZARD: return (b->texm & TEXM_HAZARD) != 0;
+    case SM_PICKUP: return (b->texm & TEXM_PICKUP) != 0;
     }
     return 0;
 }
@@ -1274,6 +1287,8 @@ int panel_script_click(double x, double y) {
         case SM_WEIGHT: g_blocks[i].weight  = (g_blocks[i].weight + 1) & 15; break;
         case SM_SPAWN:  g_blocks[i].flags ^= BF_SPAWN; break;
         case SM_GOAL:   g_blocks[i].flags ^= BF_GOAL;  break;
+        case SM_HAZARD: g_blocks[i].texm ^= TEXM_HAZARD; break;
+        case SM_PICKUP: g_blocks[i].texm ^= TEXM_PICKUP; break;
         case SM_LOCK:
             for (int j = 0; j < g_nb; j++) if (A.sel[j]) {
                 g_blocks[j].flags ^= BF_LOCKED;

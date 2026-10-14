@@ -16,6 +16,10 @@ int  world_drag_grab(v3 ro, v3 rd);
 void world_drag_move(v3 ro, v3 rd);
 void world_drag_release(void);
 int  world_dragging(void);
+/* walk-mode player state (0 when player inactive) */
+int  world_player_hp(void);
+int  world_player_score(void);
+int  world_player_taken(int i);   /* pickup already collected this session */
 void world_reset_physics(void); /* restores pre-play transforms */
 
 void world_snapshot_play(void); /* capture state before physics mutates it */
