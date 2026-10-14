@@ -59,7 +59,7 @@ static int s_wConfirm = -1;
 /* rows 8-11 = skybox object pickers (visible iff SKY OBJS on);
    rows 12-14 + 17-18 = EXPERIMENTAL render section (visible iff ADV RENDER);
    row 15 = day/night cycle speed; row 16 = play-mode player */
-#define WS_ROWS 20
+#define WS_ROWS 21
 static int ws_row_vis(int i) {
     const WSet *w = world_wset();
     if (i >= 12 && i <= 14 || i >= 17) return w->advRender;
@@ -70,7 +70,7 @@ static const char *WLBL[] = {"PHYS","CHUNK","CHUNK SZ","LOD","ADV RENDER",
                              "GRAVITY","DRAG","SKY OBJS","SUN","MOON",
                              "OBJ A","OBJ B","FOG START","FOG END","BLOOM",
                              "DAY CYCLE","PLAYER","FOG CURVE","PCF RADIUS",
-                             "SHADOW RES"};
+                             "SHADOW RES","MSAA"};
 static const char *WWARN[] = {
     "PHYSICS MODE CHANGES PLAY BEHAVIOR",
     "CHUNK LAYOUT MAY RESHAPE OR WIPE THIS WORLD",
@@ -112,6 +112,7 @@ static void wset_cycle(int i) {
     case 17: w->fogCurve = (uint8_t)((w->fogCurve + 1) & 3); break;
     case 18: w->pcfRad   = (uint8_t)((w->pcfRad + 1) & 3); break;
     case 19: w->shRes    = (uint8_t)((w->shRes + 1) % 3); break;
+    case 20: w->msaa     = (uint8_t)(w->msaa ^ 1); break;
     }
     world_wset_dirty();
 }
@@ -146,6 +147,7 @@ static const char *wset_val(int i, const WSet *w, char *b) {
               return PC[w->pcfRad & 3]; }
     case 19: { static const char *SR[] = {"1K","2K","4K"};
               return SR[w->shRes % 3]; }
+    case 20: return (w->msaa & 1) ? "OFF" : "4X";
     }
     return "";
 }

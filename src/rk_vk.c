@@ -507,6 +507,16 @@ static int run_glslc(const char *src, const char *dst) {
 /* recompile all shaders from source dir into SHADER_DIR, then rebuild every
    pipeline in place. Returns 1 when all compiles succeeded. Failed compiles
    leave the previous .spv in place (glslc writes only on success). */
+/* pipelines bake the sample count at create time — destroy + rebuild all */
+static void rebuild_pipelines(void) {
+    VkPipeline *pp[] = {&G.pGrid, &G.pWorld, &G.pWorldInst, &G.pGhostInst,
+                        &G.pLinesInst, &G.pMeshLine, &G.pShadow, &G.pUI, &G.pSky,
+                        &G.pDown, &G.pUp, &G.pPost, &G.pIcon, &G.pUIFlat};
+    for (int i = 0; i < (int)(sizeof pp / sizeof pp[0]); i++)
+        vkDestroyPipeline(G.dev, *pp[i], NULL);
+    make_pipelines();
+}
+
 int rk_reload_shaders(void) {
 #if defined(GLSLC) && defined(SHADER_SRC)
     int fail = 0;
@@ -517,12 +527,7 @@ int rk_reload_shaders(void) {
         if (run_glslc(src, dst)) { fail++; fprintf(stderr, "glslc failed: %s\n", src); }
     }
     vkDeviceWaitIdle(G.dev);
-    VkPipeline *pp[] = {&G.pGrid, &G.pWorld, &G.pWorldInst, &G.pGhostInst,
-                        &G.pLinesInst, &G.pMeshLine, &G.pShadow, &G.pUI, &G.pSky,
-                        &G.pDown, &G.pUp, &G.pPost, &G.pIcon, &G.pUIFlat};
-    for (int i = 0; i < (int)(sizeof pp / sizeof pp[0]); i++)
-        vkDestroyPipeline(G.dev, *pp[i], NULL);
-    make_pipelines();
+    rebuild_pipelines();
     fprintf(stderr, "shader reload: %s\n", fail ? "COMPILE ERRORS" : "ok");
     return !fail;
 #else
@@ -730,6 +735,24 @@ void rk_swapchain_recreate(void) {
     G.needResize = 0;
 }
 
+/* MSAA toggle: the request is queued (wantSamples) and consumed by
+ * rk_begin_frame between frames — swapchain targets carry the sample
+ * count and every pipeline baked it at create, so both rebuild. */
+void rk_msaa_rebuild(void) {
+    vkDeviceWaitIdle(G.dev);
+    swapchain_destroy();
+    swapchain_create();
+    post_ds_write();
+    rebuild_pipelines();
+}
+void rk_set_msaa(int on) {
+    VkSampleCountFlagBits want =
+        (on && (G.msaaSup & VK_SAMPLE_COUNT_4_BIT)) ? VK_SAMPLE_COUNT_4_BIT
+                                                  : VK_SAMPLE_COUNT_1_BIT;
+    if (!G.dev || want == G.samples) return;
+    G.wantSamples = want;
+}
+
 /* ---------------- init ---------------- */
 
 static void pick_physical_device(void) {
@@ -819,6 +842,7 @@ int rk_init(GLFWwindow *win) {
     VkPhysicalDeviceProperties pp;
     vkGetPhysicalDeviceProperties(G.phys, &pp);
     VkSampleCountFlags sc = pp.limits.framebufferColorSampleCounts & pp.limits.framebufferDepthSampleCounts;
+    G.msaaSup = sc;
     G.samples = (sc & VK_SAMPLE_COUNT_4_BIT) ? VK_SAMPLE_COUNT_4_BIT : VK_SAMPLE_COUNT_1_BIT;
     G.hasTS = pp.limits.timestampComputeAndGraphics == VK_TRUE;
     G.tsPeriod = pp.limits.timestampPeriod;

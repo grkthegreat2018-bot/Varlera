@@ -196,6 +196,11 @@ static void mip_barrier(VkImage img, uint32_t mip, VkImageLayout oldL, VkImageLa
 }
 
 int rk_begin_frame(void) {
+    if (G.wantSamples) {                 /* MSAA toggle — between frames */
+        G.samples = G.wantSamples;
+        G.wantSamples = 0;
+        rk_msaa_rebuild();
+    }
     if (G.needResize) rk_swapchain_recreate();
     int fw = 0, fh = 0;
     glfwGetFramebufferSize(G.win, &fw, &fh);

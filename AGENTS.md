@@ -25,7 +25,10 @@ links m/dl/pthread. Win32-only code (file dialog, DPI awareness) is `_WIN32`
 ## Layout
 
 - `src/rk.c` / `rk.h` — renderer, frame + draw path. Vulkan 1.3 dynamic
-  rendering, reversed-Z main depth (clear 0, GREATER), 4x MSAA + resolve,
+  rendering, reversed-Z main depth (clear 0, GREATER), MSAA 4x + resolve
+  (runtime toggle: WSet `msaa` -> `rk_set_msaa` queues `G.wantSamples`,
+  consumed in `rk_begin_frame` before acquire — mid-frame rebuilds would
+  present an unacquired index),
   directional shadow map (runtime `G.shSize` 1K/2K/4K via WSet `shRes` +
   `rk_shadow_resize` — device-idle image/view/mem recreate + set1 rewrite;
   forward-Z ortho `m4_ortho`, hardware-compare

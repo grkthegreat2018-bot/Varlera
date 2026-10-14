@@ -41,6 +41,7 @@ typedef struct { float texel[2]; float a, b; } PostPC;
 
 v3 rk_light_dir(void);
 void rk_swapchain_recreate(void);
+void rk_msaa_rebuild(void);      /* swapchain targets + pipelines at G.samples */
 VkBuffer buf_create(VkDeviceSize size, VkBufferUsageFlags usage,
                     VkMemoryPropertyFlags props, VkDeviceMemory *outMem, void **mapped);
 
@@ -74,6 +75,7 @@ typedef struct {
     VkImageView msaaView, depthView;
     VkDeviceMemory msaaMem, depthMem;
     VkSampleCountFlagBits samples;
+    VkSampleCountFlags    msaaSup;            /* device-supported mask */
 
     /* shadow map (fixed size, lives forever) */
     VkImage shadowImg;
@@ -163,6 +165,7 @@ typedef struct {
     VkCommandBuffer cmd;
     int inFrame;
     int needResize;
+    VkSampleCountFlagBits wantSamples;   /* pending MSAA change (0 = none) */
     double t;
     int hasTS;
     double tsPeriod;

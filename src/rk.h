@@ -128,6 +128,7 @@ int  rk_model_mesh_add(const Vert *v, int n);
 int  rk_model_mesh_add_top(const Vert *v, int n);   /* transient slot (tail) */
 void rk_models_drop_transient(void);                /* free tail slots, no GPU work */
 void rk_shadow_resize(int size);                    /* shadow map px (1K/2K/4K) */
+void rk_set_msaa(int on);                           /* MSAA 4x on/off */
 void rk_models_commit(void);
 void rk_models_reset(void);     /* drop all baked verts (for rebuild) */
 

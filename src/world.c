@@ -165,6 +165,7 @@ int world_shadow_res(void) {
     static const int R[] = {1024, 2048, 4096};
     return s_wset.advRender ? R[s_wset.shRes % 3] : 2048;
 }
+int world_msaa(void) { return !s_wset.advRender || !(s_wset.msaa & 1); }
 void  world_wset_dirty(void) { g_rev++; }
 
 /* ---- day/night cycle ----
