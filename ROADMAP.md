@@ -104,7 +104,7 @@ not feasible (instance-level). |
 | Deterministic replay | M | Fixed-dt sim + recorded input stream — free regression tests once scripting exists; also the basis of any future netcode. |
 | Editor/runtime split | L | Separate `editor.c` from the play loop; packaged game loads scenes without edit UI. Do after scene/entity model. |
 | Full game-dev toolset | XL | Umbrella: prefabs, cutscene/camera tracks, game-mode templates, publish→standalone exe bundling world+atlas+models. Lands piecewise after scene/entity + scripting. |
-| Modding / file-format docs | M | Public spec for `.bw` + texture PNG strip. |
+| ~~Modding / file-format docs~~ ✅ | M | `docs/FORMAT.md`: full spec for world.bw v7 (+v1–6 migration notes), LZSS blob, WSet trailer, textures.bw (+fps/order trailers), models.bw v8, env.bw, settings.bw v2, .bwx bundle parts. |
 | Multiplayer | XL | Everything above first; deterministic lockstep vs server-auth is its own design. |
 | Local identity/profile | M | `author.c`, settings | Offline account: display name, avatar color, signing keypair (the identity provenance signs with), per-profile settings + customization. No server — this is the account layer everything else plugs into. |
 | GitHub project integration | XL | HTTPS dep + git | Manage a project's repo from Varlera: clone/push/pull .bwx sources, release tags, collaborator list with owner-set permission levels (GitHub's own repo ACLs do the enforcing — Varlera mirrors roles). Needs the HTTPS client gate + bundling libgit2 or shelling to git. |
