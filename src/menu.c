@@ -109,6 +109,15 @@ static float list_y(void) { return (float)A.fbh * 0.5f - 140.0f; }
 
 void menu_press(double x, double y) {
     float fx = (float)x, fy = (float)y, mx = menu_x(), ly = list_y();
+    /* author field (top-right of the panel header) */
+    {
+        char ab[40];
+        snprintf(ab, sizeof ab, "BY %s", A.author[0] ? A.author : "set name");
+        float aw = (float)ui_text_w(ab, 1) + 8;
+        if (in_rect(fx, fy, mx + MW - aw - 20, ly - 60, aw + 8, 22)) {
+            A.textMode = 7; return;
+        }
+    }
     /* world rows */
     for (int v = 0; v < VISROWS && v < s_n; v++) {
         int i = v + (int)s_scroll;
@@ -172,6 +181,19 @@ void menu_draw(void) {
     rk_ui_rect(mx, ly - 70, MW, mh + 70, 0.12f, 0.13f, 0.17f, 0.97f);
     rk_ui_rect(mx, ly - 70, MW, 2, 1,1,1, 0.4f);
     ui_text(mx + 16, ly - 58, "VARLERA", 3, 0.9f, 0.92f, 1.0f, 1);
+    /* local profile: "BY name" — click to edit (textMode 7) */
+    {
+        char ab[40];
+        snprintf(ab, sizeof ab, "BY %s%s", A.author[0] ? A.author : "set name",
+                 A.textMode == 7 ? "_" : "");
+        float aw = (float)ui_text_w(ab, 1) + 8;
+        float ax = mx + MW - aw - 16;
+        int hov = in_rect((float)A.mx, (float)A.my, ax - 4, ly - 60, aw + 8, 22);
+        if (hov) rk_ui_rect(ax - 4, ly - 60, aw + 8, 22,
+                            0.25f, 0.28f, 0.34f, 0.8f);
+        ui_text(ax, ly - 56, ab, 1,
+                A.author[0] ? 0.75f : 0.5f, 0.8f, A.author[0] ? 0.9f : 0.55f, 1);
+    }
     ui_text(mx + 16, ly - 26, "worlds", 1, 0.7f, 0.72f, 0.8f, 0.9f);
     ui_text(mx + MW - 90, ly - 26, "modified", 1, 0.7f, 0.72f, 0.8f, 0.9f);
     if (!s_n)

@@ -92,6 +92,7 @@ typedef struct {
     char cmdBuf[96]; int cmdLen;
     char renBuf[13];            /* textMode 3: block name being edited */
     char worldName[32];         /* world header name -> worlds/<name>.bw */
+    char author[24];            /* local profile name -> bundle provenance */
 
     /* modal editors: 0 none, 1 pixel-art tool, 2 sculpt mode */
     int modal;

@@ -5,6 +5,7 @@
  * readers (all version migration still applies). */
 #define _CRT_SECURE_NO_WARNINGS
 #include "bundle.h"
+#include "app.h"
 #include "world.h"
 #include "model.h"
 #include "tex.h"
@@ -24,6 +25,7 @@ static int  s_haveProv;
 const BxProv *bundle_prov(void) { return s_haveProv ? &s_prov : NULL; }
 
 static const char *os_user(void) {
+    if (A.author[0]) return A.author;      /* local profile name wins */
     const char *u = getenv("USERNAME");
     if (!u || !*u) u = getenv("USER");
     return (u && *u) ? u : "unknown";

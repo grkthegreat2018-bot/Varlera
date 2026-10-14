@@ -16,7 +16,8 @@ typedef struct {
     int32_t  invertY, profOn, fullscreen, winX, winY, winW, winH;
     int32_t  guideOff;
     uint64_t guideSeen;
-    uint8_t  pad[52];
+    char     author[24];        /* v3 (pad-carved): local display name */
+    uint8_t  pad[28];
     char     saveDir[384];      /* v2: user-chosen world save folder */
     float    autoSec;           /* v3: autosave seconds (0 = off) */
     float    sens;              /* v3: mouse-look multiplier */
@@ -60,6 +61,7 @@ void settings_apply(void) {
     A.autoSec = s_cur.autoSec > 0.0f ? s_cur.autoSec
               : s_cur.autoSec < 0.0f ? 0.0f : 90.0f;
     A.sens = s_cur.sens > 0.05f ? s_cur.sens : 1.0f;
+    snprintf(A.author, sizeof A.author, "%s", s_cur.author);
 }
 
 void settings_save(void) {
@@ -75,6 +77,7 @@ void settings_save(void) {
     snprintf(s_cur.saveDir, sizeof s_cur.saveDir, "%s", worlds_dir());
     s_cur.autoSec = A.autoSec;
     s_cur.sens = A.sens;
+    snprintf(s_cur.author, sizeof s_cur.author, "%s", A.author);
     FILE *f = fopen("settings.bw", "wb");
     if (!f) return;
     fwrite(&s_cur, sizeof s_cur, 1, f);

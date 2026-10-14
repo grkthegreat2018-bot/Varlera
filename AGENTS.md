@@ -194,7 +194,9 @@ links m/dl/pthread. Win32-only code (file dialog, DPI awareness) is `_WIN32`
 - `src/settings.c` — settings.bw v3: window rect/fullscreen, cam speed/fov/
   invertY, prof overlay, guide toggle + seen bitmask (pad-carved, same size),
   v2 saveDir, v3 autoSec (0=file-default 90s, <0 = off) + sens (mouse-look
-  multiplier, `cam_look` * A.sens).
+  multiplier, `cam_look` * A.sens) + author[24] (pad-carved — local
+  display name, edited via menu `BY name` field / textMode 7, wins over
+  the OS username for `BxProv.creator`).
   `settings_load` pre-window, `apply` post-cam_init,
   `save` on toggle + dirty flag. Keys: Y invert, -/= fov, G guide,
   ,/. sens, [/] autosave cycle (30/60/90/180/300/600/OFF).

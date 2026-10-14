@@ -147,7 +147,7 @@ i32 groundIdx 0..4  (CONCRETE/GRASS/SAND/SNOW/DARK)
 i32 floorStyle 0..3 (GRID/CHECK/DOTS/PLAIN)
 ```
 
-## settings.bw — `BWTS`, ver = 2
+## settings.bw — `BWTS`, ver = 3
 
 ```
 u32 magic 'BWTS', u32 ver
@@ -155,11 +155,14 @@ f32 speed, f32 fov
 i32 invertY, profOn, fullscreen, winX, winY, winW, winH
 i32 guideOff
 u64 guideSeen
-u8  pad[52]
+u8  author[24]            (v3, carved from pad: local display name)
+u8  pad[28]
 u8  saveDir[384]          (v2+)
+f32 autoSec, f32 sens     (v3: autosave seconds / look sensitivity)
 ```
 
-v1 readers stop at `guideSeen` + pad (prefix-compatible).
+v1 readers stop at `guideSeen` + pad; v2 stops after `saveDir`
+(prefix-compatible; `autoSec`/`sens`/`author` read as defaults).
 
 ## bundle .bwx — `BWXB`, ver = 2
 

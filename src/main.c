@@ -104,6 +104,9 @@ static void on_char(GLFWwindow *w, unsigned int cp) {
             int n = (int)strlen(m);
             if (n < BMSG_LEN - 1) { m[n] = (char)cp; m[n+1] = 0; world_wset_dirty(); }
         }
+    } else if (A.textMode == 7) {
+        int n = (int)strlen(A.author);
+        if (n < 23) { A.author[n] = (char)cp; A.author[n+1] = 0; }
     }
 }
 
@@ -238,6 +241,7 @@ static void on_key(GLFWwindow *w, int key, int sc, int action, int mods) {
     if (A.textMode) {
         if (key == GLFW_KEY_ESCAPE || key == GLFW_KEY_ENTER) {
             if (A.textMode == 3) panel_rename_commit();
+            if (A.textMode == 7) settings_save();
             A.textMode = 0;
         }
         else if (key == GLFW_KEY_BACKSPACE) {
@@ -255,6 +259,7 @@ static void on_key(GLFWwindow *w, int key, int sc, int action, int mods) {
                     int n = (int)strlen(m); if (n) { m[n-1] = 0; world_wset_dirty(); }
                 }
             }
+            else if (A.textMode == 7) { int n = (int)strlen(A.author); if (n) A.author[n-1] = 0; }
         }
         return;
     }
