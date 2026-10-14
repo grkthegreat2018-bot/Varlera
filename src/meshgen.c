@@ -382,6 +382,122 @@ static int gen_ring(void) {
     return s;
 }
 
+/* capsule: hemispherical caps on a short cylinder. Profile: bottom cap
+   u<0.3, cylinder 0.3-0.7, top cap u>0.7; normals point from the nearest
+   cap centre (cyl section: from the axis). */
+static int gen_cap(void) {
+    int s = g_nv;
+    const int LAT = 10, LON = 16;
+    const float r = 0.3f, cy = 0.2f;
+    for (int i = 0; i < LAT; i++) {
+        for (int j = 0; j < LON; j++) {
+            v3 p[4], n[4];
+            for (int k = 0; k < 4; k++) {
+                float u = (float)(i + (k == 1 || k == 2)) / LAT;
+                float a = (float)(j + (k >= 2)) / LON * 6.2831853f;
+                float y, rr;
+                if (u < 0.3f)      { float ph = -1.5707963f + u / 0.3f * 1.5707963f;
+                                     y = -cy + r * sinf(ph); rr = r * cosf(ph); }
+                else if (u < 0.7f) { y = -cy + (u - 0.3f) / 0.4f * 2.0f * cy; rr = r; }
+                else               { float ph = (u - 0.7f) / 0.3f * 1.5707963f;
+                                     y = cy + r * sinf(ph); rr = r * cosf(ph); }
+                p[k] = v3_make(rr * cosf(a), y, rr * sinf(a));
+                v3 c0 = y < -cy + 1e-4f ? v3_make(0, -cy, 0)
+                       : y > cy - 1e-4f ? v3_make(0, cy, 0)
+                       : v3_make(0, y, 0);
+                n[k] = v3_norm(v3_sub(p[k], c0));
+            }
+            triN(p[0],p[1],p[2], n[0],n[1],n[2]);
+            triN(p[0],p[2],p[3], n[0],n[2],n[3]);
+        }
+    }
+    return s;
+}
+
+/* hollow pipe: outer wall + reversed inner wall + annular end caps */
+static int gen_tube(int seg) {
+    int s = g_nv;
+    const float ro = 0.5f, ri = 0.34f, h = 0.5f;
+    for (int i = 0; i < seg; i++) {
+        float a0 = (float)i/seg*6.2831853f, a1 = (float)(i+1)/seg*6.2831853f;
+        float c0=cosf(a0),s0=sinf(a0), c1=cosf(a1),s1=sinf(a1);
+        v3 o0={ro*c0,-h,ro*s0}, o1={ro*c1,-h,ro*s1},
+           o2={ro*c1,h,ro*s1},  o3={ro*c0,h,ro*s0};
+        v3 n0={c0,0,s0}, n1={c1,0,s1};
+        triN(o0,o1,o2, n0,n1,n1); triN(o0,o2,o3, n0,n1,n0);
+        v3 i0={ri*c0,-h,ri*s0}, i1={ri*c1,-h,ri*s1},
+           i2={ri*c1,h,ri*s1},  i3={ri*c0,h,ri*s0};
+        v3 m0={-c0,0,-s0}, m1={-c1,0,-s1};
+        triN(i1,i0,i3, m1,m0,m0); triN(i1,i3,i2, m1,m0,m1);
+        v3 t0={ri*c0,h,ri*s0}, t1={ri*c1,h,ri*s1},
+           t2={ro*c1,h,ro*s1}, t3={ro*c0,h,ro*s0};
+        quad(t0,t1,t2,t3, v3_make(0,1,0));
+        v3 b0={ri*c0,-h,ri*s0}, b1={ri*c1,-h,ri*s1},
+           b2={ro*c1,-h,ro*s1}, b3={ro*c0,-h,ro*s0};
+        quad(b3,b2,b1,b0, v3_make(0,-1,0));
+    }
+    return s;
+}
+
+/* quarter-bend pipe: tube_arc swept 0..90deg in the XY plane */
+static int gen_elbow(void) {
+    int s = g_nv;
+    tube_arc(v3_make(1,0,0), v3_make(0,1,0), v3_make(0,0,1),
+             v3_make(-0.25f,-0.25f,0), 0.38f, 0.0f, 1.5707963f, 10, 0.13f);
+    return s;
+}
+
+/* gable roof: triangular prism, ridge along z at top centre */
+static int gen_gable(void) {
+    int s = g_nv;
+    float h = 0.5f;
+    v3 a={-h,-h,h}, b={h,-h,h}, c={h,-h,-h}, d={-h,-h,-h};
+    v3 ra={0,h,h}, rb={0,h,-h};
+    quad(d,c,b,a, v3_make(0,-1,0));                          /* bottom    */
+    quad(c,b,ra,rb, v3_norm(v3_make(0.7071f,0.7071f,0)));    /* +x slope  */
+    quad(a,d,rb,ra, v3_norm(v3_make(-0.7071f,0.7071f,0)));   /* -x slope  */
+    tri(a,b,ra, v3_make(0,0,1));                             /* +z gable  */
+    tri(c,d,rb, v3_make(0,0,-1));                            /* -z gable  */
+    return s;
+}
+
+/* plus-shaped prism: two beams crossing at the centre column */
+static int gen_cross(void) {
+    int s = g_nv;
+    const float h = 0.5f, t = 0.17f;
+    beam(v3_make(-h,-h,-t), v3_make(h,h,t));
+    beam(v3_make(-t,-h,-h), v3_make(t,h,h));
+    return s;
+}
+
+/* half wedge: ramp filling the bottom half of the box */
+static int gen_hwedge(void) {
+    int s = g_nv;
+    float h = 0.5f;
+    v3 a={-h,-h,h}, b={h,-h,h}, c={h,-h,-h}, d={-h,-h,-h};
+    v3 e={h,0,-h}, f={-h,0,-h};
+    quad(d,c,b,a, v3_make(0,-1,0));
+    quad(c,d,f,e, v3_make(0,0,-1));
+    tri(b,c,e, v3_make(1,0,0));
+    tri(d,a,f, v3_make(-1,0,0));
+    quad(a,b,e,f, v3_norm(v3_make(0,0.8944f,0.4472f)));
+    return s;
+}
+
+/* inverted wedge: ceiling ramp = gen_wedge mirrored in y, winding fixed */
+static int gen_iwedge(void) {
+    int s = g_nv;
+    float h = 0.5f;
+    v3 a={-h,h,h}, b={h,h,h}, c={h,h,-h}, d={-h,h,-h};
+    v3 e={h,-h,-h}, f={-h,-h,-h};
+    quad(a,b,c,d, v3_make(0,1,0));
+    quad(e,f,d,c, v3_make(0,0,-1));
+    tri(e,c,b, v3_make(1,0,0));
+    tri(f,a,d, v3_make(-1,0,0));
+    quad(f,e,b,a, v3_norm(v3_make(0,-0.7071f,0.7071f)));
+    return s;
+}
+
 static int gen_line_box(void) {
     int s = g_nv;
     float h = 0.5f;
@@ -424,6 +540,13 @@ static int gen_by_index(int shape) {
     case RK_MESH_CORSTAIR: return gen_corstair();
     case RK_MESH_ARCH:     return gen_arch();
     case RK_MESH_RING:     return gen_ring();
+    case RK_MESH_CAP:      return gen_cap();
+    case RK_MESH_TUBE:     return gen_tube(20);
+    case RK_MESH_ELBOW:    return gen_elbow();
+    case RK_MESH_GABLE:    return gen_gable();
+    case RK_MESH_CROSS:    return gen_cross();
+    case RK_MESH_HWEDGE:   return gen_hwedge();
+    case RK_MESH_IWEDGE:   return gen_iwedge();
     }
     return g_nv;
 }
@@ -454,6 +577,13 @@ int meshgen_build_all(Vert *pool, int maxverts,
     off[RK_MESH_CORSTAIR] = (uint32_t)gen_corstair();
     off[RK_MESH_ARCH]     = (uint32_t)gen_arch();
     off[RK_MESH_RING]     = (uint32_t)gen_ring();
+    off[RK_MESH_CAP]      = (uint32_t)gen_cap();
+    off[RK_MESH_TUBE]     = (uint32_t)gen_tube(20);
+    off[RK_MESH_ELBOW]    = (uint32_t)gen_elbow();
+    off[RK_MESH_GABLE]    = (uint32_t)gen_gable();
+    off[RK_MESH_CROSS]    = (uint32_t)gen_cross();
+    off[RK_MESH_HWEDGE]   = (uint32_t)gen_hwedge();
+    off[RK_MESH_IWEDGE]   = (uint32_t)gen_iwedge();
     off[MESHGEN_PLANE]    = (uint32_t)gen_plane();
     *lineOff = (uint32_t)gen_line_box();
     for (int i = 0; i < MESHGEN_TOTAL; i++) {

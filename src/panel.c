@@ -43,11 +43,17 @@ static const Asset ASSETS[] = {
     {"Beam",       "Thin square post.",                     RK_MESH_CUBE,     {1,0.4f,0.4f}},
     {"Pipe",       "Thin round rod.",                       RK_MESH_WHEEL,    {1,0.45f,0.45f}},
     {"Arch",       "U-shaped opening.",                     RK_MESH_ARCH,     {1,1,1}},
+    {"Capsule",    "Rounded pill.",                         RK_MESH_CAP,      {1,1,1}},
+    {"Tube",       "Hollow pipe - open ends.",              RK_MESH_TUBE,     {1,1,1}},
+    {"Cross",      "Plus-shaped prism.",                    RK_MESH_CROSS,    {1,1,1}},
     /* RAMPS */
     {"Wedge",      "45 deg ramp.",                          RK_MESH_WEDGE,    {1,1,1}},
     {"Corner",     "Corner wedge - slopes from one corner.",RK_MESH_CORNERW,  {1,1,1}},
     {"Stairs",     "3-step staircase.",                     RK_MESH_STAIR,    {1,1,1}},
     {"L-Stairs",   "Corner staircase.",                     RK_MESH_CORSTAIR, {1,1,1}},
+    {"Half Ramp",  "Half-height ramp.",                     RK_MESH_HWEDGE,   {1,1,1}},
+    {"Ceil Ramp",  "Inverted ramp - ceilings.",             RK_MESH_IWEDGE,   {1,1,1}},
+    {"Roof",       "Gable roof prism.",                     RK_MESH_GABLE,    {1,1,1}},
     /* SPECIAL */
     {"Wheel",      "Rolls sideways.",                       RK_MESH_WHEEL,    {1,1,1}},
     {"Torus",      "Donut ring / tire.",                    RK_MESH_TORUS,    {1,1,1}},
@@ -55,14 +61,15 @@ static const Asset ASSETS[] = {
     {"Frame",      "Hollow cube - edges only.",             RK_MESH_FRAME,    {1,1,1}},
     {"Cage Ball",  "Sphere with holes on all sides.",       RK_MESH_CAGEBALL, {1,1,1}},
     {"Ring",       "Standing donut.",                       RK_MESH_RING,     {1,1,1}},
+    {"Elbow",      "Quarter-bend pipe.",                    RK_MESH_ELBOW,    {1,1,1}},
 };
 #define N_ASSETS ((int)(sizeof ASSETS / sizeof ASSETS[0]))
 
 typedef struct { const char *name; int first, count; } Cat;
 static const Cat CATS[] = {
-    {"BASIC",    0, 11},
-    {"RAMPS",    11, 4},
-    {"SPECIAL", 15, 6},
+    {"BASIC",    0, 14},
+    {"RAMPS",    14, 7},
+    {"SPECIAL", 21, 7},
     {"SCULPTED", 0, 0},       /* dynamic: sculpted topology models only */
 };
 #define N_CATS ((int)(sizeof CATS / sizeof CATS[0]))

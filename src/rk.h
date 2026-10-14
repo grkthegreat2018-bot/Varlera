@@ -27,6 +27,13 @@ typedef enum {
     RK_MESH_CORSTAIR,   /* L-shaped corner staircase */
     RK_MESH_ARCH,       /* box arch: two legs + lintel, opening in z */
     RK_MESH_RING,       /* standing torus (ring in the XY plane) */
+    RK_MESH_CAP,        /* capsule: cylinder with hemispherical caps */
+    RK_MESH_TUBE,       /* hollow pipe, open ends */
+    RK_MESH_ELBOW,      /* quarter-bend pipe (XY plane) */
+    RK_MESH_GABLE,      /* triangular roof prism */
+    RK_MESH_CROSS,      /* plus-shaped prism */
+    RK_MESH_HWEDGE,     /* half-height wedge */
+    RK_MESH_IWEDGE,     /* inverted (ceiling) wedge */
     RK_MESH_COUNT
 } RkMesh;
 

@@ -400,7 +400,7 @@ int main(void) {
                             (float)((rng>>16)&15)/15.0f,
                             (float)((rng>>20)&15)/15.0f};
             int bi = world_add(v3_make(fx, fy, fz), v3_make(s, s, s),
-                      (int)(rng % 16), (int)((rng >> 5) & 3), col);
+                      (int)(rng % RK_MESH_COUNT), (int)((rng >> 5) & 3), col);
             if (glowEvery && bi >= 0 && i % glowEvery == 0)
                 g_blocks[bi].texm = TEXM_MAT(TEXM_GLOW);
         }
