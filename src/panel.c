@@ -6,6 +6,7 @@
 #include "tex.h"
 #include "art.h"
 #include "sculpt.h"
+#include "menu.h"
 #include "toast.h"
 #include "filepick.h"
 #include "font.h"
@@ -345,7 +346,7 @@ static void apply_tex_sel(void) {
 
 int panel_over(double x, double y) {
     if (x >= panel_x()) return 1;
-    return y < 46 && x < 244;
+    return y < 46 && x < 362;
 }
 
 int panel_press(double x, double y) {
@@ -353,6 +354,8 @@ int panel_press(double x, double y) {
     if (in_rect((float)x,(float)y, 10, 10, 110, 34)) { app_toggle_mode(); return 1; }
     if (A.app == APP_EDIT &&
         in_rect((float)x,(float)y, 128, 10, 110, 34)) { sculpt_open(); return 1; }
+    if (A.app == APP_EDIT &&
+        in_rect((float)x,(float)y, 246, 10, 110, 34)) { menu_enter(); return 1; }
     /* delete-confirm dialog captures clicks while open (screen-centered) */
     if (s_delModel >= 0) {
         float cx = ((float)A.fbw - 300.0f) * 0.5f;
@@ -928,6 +931,12 @@ void panel_draw(void) {
         rk_ui_rect(128, 10, 110, 2, 1,1,1, 0.4f);
         ui_text(128.0f + (110.0f - (float)ui_text_w("SCULPT", 2)) * 0.5f, 19,
                 "SCULPT", 2, 1,1,1, 1);
+        int mh = in_rect((float)A.mx, (float)A.my, 246, 10, 110, 34);
+        rk_ui_rect(246, 10, 110, 34, 0.32f+mh*0.10f, 0.34f+mh*0.10f,
+                   0.40f+mh*0.08f, 1);
+        rk_ui_rect(246, 10, 110, 2, 1,1,1, 0.4f);
+        ui_text(246.0f + (110.0f - (float)ui_text_w("MENU", 2)) * 0.5f, 19,
+                "MENU", 2, 1,1,1, 1);
     }
 
     if (glfwGetTime() - A.speedMsgT < 1.6f) {

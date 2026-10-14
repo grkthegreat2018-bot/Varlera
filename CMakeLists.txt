@@ -41,6 +41,7 @@ add_custom_target(shaders ALL DEPENDS ${SPV_FILES})
 
 add_executable(varlera WIN32
   src/main.c
+  src/menu.c
   src/rk.c
   src/rk_vk.c
   src/meshgen.c

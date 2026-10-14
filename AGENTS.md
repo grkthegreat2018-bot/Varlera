@@ -178,7 +178,15 @@ links m/dl/pthread. Win32-only code (file dialog, DPI awareness) is `_WIN32`
   block scatter, `VARLERA_GENGLOW=N` every-Nth block GLOW, `VARLERA_TAB=N`
   open panel tab, `VARLERA_PARTS=N` particle burst at frame 20,
   `VARLERA_EXIT=N` quit at frame N (clean-shutdown validation checks),
-  `VARLERA_SAVE`/`VARLERA_BWX`/`VARLERA_BWXIN` world IO at frame 50.
+  `VARLERA_SAVE`/`VARLERA_BWX`/`VARLERA_BWXIN` world IO at frame 50,
+  `VARLERA_MENU=1` enter the main menu at frame 10.
+- `src/menu.c` — main menu (`APP_MENU`, enum value 2 in `AppMode`): boots
+  by default unless any VARLERA_* test env is set; scans `worlds_dir` for
+  `*.bw`/`*.bwx` newest-first (Win32 `_findfirst`, POSIX `readdir`),
+  click-select + click-open, Up/Down/Enter keys, wheel scroll,
+  RESUME/NEW/IMPORT/QUIT buttons; world renders behind the dim overlay.
+  MENU button (246,10 next to PLAY/SCULPT) returns to it; Esc/Tab/RESUME
+  go back to editing.
 - Shader hot-reload: F8 or `VARLERA_RELOAD=1` (fires once at frame 60).
   `rk_reload_shaders` re-runs glslc per shader (GLSLC + SHADER_SRC baked as
   compile defines; CreateProcess CREATE_NO_WINDOW on Win32, system() on

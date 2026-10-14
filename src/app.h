@@ -8,7 +8,7 @@
 #include "math3d.h"
 #include "world.h"
 
-typedef enum { APP_EDIT, APP_PLAY } AppMode;
+typedef enum { APP_EDIT, APP_PLAY, APP_MENU } AppMode;
 typedef enum {
     M_IDLE,      /* nothing held */
     M_CLICK,     /* LMB held on block, awaiting drag threshold */

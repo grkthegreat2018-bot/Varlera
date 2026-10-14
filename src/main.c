@@ -16,6 +16,7 @@
 #include "model.h"
 #include "art.h"
 #include "sculpt.h"
+#include "menu.h"
 #include "tex.h"
 #include "rk.h"
 #include "prof.h"
@@ -161,6 +162,11 @@ static void on_mouse(GLFWwindow *w, int button, int action, int mods) {
         }
         return;
     }
+    if (A.app == APP_MENU) {
+        if (button == GLFW_MOUSE_BUTTON_LEFT && action == GLFW_PRESS)
+            menu_press(A.mx, A.my);
+        return;
+    }
     if (button == GLFW_MOUSE_BUTTON_LEFT) {
         if (action == GLFW_PRESS) {
             A.overPanel = panel_over(A.mx, A.my);
@@ -201,6 +207,7 @@ static void on_scroll(GLFWwindow *w, double xoff, double yoff) {
     (void)w; (void)xoff;
     if (A.modal == 1) { art_scroll(yoff); return; }
     if (A.modal == 2) { sculpt_wheel(yoff); return; }
+    if (A.app == APP_MENU) { menu_wheel(yoff); return; }
     if (panel_over(A.mx, A.my)) { panel_scroll(yoff); return; }
     if (A.drag == M_MOVE || A.drag == M_CLICK) {  /* raise/lower while moving */
         A.dyMove += (float)yoff * 0.5f;
@@ -287,6 +294,7 @@ static void on_key(GLFWwindow *w, int key, int sc, int action, int mods) {
         }
         A.setDirty = 1; return;
     }
+    if (A.app == APP_MENU) { if (action == GLFW_PRESS) menu_key(key); return; }
     if (key == GLFW_KEY_ESCAPE && panel_del_pending()) { panel_del_cancel(); return; }
     if (key == GLFW_KEY_ESCAPE && A.app == APP_PLAY) { app_toggle_mode(); return; }
     if (A.app == APP_EDIT) edit_key(key, mods);
@@ -351,6 +359,17 @@ int main(void) {
     if (!world_load(worlds_file(A.worldName, "bw"), A.worldName))
         world_load("world.bw", A.worldName);
     A.app = APP_EDIT;
+    /* boot into the main menu unless a test/CI hook is driving the run */
+    {   static const char *TE[] = {
+            "VARLERA_ANIM","VARLERA_ART","VARLERA_BWX","VARLERA_BWXIN",
+            "VARLERA_DAY","VARLERA_EXIT","VARLERA_GEN","VARLERA_GENGLOW",
+            "VARLERA_PARTS","VARLERA_PLACE","VARLERA_PLAY","VARLERA_PLAYER",
+            "VARLERA_PROF","VARLERA_RELOAD","VARLERA_SAVE","VARLERA_SHOT",
+            "VARLERA_SKYOBJ","VARLERA_TAB","VARLERA_TEXPNG", 0 };
+        int t = 0;
+        for (int i = 0; TE[i]; i++) if (getenv(TE[i])) { t = 1; break; }
+        if (!t) menu_enter();
+    }
     A.drag = M_IDLE;
     A.hoverBlock = A.hoverAxis = A.hoverAsset = -1;
     A.lastT = glfwGetTime();
@@ -358,6 +377,7 @@ int main(void) {
     /* scripted capture: VARLERA_SHOT=out.bmp writes a screenshot at
        frame 45 then continues (handy for agent/CI verification) */
     const char *envShot = getenv("VARLERA_SHOT");
+    const char *envMenu = getenv("VARLERA_MENU");
     /* stress generator: VARLERA_GEN=N scatters N mixed blocks (grid +
        jitter) for profiling at real world sizes */
     const char *envGen = getenv("VARLERA_GEN");
@@ -474,11 +494,12 @@ int main(void) {
         }
         if (A.modal == 1) art_draw();
         else if (A.modal == 2) sculpt_draw();
+        else if (A.app == APP_MENU) menu_draw();
         else panel_draw();                               /* modal overlays editor */
         prof_draw();
         toast_frame(dt);
         toast_draw();
-        hints_draw();
+        if (A.app != APP_MENU) hints_draw();
         rk_ui_flush();
         prof_zone_end(PZ_QUEUE);
 
@@ -486,6 +507,7 @@ int main(void) {
         rk_end_frame();
         prof_zone_end(PZ_END);
         ++frameNo;
+        if (envMenu && frameNo == 10 && A.app != APP_MENU) menu_enter();
         if (envParts && frameNo == 20) {
             int n = atoi(envParts);
             particles_burst(P_FIRE,   v3_make(0, 2.5f, 0), NULL, n);
