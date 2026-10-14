@@ -104,7 +104,11 @@ links m/dl/pthread. Win32-only code (file dialog, DPI awareness) is `_WIN32`
   name[12]; ~15.6B/blk compressed vs 68B v3). v4-v6 readers decode the
   same records inline; v1/v2/v3 migrate. v<6 remaps block shapes >=16
   up 16 (RK_MESH_BASE_MODEL moved 16->32).
-  Readers migrate v1/v2/v3. `worlds_file(name,ext)` -> `<dir>/<san>.bw`
+  Readers migrate v1/v2/v3. `world_save_async` snapshots the block array
+  (~280KB memcpy) then serializes+LZSS+writes on a worker thread
+  (_beginthreadex/pthread, detached); `world_save_poll` reaps it —
+  autosave + quicksave use it (quicksave falls back to sync when busy).
+  `worlds_file(name,ext)` -> `<dir>/<san>.bw`
   (dir = `worlds_dir`, default "worlds", user-picked via WORLD tab DIR;
   persisted in settings.bw v2). Saves also write `worlds/<name>.bmp`
   thumbnail; autosave every 90s to `worlds/<name>.auto.bw` when

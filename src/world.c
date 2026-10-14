@@ -6,8 +6,11 @@
 #include <time.h>
 #ifdef _WIN32
 #include <direct.h>
+#include <process.h>
+#include <windows.h>
 #else
 #include <sys/stat.h>
+#include <pthread.h>
 #endif
 
 Block g_blocks[MAX_BLOCKS];
@@ -227,28 +230,29 @@ static int quant_ok(float v) {
     return fabsf(q - floorf(q + 0.5f)) < 0.02f && fabsf(q) < 32700.0f;
 }
 
-int world_save(const char *path, const char *name) {
-    FILE *f = fopen(path, "wb");
-    if (!f) return 0;
-    if (!s_created) s_created = (uint32_t)time(NULL);
+/* serialize+write a consistent snapshot — shared by world_save (sync) and
+ * the worker thread behind world_save_async. Never touches g_blocks. */
+static int save_body(FILE *f, const Block *blocks, int nb, uint32_t nextid,
+                     uint32_t created, const WSet *wset,
+                     const char (*msgs)[MSG_LEN], const char *name) {
     struct { uint32_t magic, ver, nblocks, nextid, created, modified;
              uint8_t name[32]; } hdr;
     memset(&hdr, 0, sizeof hdr);
     hdr.magic = BW_MAGIC; hdr.ver = BW_VER;
-    hdr.nblocks = (uint32_t)g_nb; hdr.nextid = g_nextid;
-    hdr.created = s_created; hdr.modified = (uint32_t)time(NULL);
+    hdr.nblocks = (uint32_t)nb; hdr.nextid = nextid;
+    hdr.created = created; hdr.modified = (uint32_t)time(NULL);
     snprintf((char *)hdr.name, 32, "%s", name && name[0] ? name : "world");
-    if (fwrite(&hdr, sizeof hdr, 1, f) != 1) { fclose(f); return 0; }
+    if (fwrite(&hdr, sizeof hdr, 1, f) != 1) return 0;
 
     /* v7: serialize all records to memory, then write one LZSS blob.
      * Worst record = 18 head + 3 col + 24 raw pos + 12 name = 57B. */
-    size_t cap = (size_t)g_nb * 64 + 64;
+    size_t cap = (size_t)nb * 64 + 64;
     uint8_t *rec = malloc(cap);
-    if (!rec) { fclose(f); return 0; }
+    if (!rec) return 0;
     size_t rn = 0;
     int ok = 1;
-    for (int i = 0; i < g_nb && ok; i++) {
-        const Block *b = &g_blocks[i];
+    for (int i = 0; i < nb && ok; i++) {
+        const Block *b = &blocks[i];
         uint8_t fl = b->name[0] ? BF4_NAME : 0;
         int raw = !(quant_ok(b->pos.x) && quant_ok(b->pos.y) && quant_ok(b->pos.z) &&
                     quant_ok(b->size.x) && quant_ok(b->size.y) && quant_ok(b->size.z));
@@ -285,13 +289,93 @@ int world_save(const char *path, const char *name) {
     if (cn) ok &= fwrite(comp, cn, 1, f) == 1;
     else    ok &= fwrite(rec, rn, 1, f) == 1;
     free(rec); free(comp);
-    s_wset.magic = WS_MAGIC;                 /* settings trailer (v4+) */
-    ok &= fwrite(&s_wset, sizeof s_wset, 1, f) == 1;
+    WSet ws = *wset; ws.magic = WS_MAGIC;    /* settings trailer (v4+) */
+    ok &= fwrite(&ws, sizeof ws, 1, f) == 1;
     uint32_t mh[2] = {MS_MAGIC, MSG_MAX};    /* message table trailer */
     ok &= fwrite(mh, 8, 1, f) == 1;
-    ok &= fwrite(g_msgs, MSG_LEN, MSG_MAX, f) == MSG_MAX;
+    ok &= fwrite(msgs, MSG_LEN, MSG_MAX, f) == MSG_MAX;
+    return ok;
+}
+
+int world_save(const char *path, const char *name) {
+    FILE *f = fopen(path, "wb");
+    if (!f) return 0;
+    if (!s_created) s_created = (uint32_t)time(NULL);
+    int ok = save_body(f, g_blocks, g_nb, g_nextid, s_created,
+                       &s_wset, g_msgs, name);
     fclose(f);
     return ok;
+}
+
+/* ---- async save: caller-snapshot world state, worker serializes+writes.
+ * The serialize+LZSS+disk IO is the slow part; the memcpy is instant. */
+typedef struct {
+    Block *blocks;
+    int nb;
+    uint32_t nextid, created;
+    WSet wset;
+    char msgs[MSG_MAX][MSG_LEN];
+    char path[512], name[32];
+    volatile int done;                    /* 0 running, 1 ok, -1 failed */
+#ifdef _WIN32
+    uintptr_t th;
+#else
+    pthread_t th;
+#endif
+} SaveJob;
+static SaveJob *s_sjob;
+
+static void save_run(SaveJob *j) {
+    FILE *f = fopen(j->path, "wb");
+    int ok = f && save_body(f, j->blocks, j->nb, j->nextid, j->created,
+                            &j->wset, (const char(*)[MSG_LEN])j->msgs, j->name);
+    if (f) fclose(f);
+    j->done = ok ? 1 : -1;
+}
+#ifdef _WIN32
+static unsigned __stdcall save_tramp(void *p) { save_run(p); return 0; }
+#else
+static void *save_tramp(void *p) { save_run(p); return NULL; }
+#endif
+
+int world_save_async(const char *path, const char *name) {
+    if (s_sjob) return -1;                          /* busy */
+    SaveJob *j = calloc(1, sizeof *j);
+    if (!j) return -1;
+    j->blocks = malloc(sizeof(Block) * (size_t)(g_nb ? g_nb : 1));
+    if (!j->blocks) { free(j); return -1; }
+    memcpy(j->blocks, g_blocks, sizeof(Block) * (size_t)g_nb);
+    j->nb = g_nb; j->nextid = g_nextid;
+    if (!s_created) s_created = (uint32_t)time(NULL);
+    j->created = s_created;
+    j->wset = s_wset;
+    memcpy(j->msgs, g_msgs, sizeof j->msgs);
+    snprintf(j->path, sizeof j->path, "%s", path);
+    snprintf(j->name, sizeof j->name, "%s", name ? name : "world");
+    s_sjob = j;
+#ifdef _WIN32
+    j->th = _beginthreadex(NULL, 0, save_tramp, j, 0, NULL);
+    if (!j->th) { s_sjob = NULL; free(j->blocks); free(j); return -1; }
+    CloseHandle((HANDLE)j->th);         /* detach: join not needed */
+#else
+    if (pthread_create(&j->th, NULL, save_tramp, j)) {
+        s_sjob = NULL; free(j->blocks); free(j); return -1;
+    }
+#endif
+    return 1;
+}
+
+/* 1 = still running, 0 = finished ok (reaped), -1 = finished failed,
+ * 2 = nothing in flight */
+int world_save_poll(void) {
+    if (!s_sjob) return 2;
+    if (!s_sjob->done) return 1;
+    int r = s_sjob->done;
+#ifndef _WIN32
+    pthread_join(s_sjob->th, NULL);
+#endif
+    free(s_sjob->blocks); free(s_sjob); s_sjob = NULL;
+    return r < 0 ? -1 : 0;
 }
 
 static void block_defaults(Block *b) {

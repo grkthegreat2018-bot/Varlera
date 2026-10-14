@@ -95,6 +95,10 @@ int  world_redo(void);
 
 int  world_save(const char *path, const char *name);
 int  world_load(const char *path, char *nameOut /*32, may be NULL*/);
+/* async save: snapshot g_blocks (~280KB memcpy) then serialize+LZSS+write
+ * on a worker thread. -1 if a save is already in flight. */
+int  world_save_async(const char *path, const char *name);
+int  world_save_poll(void);   /* 1 running, 0 ok, -1 failed, 2 none */
 uint64_t world_rev(void);        /* mutation counter -> autosave dirty check */
 const char *worlds_file(const char *name, const char *ext); /* <dir>/<san>.<ext> */
 const char *worlds_dir(void);           /* current save dir (default worlds/) */

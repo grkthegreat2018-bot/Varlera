@@ -8,6 +8,11 @@
 #include <stdio.h>
 #include <string.h>
 #include <math.h>
+#ifdef _WIN32
+#include <windows.h>
+#else
+#include <unistd.h>
+#endif
 
 /* mirror rk.h texture-mode bits (test stays a black-box on the file format) */
 #define TEXM_OVR   4
@@ -119,6 +124,33 @@ int main(void) {
     CHECK(g_nb == 300 && g_blocks[299].pos.x == 19.0f &&
           g_blocks[299].pos.z == 14.0f);
     remove("test_v7_tmp.bw");
+
+    /* async save: same format on the worker path, poll reaps the job */
+    memset(g_blocks, 0, sizeof g_blocks); g_nb = 0;
+    memset(&b, 0, sizeof b);
+    b.pos = v3_make(3.0f, 1.0f, 3.0f); b.size = v3_make(2, 1, 2);
+    b.alpha = 1.0f; b.shape = 7;
+    CHECK(world_addb(&b) == 0);
+    CHECK(world_save_async("test_async_tmp.bw", "async") == 1);
+    {
+        int r, guard = 0;
+        do {
+            r = world_save_poll();
+            if (r == 1) {
+#ifdef _WIN32
+                Sleep(1);
+#else
+                usleep(1000);
+#endif
+            }
+        } while (r == 1 && ++guard < 5000);     /* ~5s worst case */
+        CHECK(r == 0);                          /* finished ok */
+        CHECK(world_save_poll() == 2);          /* nothing in flight now */
+    }
+    memset(g_blocks, 0, sizeof g_blocks); g_nb = 0;
+    CHECK(world_load("test_async_tmp.bw", NULL));
+    CHECK(g_nb == 1 && g_blocks[0].shape == 7 && g_blocks[0].pos.x == 3.0f);
+    remove("test_async_tmp.bw");
 
     /* corrupt-version rejection */
     f = fopen("test_v4_tmp.bw", "rb");

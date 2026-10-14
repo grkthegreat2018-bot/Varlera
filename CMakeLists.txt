@@ -94,7 +94,7 @@ if(MSVC)
   target_compile_options(world_v4_test PRIVATE /W4 /wd4201)
 endif()
 if(UNIX AND NOT APPLE)
-  target_link_libraries(world_v4_test PRIVATE m)
+  target_link_libraries(world_v4_test PRIVATE m pthread)
 endif()
 add_test(NAME world_v4 COMMAND world_v4_test
          WORKING_DIRECTORY ${CMAKE_BINARY_DIR})

@@ -463,7 +463,9 @@ void edit_lmb_motion(void) {            /* click -> move once past threshold */
 
 void edit_quicksave(void) {
     worlds_ensure();
-    world_save(worlds_file(A.worldName, "bw"), A.worldName);
+    /* async when possible; a busy autosave falls back to the sync path */
+    if (world_save_async(worlds_file(A.worldName, "bw"), A.worldName) < 0)
+        world_save(worlds_file(A.worldName, "bw"), A.worldName);
     tex_save("textures.bw");
     rk_screenshot(worlds_file(A.worldName, "bmp"));   /* world thumbnail */
     fprintf(stderr, "saved -> %s\n", worlds_file(A.worldName, "bw"));

@@ -538,9 +538,9 @@ void world_player_tick(float dt) {
     float rate = !s_plGround ? 3.5f
                : s_plStandI >= 0 ? 6.0f + g_blocks[s_plStandI].traction * (34.0f/15.0f)
                : 40.0f;
-    float k = 1.0f - expf(-rate * dt);
-    s_plVel.x += (wish.x * spd - s_plVel.x) * k;
-    s_plVel.z += (wish.z * spd - s_plVel.z) * k;
+    float kf = 1.0f - expf(-rate * dt);
+    s_plVel.x += (wish.x * spd - s_plVel.x) * kf;
+    s_plVel.z += (wish.z * spd - s_plVel.z) * kf;
     /* jump feel: SPACE buffers 0.12s; ground grace (coyote) 0.12s */
     if (glfwGetKey(A.win, GLFW_KEY_SPACE) == GLFW_PRESS) s_jumpBuf = 0.12f;
     else if (s_jumpBuf > 0.0f) s_jumpBuf -= dt;

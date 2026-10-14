@@ -606,11 +606,9 @@ int main(void) {
         }
         if (envBwx && frameNo == 50 && bundle_save(envBwx, A.worldName))
             fprintf(stderr, "bundle -> %s\n", envBwx);
-        if (envObj && frameNo == 50) {
-            int ok = world_export_obj(envObj);
+        if (envObj && frameNo == 50)
             fprintf(stderr, "obj export -> %s (%s)\n", envObj,
-                    ok ? "ok" : "FAILED");
-        }
+                    world_export_obj(envObj) ? "ok" : "FAILED");
         if (envTexPng && frameNo == 50) {   /* PNG round-trip: export+import */
             char ep[512], ip[512];
             snprintf(ep, sizeof ep, "%s_out.png", envTexPng);
@@ -647,16 +645,20 @@ int main(void) {
         }
         if (envExit && frameNo >= atoi(envExit)) break;
         if (A.setDirty) { A.setDirty = 0; settings_save(); }
-        /* autosave: world mutated + 90s since last write -> .auto.bw */
+        /* autosave: world mutated + interval elapsed -> .auto.bw on a
+         * worker thread (snapshot memcpy is instant; LZSS+IO don't
+         * hitch the frame). Completion is reaped here next frames. */
         static uint64_t s_lastRev; static double s_lastAuto;
+        int sreap = world_save_poll();
+        if (sreap == 0) {
+            s_lastRev = world_rev(); s_lastAuto = t;
+            fprintf(stderr, "autosaved -> %s\n",
+                    worlds_file(A.worldName, "auto.bw"));
+        } else if (sreap < 0) toast_say("AUTOSAVE FAILED");
         if (world_rev() != s_lastRev && A.autoSec > 0.0f &&
-            t - s_lastAuto > A.autoSec) {
-            worlds_ensure();
-            if (world_save(worlds_file(A.worldName, "auto.bw"), A.worldName)) {
-                s_lastRev = world_rev(); s_lastAuto = t;
-                fprintf(stderr, "autosaved -> %s\n", worlds_file(A.worldName, "auto.bw"));
-            }
-        }
+            t - s_lastAuto > A.autoSec)
+            world_save_async(worlds_file(A.worldName, "auto.bw"),
+                             A.worldName);
 
         prof_count(PC_BLOCKS, g_nb);
         RkStats rs; rk_query_stats(&rs);
