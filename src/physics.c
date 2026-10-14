@@ -454,7 +454,7 @@ static float boost_step(int i, float dt) {
  * First-person kinematic box (feet-anchored) vs block AABBs: integrate
  * per-axis, push back out on overlap. y=0 is the world floor. */
 static v3   s_plPos, s_plVel, s_plSpawn, s_plSavedCam;
-static int  s_plGround, s_plActive, s_goalsTotal;
+static int  s_plGround, s_plActive, s_goalsTotal, s_plStandI = -1;
 static int  s_hp, s_score; static float s_hurtT;
 static float s_coyote, s_jumpBuf;
 static uint8_t s_goalHit[MAX_BLOCKS], s_taken[MAX_BLOCKS];
@@ -486,6 +486,7 @@ void world_player_enter(void) {
     for (int i = 0; i < g_nb; i++)
         if (g_blocks[i].flags & BF_GOAL) s_goalsTotal++;
     s_plPos = s_plSpawn; s_plVel = v3_make(0, 0, 0); s_plGround = 0;
+    s_plStandI = -1;
 }
 
 void world_player_exit(void) {
@@ -511,7 +512,8 @@ static void pl_move_axis(float dt, int axis) {
         float dir = d.e[axis] >= 0.0f ? 1.0f : -1.0f;
         s_plPos.e[axis] += pen * dir;
         c.e[axis] += pen * dir;
-        if (axis == 1) { if (dir > 0.0f) s_plGround = 1; s_plVel.y = 0.0f; }
+        if (axis == 1) { if (dir > 0.0f) { s_plGround = 1; s_plStandI = i; }
+                         s_plVel.y = 0.0f; }
         else           s_plVel.e[axis] = 0.0f;
     }
 }
@@ -531,7 +533,14 @@ void world_player_tick(float dt) {
     if (v3_len(wish) > 0.0f) wish = v3_norm(wish);
     float spd = glfwGetKey(A.win, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS
               ? 3.2f : 6.5f;                              /* shift = walk */
-    s_plVel.x = wish.x * spd; s_plVel.z = wish.z * spd;
+    /* ground accel: the standing block's traction stat is the grip —
+       0 = ice slide, 15 = instant; bare floor = full; air = weak control */
+    float rate = !s_plGround ? 3.5f
+               : s_plStandI >= 0 ? 6.0f + g_blocks[s_plStandI].traction * (34.0f/15.0f)
+               : 40.0f;
+    float k = 1.0f - expf(-rate * dt);
+    s_plVel.x += (wish.x * spd - s_plVel.x) * k;
+    s_plVel.z += (wish.z * spd - s_plVel.z) * k;
     /* jump feel: SPACE buffers 0.12s; ground grace (coyote) 0.12s */
     if (glfwGetKey(A.win, GLFW_KEY_SPACE) == GLFW_PRESS) s_jumpBuf = 0.12f;
     else if (s_jumpBuf > 0.0f) s_jumpBuf -= dt;
@@ -541,7 +550,7 @@ void world_player_tick(float dt) {
         s_coyote = 0.0f; s_jumpBuf = 0.0f;
     }
     s_plVel.y -= 26.0f * dt;
-    s_plGround = 0;
+    s_plGround = 0; s_plStandI = -1;
     pl_move_axis(dt, 0); pl_move_axis(dt, 2); pl_move_axis(dt, 1);
     if (s_plPos.y < 0.0f) { s_plPos.y = 0.0f; s_plVel.y = 0.0f; s_plGround = 1; }
     if (s_plPos.y < -40.0f) { s_plPos = s_plSpawn; s_plVel = v3_make(0,0,0); }

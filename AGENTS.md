@@ -127,7 +127,10 @@ links m/dl/pthread. Win32-only code (file dialog, DPI awareness) is `_WIN32`
   `world_reset_physics`). Extracted from world.c; physics.h is the API.
   Honors WSet: `phys` RIGID freezes gravity settle (script acts still run),
   `gravMul` scales gravity, `dragOff` gates LMB drag; `weight` resists
-  BOOST thrust, `bounce` gives landing restitution. LMB drag:
+  BOOST thrust, `bounce` gives landing restitution, `traction` is the
+  walk-mode grip — ground accel lerps 6-40/s by the stand block's stat
+  (0 = ice slide, bare floor = full, air = 3.5/s) and hazard knockback
+  decays through it. LMB drag:
   `world_drag_grab/move/release` — kinematic cursor-ray move clamped to
   support height (floor clamp only in RIGID mode). Walk player
   (`WSet.playerMode` FLY/WALK): `world_player_enter/exit/tick` —
