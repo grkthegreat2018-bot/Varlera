@@ -304,7 +304,9 @@ START shape picker (6 presets), PASTE/IMPORT/GRID, palette, MATERIAL row
 (TEX: cycles texture layer on the PART island or whole mesh, LOCK freezes
 that layer's color+texture - locked verts refuse later edits), per-island
 dot colors (union-find components tint dots so disconnected objects read
-apart). verts carry `s_vtex`/`s_vlock` through every split/weld/delete.
+apart), OPT -50% = QEM decimate (`src/decimate.c` — face+boundary
+quadrics, cheapest-edge collapse, verts compact with their color/tex/
+lock attrs). verts carry `s_vtex`/`s_vlock` through every split/weld/delete.
 - `src/marching.c` — legacy density-field bake (marching tets over SC_N³
   grid) + voxel payload unpackers; only used for models.bw <= v5 migration.
 

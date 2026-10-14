@@ -62,6 +62,7 @@ add_executable(varlera WIN32
   src/toast.c
   src/bundle.c
 src/export.c
+src/decimate.c
   src/log.c
   src/settings.c
   src/lzss.c
@@ -99,7 +100,7 @@ endif()
 add_test(NAME world_v4 COMMAND world_v4_test
          WORKING_DIRECTORY ${CMAKE_BINARY_DIR})
 
-add_executable(unit_test tests/unit.c src/lzss.c src/meshgen.c)
+add_executable(unit_test tests/unit.c src/lzss.c src/meshgen.c src/decimate.c)
 target_include_directories(unit_test PRIVATE src)
 target_link_libraries(unit_test PRIVATE glfw)   # include dirs only
 if(MSVC)

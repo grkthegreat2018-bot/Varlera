@@ -16,6 +16,7 @@
 #include "font.h"
 #include "rk.h"
 #include "meshgen.h"
+#include "decimate.h"
 #include "toast.h"
 #include "tex.h"
 #include "world.h"
@@ -236,6 +237,21 @@ static void merge_verts_e(float eps) {
     }
 }
 static void merge_verts(void) { merge_verts_e(merge_eps()); }
+
+/* OPT button: quadric-error collapse to half the faces, then a weld
+ * pass to clean up. Locked-material verts stay distinct from unlocked
+ * ones because the collapse only merges along real edges. */
+static void sculpt_optimize(void) {
+    if (s_nf <= 4) { toast("TOO FEW FACES"); return; }
+    int nv = s_nv;
+    int nf = mesh_decimate(s_vx, s_vc, s_vtex, s_vlock, s_fc,
+                           &nv, s_nf, s_nf / 2 < 4 ? 4 : s_nf / 2);
+    s_nv = nv; s_nf = nf;
+    s_selV = s_dragV = -1; s_partN = -1;
+    merge_verts();
+    cull_degenerate();
+    toastf("OPTIMIZED %dV", s_nv);
+}
 static void delete_vert(int v) {
     int w = 0;
     for (int f = 0; f < s_nf; f++)
@@ -1183,7 +1199,12 @@ int sculpt_press(int mx, int my) {
                 for (int i = 0; i < n; i++) s_vlock[tg[i]] = (uint8_t)lock;
                 toast(lock ? "LAYER LOCKED" : "LAYER UNLOCKED");
             }
-        } else if (sbtn_hit(x, y, SROW_RESET)) init_preset(s_start);
+        } else if (sbtn_hit(x, y, SROW_RESET)) {
+            /* OPT halves the mesh via QEM collapse; right half = RESET */
+            float hw2 = (SB_W - 16 - 8) * 0.5f;
+            if (x < sbx() + 8 + hw2 + 4) sculpt_optimize();
+            else                         init_preset(s_start);
+        }
         else if (sbtn_hit(x, y, SROW_DONE) || sbtn_hit(x, y, SROW_EXIT))
             sculpt_ask_name();               /* exiting applies the mesh */
         else {
@@ -1652,7 +1673,11 @@ void sculpt_draw(void) {
         sb_btn(sbx() + 8 + mw + 4, srow_y(SROW_MAT), SB_W - 16 - mw - 4,
                mat_cur_lock() ? "LOCKED" : "LOCK", mat_cur_lock(), 0);
     }
-    sb_btn(sbx() + 8, srow_y(SROW_RESET), SB_W - 16, "RESET", 0, 0);
+    {
+        float hw2 = (SB_W - 16 - 8) * 0.5f;
+        sb_btn(sbx() + 8, srow_y(SROW_RESET), hw2, "OPT -50%", 0, 0);
+        sb_btn(sbx() + 12 + hw2, srow_y(SROW_RESET), hw2, "RESET", 0, 0);
+    }
     sb_btn(sbx() + 8, srow_y(SROW_DONE), SB_W - 16, "DONE", 0, 1);
     sb_btn(sbx() + 8, srow_y(SROW_EXIT), SB_W - 16, "EXIT", 0, 0);
     /* counters */

@@ -2,6 +2,7 @@
  * Links only the leaf modules: no Vulkan, no glfw runtime. */
 #include "lzss.h"
 #include "meshgen.h"
+#include "decimate.h"
 #include <stdio.h>
 #include <string.h>
 #include <math.h>
@@ -67,9 +68,54 @@ static void test_meshgen(void) {
     fprintf(stderr, "meshgen ok (%d shapes)\n", RK_MESH_COUNT);
 }
 
+/* indexed grid sphere-ish mesh -> QEM collapse must shrink it while
+ * keeping faces valid + verts in bounds */
+static void test_decimate(void) {
+    enum { G = 16 };                        /* 17x17 vert grid sphere */
+    static float vx[289][3];
+    static uint8_t vc[289][3];
+    static uint16_t fc[G * G * 2][3];
+    int nv = 0, nf = 0;
+    for (int y = 0; y <= G; y++)
+        for (int x = 0; x <= G; x++) {
+            float u = (float)x / G * 3.14159f - 1.5708f;
+            float v = (float)y / G * 6.28318f;
+            vx[nv][0] = cosf(u) * cosf(v) * 0.4f;
+            vx[nv][1] = sinf(u) * 0.4f;
+            vx[nv][2] = cosf(u) * sinf(v) * 0.4f;
+            vc[nv][0] = 255; vc[nv][1] = 200; vc[nv][2] = 100;
+            nv++;
+        }
+    for (int y = 0; y < G; y++)
+        for (int x = 0; x < G; x++) {
+            int a = y * (G + 1) + x, b = a + 1, c = a + G + 1, d = c + 1;
+            fc[nf][0] = (uint16_t)a; fc[nf][1] = (uint16_t)b;
+            fc[nf][2] = (uint16_t)c; nf++;
+            fc[nf][0] = (uint16_t)b; fc[nf][1] = (uint16_t)d;
+            fc[nf][2] = (uint16_t)c; nf++;
+        }
+    int nnv = nv;
+    int nout = mesh_decimate(vx, vc, NULL, NULL, fc, &nnv, nf, nf / 4);
+    CHECK(nout <= nf / 4 && nout > 0);
+    CHECK(nnv > 0 && nnv < nv);
+    int bad = 0;
+    for (int f = 0; f < nout; f++) {
+        for (int k = 0; k < 3; k++)
+            if (fc[f][k] >= nnv) bad++;
+        if (fc[f][0] == fc[f][1] || fc[f][1] == fc[f][2] ||
+            fc[f][0] == fc[f][2]) bad++;
+    }
+    for (int i = 0; i < nnv; i++)
+        for (int a = 0; a < 3; a++)
+            if (!(vx[i][a] == vx[i][a]) || fabsf(vx[i][a]) > 0.6f) bad++;
+    CHECK(bad == 0);
+    fprintf(stderr, "decimate ok (%dv/%df -> %dv/%df)\n", nv, nf, nnv, nout);
+}
+
 int main(void) {
     test_lzss();
     test_meshgen();
+    test_decimate();
     if (fails) { fprintf(stderr, "%d FAILURES\n", fails); return 1; }
     fprintf(stderr, "unit: all ok\n");
     return 0;
