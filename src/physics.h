@@ -28,4 +28,11 @@ void world_restore_play(void);
 int  world_merged_count(void);
 void world_merged_draw(void);
 
+/* walk-mode player (WSet.playerMode): first-person kinematic box vs block
+ * AABBs. enter/exit from app_toggle_mode; tick replaces cam_frame. */
+int  world_player_active(void);
+void world_player_enter(void);
+void world_player_exit(void);
+void world_player_tick(float dt);
+
 #endif

@@ -122,7 +122,11 @@ links m/dl/pthread. Win32-only code (file dialog, DPI awareness) is `_WIN32`
   `gravMul` scales gravity, `dragOff` gates LMB drag; `weight` resists
   BOOST thrust, `bounce` gives landing restitution. LMB drag:
   `world_drag_grab/move/release` — kinematic cursor-ray move clamped to
-  support height (floor clamp only in RIGID mode).
+  support height (floor clamp only in RIGID mode). Walk player
+  (`WSet.playerMode` FLY/WALK): `world_player_enter/exit/tick` —
+  kinematic feet-anchored box vs block AABBs, axis-separated push-out,
+  jump/step-walk, y=0 floor + void respawn; tick replaces `cam_frame`
+  and writes A.camPos to eye height.
 - `src/filepick.c` — OS pickers shared by panel_world/sculpt: `pick_save_path`/
   `pick_open_path`/`pick_dir` (Win32 common dialogs + SHBrowseForFolder;
   zenity fallback on Linux).

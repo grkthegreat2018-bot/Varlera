@@ -126,7 +126,8 @@ typedef struct {
                                 (SUN/MOON/OBJ A/OBJ B; gated by skyAssets) */
     uint8_t  dayCycle;       /* 0 off, 1 slow (10min), 2 med (2min), 3 fast (30s) */
     uint8_t  dayPhase;       /* persisted phase: 0..255 maps to 0..2pi */
-    uint8_t  pad[11];
+    uint8_t  playerMode;     /* play-mode camera: 0 free fly, 1 first-person walk */
+    uint8_t  pad[10];
 } WSet;
 #define WS_PHYS_SETTLE 0
 #define WS_PHYS_RIGID  1

@@ -6,6 +6,7 @@
 #include "world.h"
 #include "model.h"
 #include "app.h"
+#include "camera.h"
 #include "rk.h"
 #include "toast.h"
 #include "particles.h"
@@ -445,4 +446,78 @@ void world_physics(float dt, uint16_t trigHeld) {
 static float boost_step(int i, float dt) {
     float wf = 1.5f - g_blocks[i].weight * (1.0f / 16.0f);
     return 30.0f * wf * dt;
+}
+
+/* ---- walk-mode player controller (WSet.playerMode) ----
+ * First-person kinematic box (feet-anchored) vs block AABBs: integrate
+ * per-axis, push back out on overlap. y=0 is the world floor. */
+static v3   s_plPos, s_plVel, s_plSpawn, s_plSavedCam;
+static int  s_plGround, s_plActive;
+#define PL_R   0.32f
+#define PL_H   1.75f
+#define PL_EYE 1.62f
+
+int world_player_active(void) { return s_plActive; }
+
+void world_player_enter(void) {
+    s_plActive = world_wset()->playerMode & 1;
+    s_plSavedCam = A.camPos;
+    s_plSpawn = v3_make(A.camPos.x, A.camPos.y - PL_EYE, A.camPos.z);
+    if (s_plSpawn.y < 0.5f) s_plSpawn.y = 0.5f;
+    s_plPos = s_plSpawn; s_plVel = v3_make(0, 0, 0); s_plGround = 0;
+}
+
+void world_player_exit(void) {
+    if (s_plActive) { A.camPos = s_plSavedCam; A.camVel = v3_make(0, 0, 0); }
+    s_plActive = 0;
+}
+
+static void pl_move_axis(float dt, int axis) {
+    s_plPos.e[axis] += s_plVel.e[axis] * dt;
+    const float ph[3] = {PL_R, PL_H * 0.5f, PL_R};
+    v3 c = v3_make(s_plPos.x, s_plPos.y + PL_H * 0.5f, s_plPos.z);
+    for (int i = 0; i < g_nb; i++) {
+        const Block *b = &g_blocks[i];
+        if (b->flags & BF_NOCOLLIDE) continue;
+        v3 bh = v3_scale(block_eff_size(b), 0.5f);
+        v3 d = v3_sub(c, b->pos);
+        float ox = ph[0] + bh.x - fabsf(d.x);
+        float oy = ph[1] + bh.y - fabsf(d.y);
+        float oz = ph[2] + bh.z - fabsf(d.z);
+        if (ox <= 0.0f || oy <= 0.0f || oz <= 0.0f) continue;
+        float pen = axis == 0 ? ox : axis == 1 ? oy : oz;
+        float dir = d.e[axis] >= 0.0f ? 1.0f : -1.0f;
+        s_plPos.e[axis] += pen * dir;
+        c.e[axis] += pen * dir;
+        if (axis == 1) { if (dir > 0.0f) s_plGround = 1; s_plVel.y = 0.0f; }
+        else           s_plVel.e[axis] = 0.0f;
+    }
+}
+
+void world_player_tick(float dt) {
+    if (!s_plActive) return;
+    CamBasis cb = cam_basis();
+    v3 f = v3_make(cb.f.x, 0, cb.f.z);
+    v3 r = v3_make(cb.r.x, 0, cb.r.z);
+    if (v3_len(f) > 1e-4f) f = v3_norm(f);
+    if (v3_len(r) > 1e-4f) r = v3_norm(r);
+    v3 wish = v3_make(0, 0, 0);
+    if (glfwGetKey(A.win, GLFW_KEY_W) == GLFW_PRESS) wish = v3_add(wish, f);
+    if (glfwGetKey(A.win, GLFW_KEY_S) == GLFW_PRESS) wish = v3_sub(wish, f);
+    if (glfwGetKey(A.win, GLFW_KEY_D) == GLFW_PRESS) wish = v3_add(wish, r);
+    if (glfwGetKey(A.win, GLFW_KEY_A) == GLFW_PRESS) wish = v3_sub(wish, r);
+    if (v3_len(wish) > 0.0f) wish = v3_norm(wish);
+    float spd = glfwGetKey(A.win, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS
+              ? 3.2f : 6.5f;                              /* shift = walk */
+    s_plVel.x = wish.x * spd; s_plVel.z = wish.z * spd;
+    if (glfwGetKey(A.win, GLFW_KEY_SPACE) == GLFW_PRESS && s_plGround) {
+        s_plVel.y = 9.0f; s_plGround = 0;
+    }
+    s_plVel.y -= 26.0f * dt;
+    s_plGround = 0;
+    pl_move_axis(dt, 0); pl_move_axis(dt, 2); pl_move_axis(dt, 1);
+    if (s_plPos.y < 0.0f) { s_plPos.y = 0.0f; s_plVel.y = 0.0f; s_plGround = 1; }
+    if (s_plPos.y < -40.0f) { s_plPos = s_plSpawn; s_plVel = v3_make(0,0,0); }
+    A.camPos = v3_make(s_plPos.x, s_plPos.y + PL_EYE, s_plPos.z);
+    A.camVel = v3_make(0, 0, 0);
 }

@@ -64,10 +64,12 @@ void app_toggle_mode(void) {
     if (A.app == APP_EDIT) {
         A.app = APP_PLAY;
         world_snapshot_play();
+        world_player_enter();
         A.drag = M_IDLE;
         A.armedAsset = -1;
         toast_tip(TIP_PLAY);
     } else {
+        world_player_exit();
         A.app = APP_EDIT;
         world_restore_play();
     }
@@ -372,6 +374,7 @@ int main(void) {
     const char *envArt   = getenv("VARLERA_ART");       /* test hook: art_open(id) @20 */
     const char *envSky   = getenv("VARLERA_SKYOBJ");    /* test hook: sky objects @10 */
     const char *envDay   = getenv("VARLERA_DAY");       /* test hook: day speed+phase @10 */
+    const char *envPlyr  = getenv("VARLERA_PLAYER");    /* test hook: walk mode */
     const char *envPlace = getenv("VARLERA_PLACE");     /* test hook: place_commit path at frame 20 */
     const char *envTexPng = getenv("VARLERA_TEXPNG");   /* test hook: png export+reimport */
     if (envTab) A.panelTab = atoi(envTab);
@@ -392,7 +395,8 @@ int main(void) {
         if (A.fbw <= 0 || A.fbh <= 0) continue;
 
         prof_zone_begin(PZ_SIM);
-        cam_frame(dt);
+        if (world_player_active()) world_player_tick(dt);
+        else cam_frame(dt);
         cam_update_vp();
 
         if (A.app == APP_PLAY) {
@@ -472,6 +476,7 @@ int main(void) {
             w->skyObj[1] = 2;              /* model 1 as the moon */
             A.yaw = 4.32f; A.pitch = 0.25f;  /* look toward the sun slot */
         }
+        if (envPlyr && frameNo == 5) world_wset()->playerMode = 1;
         if (envDay && frameNo == 10) {
             /* "speed,phase" e.g. VARLERA_DAY=3,0 = fast cycle at midnight */
             WSet *w = world_wset();
