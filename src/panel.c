@@ -182,6 +182,21 @@ static int match_ids(int *ids) {              /* fill filtered asset ids */
 }
 
 /* SHAPES tab content height */
+static float s_catK[4] = {1.0f, 1.0f, 1.0f, 1.0f};   /* collapse anim 0..1 */
+static float cat_cells_h(int c) {
+    return ((cat_count(c) + COLS - 1) / COLS) * CELL + 6.0f;
+}
+/* ease per-category open fraction toward catOpen each frame */
+static void cat_tick(void) {
+    static double lt;
+    double now = glfwGetTime();
+    float dt = lt ? (float)(now - lt) : 0.016f; lt = now;
+    for (int c = 0; c < N_CATS; c++) {
+        float tgt = A.catOpen[c] ? 1.0f : 0.0f;
+        s_catK[c] += (tgt - s_catK[c]) * fminf(1.0f, dt * 12.0f);
+        if (fabsf(s_catK[c] - tgt) < 0.01f) s_catK[c] = tgt;
+    }
+}
 static float shapes_h(void) {
     if (A.search[0]) {
         int ids[N_ASSETS + RK_MAX_MODELS];
@@ -189,10 +204,8 @@ static float shapes_h(void) {
         return HDRH + ((n + COLS - 1) / COLS) * CELL + 6.0f;
     }
     float h = 0;
-    for (int c = 0; c < N_CATS; c++) {
-        h += HDRH;
-        if (A.catOpen[c]) h += ((cat_count(c) + COLS - 1) / COLS) * CELL + 6.0f;
-    }
+    for (int c = 0; c < N_CATS; c++)
+        h += HDRH + s_catK[c] * cat_cells_h(c);
     return h;
 }
 
@@ -405,8 +418,7 @@ int panel_press(double x, double y) {
                     A.panelScroll = fmaxf(0, ch - (A.fbh - SHAPES_TOP));
                 return 1;
             }
-            yy += HDRH;
-            if (A.catOpen[c]) yy += ((cat_count(c) + COLS-1)/COLS) * CELL + 6.0f;
+            yy += HDRH + s_catK[c] * cat_cells_h(c);
         }
         int ai = asset_at(fx, fy);
         if (ai >= 0) {
@@ -620,6 +632,14 @@ static void draw_cell_row(float px, float yy, int i, int ai, float cy0, float cy
     ui_rect_clipped(ix, iy, CELL-4, CELL-4, bg, bg+0.02f, bg+0.07f, 1, cy0, cy1);
 }
 
+/* icon flags: preview the active paint texture/mode/material in the cell */
+static uint32_t icon_flags(void) {
+    uint32_t f = RKIF_TEX(A.paintTex) | RKIF_TEXM(A.paintTexM) |
+                 RKIF_MAT(A.paintTexM >> 3);
+    if (A.paintTexM & TEXM_OVR) f |= RKIF_TEXOVR;
+    return f;
+}
+
 static void draw_icon_cell(float px, float yy, int i, int ai, float cy0, float cy1) {
     float ix = px + 8 + (i % COLS) * CELL;
     float iy = cy(yy + (i / COLS) * CELL);
@@ -627,15 +647,17 @@ static void draw_icon_cell(float px, float yy, int i, int ai, float cy0, float c
     float b = iy + CELL-4 > cy1 ? cy1 : iy + CELL-4;
     const Asset *a = panel_asset(ai);
     if (b - t > 4 && a)
-        rk_draw_icon(a->mesh, (int)ix, (int)t,
-                     (int)(CELL-4), (int)(b-t),
-                     A.paintCol[0], A.paintCol[1], A.paintCol[2], a->size.e);
+        rk_draw_icon_ex(a->mesh, (int)ix, (int)t,
+                        (int)(CELL-4), (int)(b-t),
+                        A.paintCol[0], A.paintCol[1], A.paintCol[2],
+                        a->size.e, icon_flags());
 }
 
 static void draw_shapes(float px) {
     float cy0 = SHAPES_TOP, cy1 = (float)A.fbh;
     float yy = 0;
     A.hoverAsset = -1;
+    cat_tick();
 
     if (A.search[0]) {                        /* filtered flat list */
         int ids[N_ASSETS + RK_MAX_MODELS];
@@ -666,17 +688,20 @@ static void draw_shapes(float px) {
         ui_text_clip(px + 28, hy + 5, CATS[c].name, 2,
                      0.85f,0.87f,0.95f,1, cy0, cy1);
         yy += HDRH;
-        if (!A.catOpen[c]) continue;
-        for (int i = 0; i < cat_count(c); i++) {
+        float cellH = cat_cells_h(c), visH = s_catK[c] * cellH;
+        float catBot = cy(yy) + visH;            /* animated clip bottom */
+        for (int i = 0; i < cat_count(c) && visH > 0.5f; i++) {
             float ix = px + 8 + (i % COLS) * CELL;
             float iy = cy(yy + (i / COLS) * CELL);
             int ai = cat_ai(c, i);
-            int ihov = in_rect((float)A.mx,(float)A.my, ix, iy, CELL-4, CELL-4);
+            int ihov = in_rect((float)A.mx,(float)A.my, ix, iy, CELL-4, CELL-4)
+                       && iy < catBot;
             if (ihov) A.hoverAsset = ai;
             float bg = (A.armedAsset == ai) ? 0.30f : (ihov ? 0.26f : 0.19f);
-            ui_rect_clipped(ix, iy, CELL-4, CELL-4, bg, bg+0.02f, bg+0.07f, 1, cy0, cy1);
+            ui_rect_clipped(ix, iy, CELL-4, CELL-4, bg, bg+0.02f, bg+0.07f, 1,
+                            cy0, fminf(cy1, catBot));
         }
-        yy += ((cat_count(c) + COLS-1)/COLS) * CELL + 6.0f;
+        yy += visH;
     }
     /* scrollbar */
     float ch = shapes_h(), vh = cy1 - cy0;
@@ -690,20 +715,21 @@ static void draw_shapes(float px) {
     yy = 0;
     for (int c = 0; c < N_CATS; c++) {
         yy += HDRH;
-        if (A.catOpen[c]) {
-            for (int i = 0; i < cat_count(c); i++) {
-                float ix = px + 8 + (i % COLS) * CELL;
-                float iy = cy(yy + (i / COLS) * CELL);
-                float t = iy < cy0 ? cy0 : iy;
-                float b = iy + CELL-4 > cy1 ? cy1 : iy + CELL-4;
-                const Asset *a = panel_asset(cat_ai(c, i));
-                if (b - t > 4 && a)
-                    rk_draw_icon(a->mesh, (int)ix, (int)t,
-                                 (int)(CELL-4), (int)(b-t),
-                                 A.paintCol[0], A.paintCol[1], A.paintCol[2], a->size.e);
-            }
-            yy += ((cat_count(c) + COLS-1)/COLS) * CELL + 6.0f;
+        float visH = s_catK[c] * cat_cells_h(c);
+        float catBot = cy(yy) + visH;
+        for (int i = 0; i < cat_count(c) && visH > 0.5f; i++) {
+            float ix = px + 8 + (i % COLS) * CELL;
+            float iy = cy(yy + (i / COLS) * CELL);
+            float t = iy < cy0 ? cy0 : iy;
+            float b = fminf(iy + CELL-4, fminf(cy1, catBot));
+            const Asset *a = panel_asset(cat_ai(c, i));
+            if (b - t > 4 && a)
+                rk_draw_icon_ex(a->mesh, (int)ix, (int)t,
+                                (int)(CELL-4), (int)(b-t),
+                                A.paintCol[0], A.paintCol[1], A.paintCol[2],
+                                a->size.e, icon_flags());
         }
+        yy += visH;
     }
 }
 

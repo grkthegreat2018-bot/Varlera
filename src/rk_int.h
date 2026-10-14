@@ -50,6 +50,7 @@ typedef struct {
     uint32_t first, count;
     int px, py, pw, ph;
     float cr, cg, cb;
+    uint32_t flags;              /* K_ICON: extra RKIF_* bits (mat/tex) */
     float mm[16];                /* K_MESH model matrix */
 } QEnt;
 

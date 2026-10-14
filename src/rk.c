@@ -97,18 +97,25 @@ static void icon_angles(int mesh, float *rx, float *ry) {
 }
 
 /* panel icon: per-shape readable angle, scaled to the asset's real
-   proportions (largest dimension fills the cell). size=NULL -> unit. */
-void rk_draw_icon(RkMesh m, int px, int py, int pw, int ph,
-                  float r, float g, float b, const float size[3]) {
+   proportions (largest dimension fills the cell). size=NULL -> unit.
+   flags carries RKIF_TEX/TEXM/MAT bits so icons preview paint state. */
+void rk_draw_icon_ex(RkMesh m, int px, int py, int pw, int ph,
+                     float r, float g, float b, const float size[3],
+                     uint32_t flags) {
     if (G.qn >= MAX_Q) return;
     QEnt *e = &G.q[G.qn++];
-    *e = (QEnt){K_ICON, m, 0, 0, px, py, pw, ph, r, g, b, {0}};
+    *e = (QEnt){K_ICON, m, 0, 0, px, py, pw, ph, r, g, b, flags, {0}};
     float mx = size ? fmaxf(size[0], fmaxf(size[1], size[2])) : 1.0f;
     float k = mx > 1e-5f ? 0.62f / mx : 0.62f;
     v3 sc = size ? v3_make(size[0]*k, size[1]*k, size[2]*k)
                : v3_make(0.62f, 0.62f, 0.62f);
     float rx, ry; icon_angles(m, &rx, &ry);
     m4_trs(e->mm, v3_make(0,0,0), sc, rx, ry, 0);
+}
+
+void rk_draw_icon(RkMesh m, int px, int py, int pw, int ph,
+                  float r, float g, float b, const float size[3]) {
+    rk_draw_icon_ex(m, px, py, pw, ph, r, g, b, size, 0);
 }
 
 void rk_ui_rect(float px, float py, float pw, float ph, float r, float g, float b, float a) {
@@ -613,7 +620,8 @@ void rk_end_frame(void) {
                 bind_sets_and_mesh();
                 bind_mesh_buf(e->mesh);
                 float c[4] = {e->cr, e->cg, e->cb, 1};
-                uint32_t icol = e->mesh >= RK_MESH_BASE_MODEL ? RKF_ICON|RKIF_VCOL : RKF_ICON;
+                uint32_t icol = RKF_ICON | e->flags |
+                    (e->mesh >= RK_MESH_BASE_MODEL ? RKIF_VCOL : 0u);
                 push_pc(e->mm, c, icol);
                 VkDeviceSize io; uint32_t ic;
                 if (mesh_span(e->mesh, &io, &ic)) vkCmdDraw(G.cmd, ic, 1, (uint32_t)io, 0);
