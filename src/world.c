@@ -116,8 +116,25 @@ static uint32_t s_created;    /* from v4 header; now() if absent */
 
 #define WS_MAGIC 0x34535742u    /* 'BWS4' settings trailer */
 #define MS_MAGIC 0x53574D42u    /* 'BWMS' message-table trailer */
+#define ST_MAGIC 0x54535742u    /* 'BWST' per-block-string trailer */
 static WSet s_wset;
 char g_msgs[MSG_MAX][MSG_LEN];
+static BMsg s_bmsgs[BMSG_MAX];
+static int  s_nbmsg;
+
+const char *world_block_msg(uint32_t id) {
+    for (int i = 0; i < s_nbmsg; i++)
+        if (s_bmsgs[i].id == id) return s_bmsgs[i].text;
+    return NULL;
+}
+char *world_block_msg_edit(uint32_t id) {
+    for (int i = 0; i < s_nbmsg; i++)
+        if (s_bmsgs[i].id == id) return s_bmsgs[i].text;
+    if (s_nbmsg >= BMSG_MAX) return NULL;
+    s_bmsgs[s_nbmsg].id = id;
+    s_bmsgs[s_nbmsg].text[0] = 0;
+    return s_bmsgs[s_nbmsg++].text;
+}
 static void wset_defaults(void) {
     memset(&s_wset, 0, sizeof s_wset);
     s_wset.gravMul = 8;                        /* 1.0x gravity */
@@ -238,7 +255,8 @@ static int quant_ok(float v) {
  * the worker thread behind world_save_async. Never touches g_blocks. */
 static int save_body(FILE *f, const Block *blocks, int nb, uint32_t nextid,
                      uint32_t created, const WSet *wset,
-                     const char (*msgs)[MSG_LEN], const char *name) {
+                     const char (*msgs)[MSG_LEN],
+                     const BMsg *bmsgs, int nbmsg, const char *name) {
     struct { uint32_t magic, ver, nblocks, nextid, created, modified;
              uint8_t name[32]; } hdr;
     memset(&hdr, 0, sizeof hdr);
@@ -298,6 +316,22 @@ static int save_body(FILE *f, const Block *blocks, int nb, uint32_t nextid,
     uint32_t mh[2] = {MS_MAGIC, MSG_MAX};    /* message table trailer */
     ok &= fwrite(mh, 8, 1, f) == 1;
     ok &= fwrite(msgs, MSG_LEN, MSG_MAX, f) == MSG_MAX;
+    /* BWST trailer: {magic,count} + {id,len,text[len]} per block string */
+    int nbm = 0;
+    if (bmsgs)
+        for (int i = 0; i < nbmsg; i++) if (bmsgs[i].text[0]) nbm++;
+    if (nbm) {
+        uint32_t sh[2] = {ST_MAGIC, (uint32_t)nbm};
+        ok &= fwrite(sh, 8, 1, f) == 1;
+        for (int i = 0; i < nbmsg && ok; i++) {
+            if (!bmsgs[i].text[0]) continue;
+            size_t tl = strlen(bmsgs[i].text);
+            uint8_t rh[6]; memcpy(rh, &bmsgs[i].id, 4);
+            rh[4] = (uint8_t)tl; rh[5] = 0;
+            ok &= fwrite(rh, 6, 1, f) == 1;
+            ok &= fwrite(bmsgs[i].text, tl, 1, f) == 1;
+        }
+    }
     return ok;
 }
 
@@ -306,7 +340,7 @@ int world_save(const char *path, const char *name) {
     if (!f) return 0;
     if (!s_created) s_created = (uint32_t)time(NULL);
     int ok = save_body(f, g_blocks, g_nb, g_nextid, s_created,
-                       &s_wset, g_msgs, name);
+                       &s_wset, g_msgs, s_bmsgs, s_nbmsg, name);
     fclose(f);
     return ok;
 }
@@ -319,6 +353,8 @@ typedef struct {
     uint32_t nextid, created;
     WSet wset;
     char msgs[MSG_MAX][MSG_LEN];
+    BMsg bmsgs[BMSG_MAX];
+    int nbmsg;
     char path[512], name[32];
     volatile int done;                    /* 0 running, 1 ok, -1 failed */
 #ifdef _WIN32
@@ -332,7 +368,8 @@ static SaveJob *s_sjob;
 static void save_run(SaveJob *j) {
     FILE *f = fopen(j->path, "wb");
     int ok = f && save_body(f, j->blocks, j->nb, j->nextid, j->created,
-                            &j->wset, (const char(*)[MSG_LEN])j->msgs, j->name);
+                            &j->wset, (const char(*)[MSG_LEN])j->msgs,
+                            j->bmsgs, j->nbmsg, j->name);
     if (f) fclose(f);
     j->done = ok ? 1 : -1;
 }
@@ -354,6 +391,8 @@ int world_save_async(const char *path, const char *name) {
     j->created = s_created;
     j->wset = s_wset;
     memcpy(j->msgs, g_msgs, sizeof j->msgs);
+    memcpy(j->bmsgs, s_bmsgs, sizeof j->bmsgs);
+    j->nbmsg = s_nbmsg;
     snprintf(j->path, sizeof j->path, "%s", path);
     snprintf(j->name, sizeof j->name, "%s", name ? name : "world");
     s_sjob = j;
@@ -411,6 +450,7 @@ int world_load(const char *path, char *nameOut) {
     s_created = 0;
     wset_defaults();
     memset(g_msgs, 0, sizeof g_msgs);
+    s_nbmsg = 0;
     if (ver >= 3 && fread(&g_nextid, 4, 1, f) != 1) g_nextid = 1;
     int ok = 1;
     if (ver >= 4) {                            /* v4+: meta header + packed */
@@ -502,6 +542,21 @@ int world_load(const char *path, char *nameOut) {
         if (ok && fread(mh, 8, 1, f) == 1 && mh[0] == MS_MAGIC) {
             uint32_t n = mh[1] > MSG_MAX ? MSG_MAX : mh[1];
             if (fread(g_msgs, MSG_LEN, n, f) != n) ok = 0;
+            /* per-block-string trailer (optional, follows BWMS) */
+            uint32_t sh[2];
+            if (ok && fread(sh, 8, 1, f) == 1 && sh[0] == ST_MAGIC) {
+                for (uint32_t k = 0; k < sh[1] && ok; k++) {
+                    uint8_t rh[6];
+                    ok = fread(rh, 6, 1, f) == 1; if (!ok) break;
+                    uint32_t id; memcpy(&id, rh, 4);
+                    uint8_t tl = rh[4];
+                    if (tl >= BMSG_LEN) { ok = fseek(f, tl, SEEK_CUR) == 0; continue; }
+                    char *m = world_block_msg_edit(id);
+                    if (!m) { ok = fseek(f, tl, SEEK_CUR) == 0; continue; }
+                    ok = fread(m, tl, 1, f) == 1;
+                    if (ok) m[tl] = 0;
+                }
+            }
         }
     } else if (ver < 3) {                      /* v1/v2 fixed-size records */
         int rec = ver == 1 ? BW_VER1_BLKSZ : BW_VER2_BLKSZ;

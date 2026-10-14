@@ -69,6 +69,15 @@ typedef struct {
 #define MSG_LEN 32
 extern char g_msgs[MSG_MAX][MSG_LEN];
 
+/* per-block dialog strings (BWST trailer): SAY/TITLE blocks may carry
+ * their own text keyed by stable Block.id; empty -> falls back to
+ * g_msgs[actParam]. */
+#define BMSG_MAX 64
+#define BMSG_LEN 48
+typedef struct { uint32_t id; char text[BMSG_LEN]; } BMsg;
+const char *world_block_msg(uint32_t id);      /* NULL if no override */
+char       *world_block_msg_edit(uint32_t id); /* mutable slot, may NULL */
+
 extern Block g_blocks[MAX_BLOCKS];
 extern int g_nb;
 extern uint32_t g_nextid;       /* instance-id allocator */

@@ -1096,10 +1096,10 @@ void panel_draw(void) {
 
 /* ---- block script menu: floats above the selection ---- */
 enum { SM_GRAV, SM_COLL, SM_LOCK, SM_NAME, SM_TRIG, SM_ACT, SM_TGT, SM_PARAM,
-       SM_MSG, SM_TRACT, SM_BOUNCE, SM_WEIGHT, SM_SPAWN, SM_GOAL,
+       SM_MSG, SM_TXT, SM_TRACT, SM_BOUNCE, SM_WEIGHT, SM_SPAWN, SM_GOAL,
        SM_UNFUSE, SM_FUSE, SM_EDIT, SM_SHADE, SM_HAZARD, SM_PICKUP };
 static const char *SM_LABEL[] = {"GRAVITY","COLLIDE","LOCKED","NAME","TRIG","ACT",
-                                 "TGT","PARAM","MSG","TRAC","BOUNCE","WEIGHT",
+                                 "TGT","PARAM","MSG","TXT","TRAC","BOUNCE","WEIGHT",
                                  "SPAWN","GOAL","UNFUSE","FUSE ALL","RESCULPT",
                                  "SHADE","HAZARD","PICKUP"};
 static const char *TRIG_NAME[N_TRIGS] = {"ALWAYS","SPACE","W","A","S","D","E","Q","CLICK"};
@@ -1130,7 +1130,8 @@ static int script_layout(float *bx, float *by, int acts[20]) {
         acts[nr++] = SM_NAME;
         acts[nr++] = SM_TRIG; acts[nr++] = SM_ACT; acts[nr++] = SM_TGT;
         acts[nr++] = SM_PARAM;
-        if (g_blocks[sel_first()].act >= ACT_SAY) acts[nr++] = SM_MSG;
+        if (g_blocks[sel_first()].act >= ACT_SAY)
+            { acts[nr++] = SM_MSG; acts[nr++] = SM_TXT; }
         acts[nr++] = SM_TRACT; acts[nr++] = SM_BOUNCE; acts[nr++] = SM_WEIGHT;
         acts[nr++] = SM_SPAWN; acts[nr++] = SM_GOAL;
         acts[nr++] = SM_HAZARD; acts[nr++] = SM_PICKUP;
@@ -1232,6 +1233,16 @@ static void draw_script_menu(void) {
                          m[0] ? m : "-");
             txt = lab;
         }
+        else if (b && acts[r] == SM_TXT) {
+            const char *m = world_block_msg(b->id);
+            if (A.textMode == 6) {
+                char *e = world_block_msg_edit(b->id);
+                snprintf(lab, sizeof lab, "TXT: %s_", e ? e : "");
+            } else
+                snprintf(lab, sizeof lab, "TXT: %s",
+                         m && m[0] ? m : "-");
+            txt = lab;
+        }
         else if (b && acts[r] == SM_NAME) {
             if (A.textMode == 3)
                 snprintf(lab, sizeof lab, "NAME: %s_", A.renBuf);
@@ -1307,6 +1318,11 @@ int panel_script_click(double x, double y) {
         case SM_MSG:
             A.msgSel = g_blocks[i].actParam & (MSG_MAX - 1);
             A.textMode = 5;
+            break;
+        case SM_TXT:
+            A.msgSel = (int)g_blocks[i].id;    /* textMode 6 edits by id */
+            world_block_msg_edit(g_blocks[i].id);
+            A.textMode = 6;
             break;
         case SM_TRACT:  g_blocks[i].traction = (g_blocks[i].traction + 1) & 15; break;
         case SM_BOUNCE: g_blocks[i].bounce  = (g_blocks[i].bounce + 1) & 15; break;

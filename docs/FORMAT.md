@@ -58,6 +58,8 @@ u8  name[12]     only when flag bit1 set (v4+)
 ```
 u8  WSet[32]     world settings, magic 'BWS4' at offset 0
 u32 BWMS, u32 MSG_MAX(=16), u8 msgs[16][32]   script SAY/TITLE table
+u32 BWST, u32 count                          per-block strings (optional)
+  count x { u32 blockId, u8 len, u8 pad, u8 text[len] }   text < 48 bytes
 ```
 
 `WSet` (32 bytes, fields grow into `pad`; unknown bytes must be zeroed

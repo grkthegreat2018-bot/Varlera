@@ -272,7 +272,10 @@ set (`tgt_match`). SAY/TITLE are edge-triggered global text acts:
 textMode 5): SAY shows via `toast_say`, TITLE via `toast_title` — a
 full-width gold-ruled scrim band + big centered text (fades in/out,
 panel-clipped, own channel so a SAY can run under it); stored as a
-`BWMS` file trailer.
+`BWMS` file trailer. The TXT row (textMode 6, `A.msgSel` = block id)
+edits a per-block override — `world_block_msg(id)` / `_edit(id)`
+keyed on stable `Block.id`, 64x48 slots, `BWST` trailer; an override
+wins over `g_msgs[actParam]` when non-empty.
 NAME edits `Block.name` (textMode 3, `renBuf`, commit via
 `panel_rename_commit` keyed on stable `Block.id`); TGT NAME targets blocks
 sharing that name. ACT_COLOR paints `g_palette[actParam&15]` — the shared

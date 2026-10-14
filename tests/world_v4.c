@@ -49,6 +49,8 @@ int main(void) {
 
     /* world-settings + message trailers: non-defaults, verify round-trip */
     snprintf(g_msgs[3], MSG_LEN, "hello world");
+    snprintf(world_block_msg_edit(g_blocks[0].id), BMSG_LEN,
+             "per-block dialog");                  /* BWST trailer */
     world_wset()->chunkShape = 2;
     world_wset()->chunkSize  = 32;
     world_wset()->lod        = 1;
@@ -70,6 +72,9 @@ int main(void) {
     CHECK(world_wset()->chunkShape == 2 && world_wset()->chunkSize == 32);
     CHECK(world_wset()->lod == 1 && world_wset()->gravMul == 4);
     CHECK(strcmp(g_msgs[3], "hello world") == 0 && !g_msgs[0][0]);
+    CHECK(world_block_msg(g_blocks[0].id) &&
+          strcmp(world_block_msg(g_blocks[0].id), "per-block dialog") == 0);
+    CHECK(world_block_msg(g_blocks[1].id) == NULL);
 
     Block *p = &g_blocks[0];
     CHECK(p->pos.x == 2.5f && p->pos.z == -4.0f && p->size.z == 2.0f);

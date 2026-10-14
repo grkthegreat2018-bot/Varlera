@@ -344,7 +344,8 @@ void world_physics(float dt, uint16_t trigHeld) {
         Block *s = &g_blocks[i];
         if (s->act < ACT_COLOR || !((edge >> s->trig) & 1)) continue;
         if (s->act >= ACT_SAY) {                 /* text acts: global */
-            const char *m = g_msgs[s->actParam & (MSG_MAX - 1)];
+            const char *m = world_block_msg(s->id);   /* per-block string? */
+            if (!m || !*m) m = g_msgs[s->actParam & (MSG_MAX - 1)];
             if (*m) {
                 if (s->act == ACT_TITLE) toast_title(m);
                 else                     toast_say(m);
