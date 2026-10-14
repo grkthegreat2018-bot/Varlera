@@ -178,6 +178,59 @@ static int bake_mesh(const Block *rel, int n, v3 size, int top) {
                : rk_model_mesh_add(poolbuf, pn);
 }
 
+/* ray-triangle occlusion for sculpted-topo AO: Moller-Trumbore, min t
+ * keeps the ray's own vert/face from self-shadowing */
+static int ray_tri(v3 ro, v3 rd, v3 a, v3 b, v3 c, float maxT) {
+    v3 e1 = v3_sub(b, a), e2 = v3_sub(c, a);
+    v3 p  = v3_cross(rd, e2);
+    float det = v3_dot(e1, p);
+    if (fabsf(det) < 1e-9f) return 0;
+    float inv = 1.0f / det;
+    v3 t = v3_sub(ro, a);
+    float u = v3_dot(t, p) * inv;
+    if (u < 0.0f || u > 1.0f) return 0;
+    v3 q = v3_cross(t, e1);
+    float v = v3_dot(rd, q) * inv;
+    if (v < 0.0f || u + v > 1.0f) return 0;
+    float tt = v3_dot(e2, q) * inv;
+    return tt > 0.015f && tt < maxT;
+}
+
+/* baked vertex AO for sculpted models: 8 hemisphere rays per source vert
+ * (dir = smooth normal) vs the model's own triangles. nv*8*nf Moller
+ * tests — fine at SC_MAX_V/SC_MAX_F caps for a bake-time pass. */
+static void bake_ao_topo(const float (*vx)[3], const uint16_t (*fc)[3],
+                         int nv, int nf, const float (*sn)[3],
+                         float *occ) {
+    static const float DK[8][2] = {
+        {0,0},{1,0},{-1,0},{0,1},{0,-1},{1,1},{-1,-1},{1,-1}
+    };
+    for (int i = 0; i < nv; i++) {
+        v3 nn = v3_make(sn[i][0], sn[i][1], sn[i][2]);
+        float l = v3_len(nn);
+        if (l < 1e-6f) { occ[i] = 1.0f; continue; }
+        nn = v3_scale(nn, 1.0f / l);
+        v3 up = fabsf(nn.y) > 0.9f ? v3_make(1,0,0) : v3_make(0,1,0);
+        v3 t1 = v3_norm(v3_cross(nn, up));
+        v3 t2 = v3_cross(nn, t1);
+        v3 ro = v3_add(v3_make(vx[i][0], vx[i][1], vx[i][2]),
+                       v3_scale(nn, 0.02f));
+        int hits = 0;
+        for (int k = 0; k < 8; k++) {
+            v3 d = v3_norm(v3_add(nn,
+                       v3_add(v3_scale(t1, DK[k][0] * 0.72f),
+                              v3_scale(t2, DK[k][1] * 0.72f))));
+            for (int f = 0; f < nf; f++) {
+                v3 a = v3_make(vx[fc[f][0]][0], vx[fc[f][0]][1], vx[fc[f][0]][2]);
+                v3 b = v3_make(vx[fc[f][1]][0], vx[fc[f][1]][1], vx[fc[f][1]][2]);
+                v3 c = v3_make(vx[fc[f][2]][0], vx[fc[f][2]][1], vx[fc[f][2]][2]);
+                if (ray_tri(ro, d, a, b, c, 0.9f)) { hits++; break; }
+            }
+        }
+        occ[i] = 1.0f - 0.5f * (hits / 8.0f);
+    }
+}
+
 /* topo mesh -> GPU: expand faces to flat-shaded tri soup, normalize to the
  * unit box of `size`, vertex colors preserved */
 /* same-material shading: verts welded to one dot share their material id,
@@ -188,7 +241,21 @@ static int bake_topo(const float (*vx)[3], const uint8_t (*vc)[3],
                      int smooth) {
     static Vert buf[MODEL_MAX_FACES * 3];
     static float sn[MODEL_MAX_VERTS][3];      /* smooth: per-vert normals */
-    if (smooth) memset(sn, 0, (size_t)nv * sizeof sn[0]);
+    static float occ[MODEL_MAX_VERTS];        /* per-vert AO factor */
+    memset(sn, 0, (size_t)nv * sizeof sn[0]);
+    /* prepass: accumulate per-vert normals, then bake AO against the raw
+       (pre-normalization) positions so ray lengths stay in sculpt units */
+    for (int f = 0; f < nf; f++) {
+        v3 p[3];
+        for (int k = 0; k < 3; k++) {
+            int vi = fc[f][k];
+            p[k] = v3_make(vx[vi][0], vx[vi][1], vx[vi][2]);
+        }
+        v3 nrm = v3_cross(v3_sub(p[1],p[0]), v3_sub(p[2],p[0]));
+        for (int k = 0; k < 3; k++)
+            for (int a = 0; a < 3; a++) sn[fc[f][k]][a] += nrm.e[a];
+    }
+    bake_ao_topo(vx, fc, nv, nf, (const float (*)[3])sn, occ);
     int n = 0;
     for (int f = 0; f < nf && n + 3 <= MODEL_MAX_FACES * 3; f++) {
         v3 p[3];
@@ -197,9 +264,6 @@ static int bake_topo(const float (*vx)[3], const uint8_t (*vc)[3],
             p[k] = v3_make(vx[vi][0], vx[vi][1], vx[vi][2]);
         }
         v3 nrm = v3_norm(v3_cross(v3_sub(p[1],p[0]), v3_sub(p[2],p[0])));
-        if (smooth)
-            for (int k = 0; k < 3; k++)
-                for (int a = 0; a < 3; a++) sn[fc[f][k]][a] += nrm.e[a];
         /* a face keeps one material: majority/first non-(-1) wins, so a
            face whose corners carry the same layer shades seamlessly */
         float ft = -1.0f;
@@ -219,8 +283,8 @@ static int bake_topo(const float (*vx)[3], const uint8_t (*vc)[3],
             }
             memcpy(v->nrm, nrm.e, 12);
             int vi = fc[f][k];
-            v->col[0] = vc[vi][0]/255.0f; v->col[1] = vc[vi][1]/255.0f;
-            v->col[2] = vc[vi][2]/255.0f;
+            for (int a = 0; a < 3; a++)
+                v->col[a] = vc[vi][a] / 255.0f * occ[vi];
             v->tex = ft;   /* per-face material keeps flat interp stable */
         }
     }

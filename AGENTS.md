@@ -64,7 +64,10 @@ links m/dl/pthread. Win32-only code (file dialog, DPI awareness) is `_WIN32`
 - `src/model.c` — fused-block baking: per-child vertex colors + texture layers
   (`Vert.tex` float, -1 = inherit), internal cube face culling, baked vertex
   AO (`bake_ao`: 8-ray hemisphere occlusion vs child AABBs darkens the vert
-  color — fused/premade path only, sculpted topo needs accel first), `models.bw`
+  color; sculpted topo uses `bake_ao_topo` — same 8-ray hemisphere vs the
+  model's own triangles via Moller-Trumbore, per-source-vert factors
+  applied to the emitted soup, affordable at bake time within the SC_MAX
+  caps), `models.bw`
   persistence + `rk_model_mesh_add` upload. v7 stores per-vert material id
   (`mvtex`, int8 -1 = inherit) + layer lock (`mvlock`) + `adv` flag; v6 and
   older migrate. `Model.smooth` (flags bit1, no version bump) rebakes a

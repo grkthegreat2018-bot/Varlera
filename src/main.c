@@ -406,7 +406,7 @@ int main(void) {
             "VARLERA_DAY","VARLERA_EXIT","VARLERA_GEN","VARLERA_GENGLOW",
             "VARLERA_PARTS","VARLERA_PLACE","VARLERA_PLAY","VARLERA_PLAYER",
             "VARLERA_PROF","VARLERA_RELOAD","VARLERA_SAVE","VARLERA_SHOT",
-            "VARLERA_TITLE","VARLERA_SHRES",
+            "VARLERA_TITLE","VARLERA_SHRES","VARLERA_AO",
             "VARLERA_SKYOBJ","VARLERA_TAB","VARLERA_TEXPNG", 0 };
         int t = 0;
         for (int i = 0; TE[i]; i++) if (getenv(TE[i])) { t = 1; break; }
@@ -478,6 +478,25 @@ int main(void) {
             }
         }
         fprintf(stderr, "gen: %d blocks\n", g_nb);
+    }
+    /* AO check: VARLERA_AO=1 bakes a sculpted corner trough — the deep
+       corner verts must shade darker than the open edges */
+    if (getenv("VARLERA_AO")) {
+        static const float vx[7][3] = {
+            {-0.5f,0,-0.5f},{0.5f,0,-0.5f},{0.5f,0,0.5f},{-0.5f,0,0.5f},
+            {-0.5f,0.5f,-0.5f},{-0.5f,0.5f,0.5f},{0.5f,0.5f,-0.5f}};
+        static const uint8_t vc[7][3] = {
+            {240,240,240},{240,240,240},{240,240,240},{240,240,240},
+            {240,240,240},{240,240,240},{240,240,240}};
+        static const uint16_t fc[6][3] = {
+            {0,2,1},{0,3,2},{0,4,5},{0,5,3},{0,1,6},{0,6,4}};
+        int mid = model_sculpt_topo(vx, vc, NULL, NULL, fc, 7, 6, "AOTEST");
+        rk_models_commit();
+        if (mid >= 0) {
+            float col[3] = {0.9f, 0.9f, 0.9f};
+            int bi = world_add(v3_make(0, 2.5f, 0), v3_make(5,5,5), 0, 0, col);
+            if (bi >= 0) g_blocks[bi].shape = (uint8_t)g_models[mid].mesh;
+        }
     }
     const char *envReload = getenv("VARLERA_RELOAD");   /* test hook: F8 path */
     const char *envSave  = getenv("VARLERA_SAVE");      /* test hook: v4 save */
