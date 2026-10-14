@@ -18,6 +18,10 @@
 
 #define ART_PPX 4                 /* atlas px per art pixel */
 #define MAXCELLS (TEX_TILE / ART_PPX * 8)   /* 32 * 8 = 256 max grid edge */
+/* paint layers (session-held, per-frame; flattened into the atlas tile on
+ * close). Layer 0 = base atlas px; 1..3 lazy RGBA planes */
+#define ART_LAYERS 4
+#define ART_MAXF   64           /* max sheet frames (8x8) */
 
 static int   s_cells;             /* canvas grid edge (cells) */
 static int   s_tw, s_th;          /* texture dims in tiles */
@@ -30,6 +34,8 @@ static int   s_panDrag;           /* RMB pan in progress */
 static float s_pan0x, s_pan0y, s_panOX, s_panOY;
 static uint8_t *s_snap;           /* per-stroke undo snapshot (w*h*4) */
 static int   s_snapW, s_snapH, s_haveSnap;
+static uint8_t *s_lsnap[ART_LAYERS];    /* per-layer undo planes (cur frame) */
+static int   s_snapFrame = -1;
 
 /* flipbook frames: a multi-tile sheet edits ONE tile at a time; the frame
  * is a row-major tile index and shifts all art-cell addressing. */
@@ -46,6 +52,10 @@ static int   s_mvX, s_mvY;        /* current move offset */
 static int   s_float;             /* paste mode: ghost follows mouse */
 static uint8_t *s_clip; static int s_clipW, s_clipH;
 
+static uint8_t *s_lbuf[ART_MAXF][ART_LAYERS];
+static uint8_t  s_lvis[ART_MAXF][ART_LAYERS];
+static int      s_lact;
+
 static int art_frames(void) { return s_tw * s_th; }
 static void frame_off(int *ox, int *oy) {
     int cpt = TEX_TILE / ART_PPX;             /* art cells per tile */
@@ -55,14 +65,24 @@ static void frame_off(int *ox, int *oy) {
 
 static uint8_t *tex_pix(int *w, int *h) { return tex_px(A.artTex, w, h); }
 
-/* read/write one art pixel (ART_PPX block of atlas px) */
-static void aget(int cx, int cy, uint8_t out[4]) {
-    int w, h; uint8_t *p = tex_pix(&w, &h);
-    int ox, oy; frame_off(&ox, &oy);
-    int ax = (cx + ox) * ART_PPX, ay = (cy + oy) * ART_PPX;
-    memcpy(out, p + ((size_t)ay * RK_TEX_ATLAS + ax) * 4, 4);
+/* layer cell buffers: allocated lazily, one cells^2 RGBA plane per
+ * layer index 1..3 (layer 0 = the base atlas pixels, always "on") */
+static uint8_t *layer_buf(int f, int l, int alloc) {
+    if (f < 0 || f >= ART_MAXF || l < 1 || l >= ART_LAYERS) return NULL;
+    if (!s_lbuf[f][l] && alloc) {
+        s_lbuf[f][l] = calloc((size_t)s_cells * s_cells, 4);
+        s_lvis[f][l] = 1;
+    }
+    return s_lbuf[f][l];
 }
-static void aset(int cx, int cy, const uint8_t c[4]) {
+
+/* write a cell on the active layer (or base atlas when s_lact == 0) */
+static void lset(int cx, int cy, const uint8_t c[4]) {
+    if (s_lact > 0) {
+        uint8_t *lb = layer_buf(s_frame, s_lact, 1);
+        if (lb) memcpy(lb + ((size_t)cy * s_cells + cx) * 4, c, 4);
+        return;
+    }
     int w, h; uint8_t *p = tex_pix(&w, &h);
     int ox, oy; frame_off(&ox, &oy);
     for (int j = 0; j < ART_PPX; j++)
@@ -71,6 +91,47 @@ static void aset(int cx, int cy, const uint8_t c[4]) {
             if (ax < w && ay < h)
                 memcpy(p + ((size_t)ay * RK_TEX_ATLAS + ax) * 4, c, 4);
         }
+}
+
+/* composite read: base px then each visible overlay layer source-over */
+static void aget(int cx, int cy, uint8_t out[4]) {
+    int w, h; uint8_t *p = tex_pix(&w, &h);
+    int ox, oy; frame_off(&ox, &oy);
+    int ax = (cx + ox) * ART_PPX, ay = (cy + oy) * ART_PPX;
+    memcpy(out, p + ((size_t)ay * RK_TEX_ATLAS + ax) * 4, 4);
+    for (int l = 1; l < ART_LAYERS; l++) {
+        uint8_t *lb = s_lbuf[s_frame][l];
+        if (!lb || !s_lvis[s_frame][l]) continue;
+        uint8_t *q = lb + ((size_t)cy * s_cells + cx) * 4;
+        float a = q[3] / 255.0f, ia = 1.0f - a;
+        for (int c = 0; c < 3; c++)
+            out[c] = (uint8_t)(q[c] * a + out[c] * ia);
+        out[3] = (uint8_t)(q[3] + out[3] * ia);
+    }
+}
+static void aset(int cx, int cy, const uint8_t c[4]) { lset(cx, cy, c); }
+
+/* flatten the frame's overlay layers into its atlas tile + free them */
+static void flatten_frame(int f) {
+    int w, h; uint8_t *p = tex_pix(&w, &h);
+    int save = s_frame; s_frame = f;
+    for (int cy = 0; cy < s_cells; cy++)
+        for (int cx = 0; cx < s_cells; cx++) {
+            uint8_t c[4]; aget(cx, cy, c);
+            int ox, oy; frame_off(&ox, &oy);
+            for (int j = 0; j < ART_PPX; j++)
+                for (int i = 0; i < ART_PPX; i++) {
+                    int ax = (cx + ox) * ART_PPX + i, ay = (cy + oy) * ART_PPX + j;
+                    if (ax < w && ay < h)
+                        memcpy(p + ((size_t)ay * RK_TEX_ATLAS + ax) * 4, c, 4);
+                }
+        }
+    for (int l = 1; l < ART_LAYERS; l++) { free(s_lbuf[f][l]); s_lbuf[f][l] = NULL; }
+    s_frame = save;
+}
+static void flatten_all(void) {
+    int nf = art_frames(); if (nf > ART_MAXF) nf = ART_MAXF;
+    for (int f = 0; f < nf; f++) flatten_frame(f);
 }
 
 /* ---- stroke snapshot (undo) ---- */
@@ -85,6 +146,16 @@ static void snap_take(void) {
     for (int y = 0; y < h; y++)
         memcpy(s_snap + (size_t)y * w * 4,
                p + (size_t)y * RK_TEX_ATLAS * 4, (size_t)w * 4);
+    /* undo covers the current frame's layer planes too (NULL = empty) */
+    for (int l = 1; l < ART_LAYERS; l++) {
+        if (!s_lsnap[l]) s_lsnap[l] = malloc((size_t)s_cells * s_cells * 4);
+        if (!s_lsnap[l]) continue;
+        if (s_lbuf[s_frame][l])
+            memcpy(s_lsnap[l], s_lbuf[s_frame][l], (size_t)s_cells * s_cells * 4);
+        else
+            memset(s_lsnap[l], 0, (size_t)s_cells * s_cells * 4);
+    }
+    s_snapFrame = s_frame;
     s_haveSnap = 1;
 }
 static void snap_restore(void) {
@@ -93,6 +164,12 @@ static void snap_restore(void) {
     for (int y = 0; y < h && y < s_snapH; y++)
         memcpy(p + (size_t)y * RK_TEX_ATLAS * 4,
                s_snap + (size_t)y * w * 4, (size_t)(w < s_snapW ? w : s_snapW) * 4);
+    if (s_snapFrame >= 0 && s_snapFrame < ART_MAXF)
+        for (int l = 1; l < ART_LAYERS; l++) {
+            if (!s_lsnap[l]) continue;
+            uint8_t *lb = layer_buf(s_snapFrame, l, 1);
+            if (lb) memcpy(lb, s_lsnap[l], (size_t)s_cells * s_cells * 4);
+        }
 }
 
 static int canvas_cell(float x, float y, int *cx, int *cy) {
@@ -203,6 +280,10 @@ static void clear_all(void) {
     int w, h; uint8_t *p = tex_pix(&w, &h);
     for (int y = 0; y < h; y++)
         memset(p + (size_t)y * RK_TEX_ATLAS * 4, 0, (size_t)w * 4);
+    for (int f = 0; f < ART_MAXF; f++)
+        for (int l = 1; l < ART_LAYERS; l++) {
+            free(s_lbuf[f][l]); s_lbuf[f][l] = NULL; s_lvis[f][l] = 1;
+        }
 }
 
 void art_open(int texId) {
@@ -217,10 +298,23 @@ void art_open(int texId) {
     s_frame = 0; s_fplay = 0;
     s_sel[0] = s_sel[1] = s_sel[2] = s_sel[3] = -1;
     s_selDrag = s_moveDrag = s_float = 0;
+    for (int f = 0; f < ART_MAXF; f++)      /* fresh layer stack */
+        for (int l = 0; l < ART_LAYERS; l++) {
+            free(s_lbuf[f][l]); s_lbuf[f][l] = NULL; s_lvis[f][l] = 1;
+        }
+    s_lact = 0;
 }
 
 void art_close(int save) {
     if (A.modal != 1) return;
+    /* overlay edits are already live on the base plane only via aget;
+     * bake the composite so DONE and CANCEL both keep visible pixels */
+    flatten_all();
+    for (int f = 0; f < ART_MAXF; f++)
+        for (int l = 0; l < ART_LAYERS; l++) {
+            free(s_lbuf[f][l]); s_lbuf[f][l] = NULL;
+        }
+    for (int l = 0; l < ART_LAYERS; l++) { free(s_lsnap[l]); s_lsnap[l] = NULL; }
     if (save) { tex_commit(A.artTex); tex_save("textures.bw"); }
     A.modal = 0; A.artLMB = 0; s_shapeDrag = 0; s_panDrag = 0;
 }
@@ -245,6 +339,13 @@ static const char *TK[NT] = {"B","E","G","L","R","I","S","M","Z","C","O","P"};
 static float tools_x(void) {
     float cw, ch; layout(&cw, &ch);
     return s_cx + cw + 14.0f;
+}
+
+/* layer strip: 4 cells under the palette (0 = base) */
+static void layer_rect(int i, float *x, float *y) {
+    float py0 = s_cy + NT * 26.0f + 14.0f;
+    *x = tools_x() + i * 32.0f;
+    *y = py0 + 8 * 30.0f + 42.0f;
 }
 
 /* top bar buttons: DEL / CANCEL / DONE */
@@ -313,6 +414,11 @@ int art_press(float x, float y) {
     /* clear (alpha) swatch */
     float cxy = py0 + 8 * 30.0f + 6.0f;
     if (x >= tx && x < tx + 28 && y >= cxy && y < cxy + 26) { A.artTool = 1; return 1; }
+    /* layer strip: LMB = pick active plane (RMB toggles visibility) */
+    for (int i = 0; i < ART_LAYERS; i++) {
+        float lx, ly; layer_rect(i, &lx, &ly);
+        if (x >= lx && x < lx + 28 && y >= ly && y < ly + 26) { s_lact = i; return 1; }
+    }
 
     int cx, cy;
     if (canvas_cell(x, y, &cx, &cy) && !s_fplay) {
@@ -366,8 +472,17 @@ void art_release(void) {
 }
 
 void art_rmb(int down, float x, float y) {
-    if (down) { s_panDrag = 1; s_pan0x = x; s_pan0y = y;
-                s_panOX = s_panx; s_panOY = s_pany; }
+    if (down) {
+        for (int i = 1; i < ART_LAYERS; i++) {   /* eye toggle, base stays on */
+            float lx, ly; layer_rect(i, &lx, &ly);
+            if (x >= lx && x < lx + 28 && y >= ly && y < ly + 26) {
+                if (s_lbuf[s_frame][i]) s_lvis[s_frame][i] ^= 1;
+                return;
+            }
+        }
+        s_panDrag = 1; s_pan0x = x; s_pan0y = y;
+        s_panOX = s_panx; s_panOY = s_pany;
+    }
     else s_panDrag = 0;
 }
 
@@ -441,6 +556,7 @@ int art_key(int key, int mods) {
     if (key == GLFW_KEY_C && !ctrl) { snap_take(); clear_all(); }
     if (key == GLFW_KEY_O) s_onion ^= 1;
     if (key == GLFW_KEY_P) s_fplay ^= 1;
+    if (key >= GLFW_KEY_1 && key <= GLFW_KEY_4) s_lact = key - GLFW_KEY_1;
     if (key == GLFW_KEY_COMMA)
         { s_frame = (s_frame + art_frames() - 1) % art_frames(); s_fplay = 0; }
     if (key == GLFW_KEY_PERIOD)
@@ -491,6 +607,14 @@ void art_draw(void) {
             if (p[3] > 10)
                 rk_ui_rect(sx, sy, cs, cs, p[0]/255.0f, p[1]/255.0f, p[2]/255.0f,
                            p[3] / 255.0f);
+            for (int l = 1; l < ART_LAYERS; l++) {   /* overlay composite */
+                uint8_t *lb = (df < ART_MAXF) ? s_lbuf[df][l] : NULL;
+                if (!lb || !s_lvis[df][l]) continue;
+                const uint8_t *q = lb + ((size_t)cy * s_cells + cx) * 4;
+                if (q[3] > 10)
+                    rk_ui_rect(sx, sy, cs, cs, q[0]/255.0f, q[1]/255.0f,
+                               q[2]/255.0f, q[3] / 255.0f);
+            }
         }
 
     /* cell grid lines when zoomed enough to matter */
@@ -585,7 +709,12 @@ void art_draw(void) {
         snprintf(tb, sizeof tb, "PIXEL ART - %s (%dx%d)", g_tex[A.artTex].name,
                  s_tw, s_th);
     ui_text(s_cx, s_cy - 38, tb, 2, 0.9f, 0.92f, 1.0f, 1);
-    ui_text(s_cx, s_cy - 16, "WHEEL ZOOM - RMB PAN", 1, 0.55f, 0.6f, 0.7f, 1);
+    char hb[64];
+    if (s_lact)
+        snprintf(hb, sizeof hb, "WHEEL ZOOM - RMB PAN - LAYER L%d (1-4)", s_lact);
+    else
+        snprintf(hb, sizeof hb, "WHEEL ZOOM - RMB PAN - LAYER BASE (1-4)");
+    ui_text(s_cx, s_cy - 16, hb, 1, 0.55f, 0.6f, 0.7f, 1);
     for (int i = 0; i < 3; i++) {
         float bx, by; topbtn_rect(i, &bx, &by);
         int hov = A.mx >= bx && A.mx < bx + 70 && A.my >= by && A.my < by + 26;
@@ -632,6 +761,22 @@ void art_draw(void) {
     ui_text(tx + 9, cxy + 9, "X", 1, 0.9f, 0.4f, 0.4f, 1);
     rk_ui_rect(tx + 32, cxy, 28, 26, A.paintCol[0], A.paintCol[1], A.paintCol[2], 1);
     rk_ui_rect(tx + 32, cxy, 28, 1.5f, 1,1,1, 0.5f);
+
+    /* layer strip: B = base atlas, 1-3 overlay planes; LMB picks, RMB hides */
+    ui_text(tx, cxy + 38, "LAYERS", 1, 0.6f, 0.65f, 0.75f, 1);
+    for (int i = 0; i < ART_LAYERS; i++) {
+        float lx, ly; layer_rect(i, &lx, &ly);
+        int hid = i > 0 && s_lbuf[s_frame][i] && !s_lvis[s_frame][i];
+        int act = (i == s_lact);
+        rk_ui_rect(lx, ly, 28, 26,
+                   act ? 0.30f : 0.14f, act ? 0.45f : 0.16f,
+                   act ? 0.65f : 0.22f, hid ? 0.35f : 1.0f);
+        char ll[4]; snprintf(ll, sizeof ll, i ? "%d" : "B", i);
+        ui_text(lx + 10, ly + 9, ll, 1, hid ? 0.5f : 1.0f, hid ? 0.5f : 1.0f,
+                hid ? 0.5f : 1.0f, 1);
+        if (i > 0 && s_lbuf[s_frame][i])        /* content dot */
+            rk_ui_rect(lx + 22, ly + 2, 4, 4, 0.4f, 0.9f, 0.5f, 1);
+    }
 
     rk_ui_flush();
 }

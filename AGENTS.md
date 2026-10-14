@@ -304,6 +304,10 @@ TEX tab EDIT/NEW/SHEET at the top; tools PEN/ERASE/FILL/LINE/RECT/PICK/SEL +
 MIRROR/UNDO/CLEAR/ONION/PLAY, wheel zoom, RMB pan, per-stroke snapshot
 (SEL = marquee select: drag inside lifts+moves w/ ghost preview, Del clears,
 Ctrl+C/X/V clipboard + follow-mouse paste ghost, Esc deselects),
+4-session paint layers per frame (BASE + L1-3, lazy cell planes; LAYERS
+strip under the palette: LMB picks active, RMB toggles visibility,
+keys 1-4; aget composites source-over, aset writes the active plane;
+flattened into the atlas tile on close — not persisted),
 undo, DONE commits + saves, CANCEL/ESC discards; multi-tile sheets edit
 one tile per canvas with a frame strip + onion skin for flipbook anim —
 TEXM_ANIM mode plays tiles row-major at tex_fps per texture), 2 = sculpt mode (sculpt.c, SCULPT
