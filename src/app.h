@@ -30,6 +30,8 @@ typedef struct {
     v3 camPos, camVel;
     float yaw, pitch, speed, fov;
     int invertY;
+    float sens;                     /* mouse-look multiplier (def 1.0) */
+    float autoSec;                  /* autosave interval s (0 = off, def 90) */
     m4 viewProj;
 
     AppMode app;

@@ -23,7 +23,7 @@ submit ~0.55ms. Re-measure after each perf item.
 | ⏳ Side panel polish | S | `panel.c` | Search + richer tooltips landed; icon materials, hover states, collapse animation pending. |
 | ✅ Object indexing + metadata `756a1fc` | S | `world.c`, `model.c`, `panel.c` | Search on SHAPES/MODELS/PROPS, info readout w/ stable id, full script rows (TRIG/ACT/TGT/PARAM/NAME), dead ACT_COLOR/TEX/DEL wired live. |
 | ⏳ More default block shapes `353686d` | S | `meshgen.c`, `panel.c` | Pass 1 landed: Slab/Plate/Beam/Pipe/Arch/Ring. `6fd575f`: cageball reworked to a real birdcage. `e9157a3`: fixed RING/model-0 mesh-id collision (BASE_MODEL 16→32 + v6 save remap). BW parity pass remains. |
-| ⏳ User settings + controls `5be4a7d` | S→M | `main.c`, `camera.c`, `settings.c` | Core file + FOV/invert-Y landed; rebindable keys, UI scale, autosave interval pending. |
+| ⏳ User settings + controls `5be4a7d` | S→M | `main.c`, `camera.c`, `settings.c` | Core file + FOV/invert-Y + autosave interval (settings.bw v3 `autoSec`, [/] cycles 30/60/90/180/300/600/OFF) + mouse sensitivity (`sens`, ,/. keys) landed; rebindable keys, UI scale pending. |
 | ⏳ QOL pass | S | `panel.c`, `edit.c`, `main.c` | Block search + toasts landed; hotkey hints bar, drag multi-select pending. |
 | ⏳ Debugging v1 `d0d6685` | S | `prof.c`, `main.c`, `log.c` | `varlera.log` stderr tee + crash minidump landed; overlay page 2 ✅ (F3 cycles off->p1->p2: per-kind queue insts,
 inst/mesh/model-vert pool usage, WSet + cam summary). Validation hotkey

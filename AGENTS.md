@@ -153,10 +153,13 @@ links m/dl/pthread. Win32-only code (file dialog, DPI awareness) is `_WIN32`
   cubes — GLOW-flagged kinds feed the bloom bright pass for free.
   Emitters: script trigger edges in `physics.c` (BOOST→smoke/sparks,
   DELETE→debris, etc.) + placement puff in `edit.c`.
-- `src/settings.c` — settings.bw v1: window rect/fullscreen, cam speed/fov/
-  invertY, prof overlay, guide toggle + seen bitmask (pad-carved, same size).
+- `src/settings.c` — settings.bw v3: window rect/fullscreen, cam speed/fov/
+  invertY, prof overlay, guide toggle + seen bitmask (pad-carved, same size),
+  v2 saveDir, v3 autoSec (0=file-default 90s, <0 = off) + sens (mouse-look
+  multiplier, `cam_look` * A.sens).
   `settings_load` pre-window, `apply` post-cam_init,
-  `save` on toggle + dirty flag. Keys: Y invert, -/= fov, G guide.
+  `save` on toggle + dirty flag. Keys: Y invert, -/= fov, G guide,
+  ,/. sens, [/] autosave cycle (30/60/90/180/300/600/OFF).
 - `src/log.c` — `log_init()` at main() start tees fd-2 through a pipe:
   every `fprintf(stderr)` mirrors to real stderr AND `varlera.log`
   (truncated per run); glslc children inherit the pipe so compile errors

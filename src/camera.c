@@ -42,9 +42,10 @@ void cam_ray(double mx, double my, v3 *ro, v3 *rd) {
 }
 
 void cam_look(float dx, float dy) {
-    A.yaw -= dx * 0.0042f;               /* mouse right -> look right */
+    float s = 0.0042f * A.sens;
+    A.yaw -= dx * s;                     /* mouse right -> look right */
     if (A.invertY) dy = -dy;
-    A.pitch = clampf(A.pitch - dy * 0.0042f, -1.55f, 1.55f);
+    A.pitch = clampf(A.pitch - dy * s, -1.55f, 1.55f);
 }
 
 void cam_pan(float dx, float dy) {

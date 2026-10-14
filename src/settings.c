@@ -8,7 +8,7 @@
 #include <stddef.h>
 
 #define SET_MAGIC 0x54535742u   /* 'BWTS' */
-#define SET_VER   2             /* v1 = prefix through guideSeen+pad */
+#define SET_VER   3             /* v3 adds autoSec + sens */
 
 typedef struct {
     uint32_t magic, ver;
@@ -18,6 +18,8 @@ typedef struct {
     uint64_t guideSeen;
     uint8_t  pad[52];
     char     saveDir[384];      /* v2: user-chosen world save folder */
+    float    autoSec;           /* v3: autosave seconds (0 = off) */
+    float    sens;              /* v3: mouse-look multiplier */
 } Settings;
 
 static Settings s_cur;
@@ -29,7 +31,8 @@ void settings_load(void) {
     /* read only the bytes the file's version actually contains */
     if (fread(&s_cur, 8, 1, f) == 1 && s_cur.magic == SET_MAGIC) {
         size_t want = s_cur.ver == 1 ? offsetof(Settings, saveDir)
-                    : s_cur.ver == 2 ? sizeof s_cur : 0;
+                    : s_cur.ver == 2 ? offsetof(Settings, autoSec)
+                    : s_cur.ver == 3 ? sizeof s_cur : 0;
         if (want && (fseek(f, 0, SEEK_SET) == 0) &&
             fread(&s_cur, want, 1, f) == 1)
             s_cur.ver = SET_VER;
@@ -53,6 +56,10 @@ void settings_apply(void) {
     A.guideSeen = s_cur.guideSeen;
     if (!!s_cur.profOn != prof_shown()) prof_toggle();
     worlds_set_dir(s_cur.saveDir);
+    /* 0 in the file = pre-v3 (default 90); <0 = user-disabled autosave */
+    A.autoSec = s_cur.autoSec > 0.0f ? s_cur.autoSec
+              : s_cur.autoSec < 0.0f ? 0.0f : 90.0f;
+    A.sens = s_cur.sens > 0.05f ? s_cur.sens : 1.0f;
 }
 
 void settings_save(void) {
@@ -66,6 +73,8 @@ void settings_save(void) {
     s_cur.guideOff = !A.guideOn;
     s_cur.guideSeen = A.guideSeen;
     snprintf(s_cur.saveDir, sizeof s_cur.saveDir, "%s", worlds_dir());
+    s_cur.autoSec = A.autoSec;
+    s_cur.sens = A.sens;
     FILE *f = fopen("settings.bw", "wb");
     if (!f) return;
     fwrite(&s_cur, sizeof s_cur, 1, f);

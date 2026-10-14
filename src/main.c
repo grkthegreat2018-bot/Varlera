@@ -263,6 +263,30 @@ static void on_key(GLFWwindow *w, int key, int sc, int action, int mods) {
         A.guideOn = !A.guideOn; A.setDirty = 1;
         toast_say(A.guideOn ? "guide tips ON" : "guide tips OFF"); return;
     }
+    /* ,/. look sensitivity; [/] autosave interval cycle */
+    if ((key == GLFW_KEY_COMMA || key == GLFW_KEY_PERIOD) &&
+        action == GLFW_PRESS) {
+        A.sens = clampf(A.sens * (key == GLFW_KEY_PERIOD ? 1.15f : 0.87f),
+                        0.1f, 4.0f);
+        A.speedMsgT = glfwGetTime();
+        snprintf(A.renBuf, sizeof A.renBuf, "SENS %.2f", A.sens);
+        toast_say(A.renBuf);
+        A.setDirty = 1; return;
+    }
+    if ((key == GLFW_KEY_LEFT_BRACKET || key == GLFW_KEY_RIGHT_BRACKET) &&
+        action == GLFW_PRESS) {
+        static const float STEPS[] = {30, 60, 90, 180, 300, 600, -1};
+        int cur = 6;
+        for (int i = 0; i < 6; i++) if (A.autoSec == STEPS[i]) { cur = i; break; }
+        cur = (cur + (key == GLFW_KEY_RIGHT_BRACKET ? 1 : 6)) % 7;
+        A.autoSec = STEPS[cur];
+        toast_say(A.autoSec > 0 ? "autosave updated" : "autosave OFF");
+        if (A.autoSec > 0) {
+            snprintf(A.renBuf, sizeof A.renBuf, "AUTOSAVE %ds", (int)A.autoSec);
+            toast_say(A.renBuf);
+        }
+        A.setDirty = 1; return;
+    }
     if (key == GLFW_KEY_ESCAPE && panel_del_pending()) { panel_del_cancel(); return; }
     if (key == GLFW_KEY_ESCAPE && A.app == APP_PLAY) { app_toggle_mode(); return; }
     if (A.app == APP_EDIT) edit_key(key, mods);
@@ -568,7 +592,8 @@ int main(void) {
         if (A.setDirty) { A.setDirty = 0; settings_save(); }
         /* autosave: world mutated + 90s since last write -> .auto.bw */
         static uint64_t s_lastRev; static double s_lastAuto;
-        if (world_rev() != s_lastRev && t - s_lastAuto > 90.0) {
+        if (world_rev() != s_lastRev && A.autoSec > 0.0f &&
+            t - s_lastAuto > A.autoSec) {
             worlds_ensure();
             if (world_save(worlds_file(A.worldName, "auto.bw"), A.worldName)) {
                 s_lastRev = world_rev(); s_lastAuto = t;
