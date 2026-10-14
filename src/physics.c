@@ -456,6 +456,7 @@ static float boost_step(int i, float dt) {
 static v3   s_plPos, s_plVel, s_plSpawn, s_plSavedCam;
 static int  s_plGround, s_plActive, s_goalsTotal;
 static int  s_hp, s_score; static float s_hurtT;
+static float s_coyote, s_jumpBuf;
 static uint8_t s_goalHit[MAX_BLOCKS], s_taken[MAX_BLOCKS];
 #define PL_R   0.32f
 #define PL_H   1.75f
@@ -531,8 +532,13 @@ void world_player_tick(float dt) {
     float spd = glfwGetKey(A.win, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS
               ? 3.2f : 6.5f;                              /* shift = walk */
     s_plVel.x = wish.x * spd; s_plVel.z = wish.z * spd;
-    if (glfwGetKey(A.win, GLFW_KEY_SPACE) == GLFW_PRESS && s_plGround) {
+    /* jump feel: SPACE buffers 0.12s; ground grace (coyote) 0.12s */
+    if (glfwGetKey(A.win, GLFW_KEY_SPACE) == GLFW_PRESS) s_jumpBuf = 0.12f;
+    else if (s_jumpBuf > 0.0f) s_jumpBuf -= dt;
+    if (s_plGround) s_coyote = 0.12f; else if (s_coyote > 0.0f) s_coyote -= dt;
+    if (s_jumpBuf > 0.0f && s_coyote > 0.0f) {
         s_plVel.y = 9.0f; s_plGround = 0;
+        s_coyote = 0.0f; s_jumpBuf = 0.0f;
     }
     s_plVel.y -= 26.0f * dt;
     s_plGround = 0;
@@ -569,7 +575,7 @@ void world_player_tick(float dt) {
     for (int i = 0; i < g_nb; i++) {
         const Block *b = &g_blocks[i];
         int t = b->texm & (TEXM_HAZARD | TEXM_PICKUP);
-        if (!t || s_taken[i]) continue;
+        if (!(t || (b->flags & BF_SPAWN)) || s_taken[i]) continue;
         v3 c = v3_make(s_plPos.x, s_plPos.y + PL_H * 0.5f, s_plPos.z);
         const float ph[3] = {PL_R, PL_H * 0.5f, PL_R};
         v3 bh = v3_scale(block_eff_size(b), 0.5f);
@@ -577,6 +583,16 @@ void world_player_tick(float dt) {
         if (ph[0] + bh.x - fabsf(d.x) <= 0.0f) continue;
         if (ph[1] + bh.y - fabsf(d.y) <= 0.0f) continue;
         if (ph[2] + bh.z - fabsf(d.z) <= 0.0f) continue;
+        if (b->flags & BF_SPAWN) {              /* checkpoint: touch updates */
+            v3 np = b->pos;
+            np.y += bh.y + 0.05f;
+            if (v3_dist(np, s_plSpawn) > 0.25f) {
+                s_plSpawn = np;
+                particles_burst(P_SPARK, b->pos, NULL, 8);
+                toast_say("CHECKPOINT");
+            }
+            continue;
+        }
         if (t & TEXM_PICKUP) {
             s_taken[i] = 1; s_score++;
             particles_burst(P_SPARK, b->pos, NULL, 10);
