@@ -61,5 +61,6 @@ void main() {
     if (u.camPos.y < vWorld.y) col *= 0.8;   /* dim underside slightly */
     float d = distance(u.camPos.xyz, vWorld);
     float f = clamp((d - u.fogParams.x) / (u.fogParams.y - u.fogParams.x), 0.0, 1.0);
+    f = pow(f, u.fogParams.z);                  /* world-set fog curve */
     outColor = vec4(mix(col, u.fogColor.rgb, f), 1.0);
 }

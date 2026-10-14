@@ -56,26 +56,26 @@ void panel_env_load(void) {
 /* pending world-setting change that needs the wipe-warning confirm */
 static int s_wConfirm = -1;
 /* rows 8-11 = skybox object pickers (visible iff SKY OBJS on);
-   rows 12-14 = EXPERIMENTAL render section (visible iff ADV RENDER on);
+   rows 12-14 + 17-18 = EXPERIMENTAL render section (visible iff ADV RENDER);
    row 15 = day/night cycle speed; row 16 = play-mode player */
-#define WS_ROWS 17
+#define WS_ROWS 19
 static int ws_row_vis(int i) {
     const WSet *w = world_wset();
-    if (i >= 12 && i <= 14) return w->advRender;
+    if (i >= 12 && i <= 14 || i >= 17) return w->advRender;
     if (i >= 8 && i <= 11)  return w->skyAssets;
     return 1;
 }
 static const char *WLBL[] = {"PHYS","CHUNK","CHUNK SZ","LOD","ADV RENDER",
                              "GRAVITY","DRAG","SKY OBJS","SUN","MOON",
                              "OBJ A","OBJ B","FOG START","FOG END","BLOOM",
-                             "DAY CYCLE","PLAYER"};
+                             "DAY CYCLE","PLAYER","FOG CURVE","PCF RADIUS"};
 static const char *WWARN[] = {
     "PHYSICS MODE CHANGES PLAY BEHAVIOR",
     "CHUNK LAYOUT MAY RESHAPE OR WIPE THIS WORLD",
     "CHUNK SIZE MAY RESHAPE OR WIPE THIS WORLD",
     "LOD ALTERS DRAW DISTANCE QUALITY",
     "EXPERIMENTAL RENDER FLAGS CAN CAUSE BUGS",
-    "", "", "", "", "", "", "", "", "", "", "",
+    "", "", "", "", "", "", "", "", "", "", "", "", "",
 };
 static const uint8_t GRAV_STEPS[] = {0, 2, 4, 8, 12, 16};   /* 0x..2x */
 /* index names only — step tables/apply live with the record (world.c) */
@@ -107,6 +107,8 @@ static void wset_cycle(int i) {
     case 14: w->bloom   = (uint8_t)((w->bloom + 1) & 3); break;
     case 15: w->dayCycle = (uint8_t)((w->dayCycle + 1) & 3); break;
     case 16: w->playerMode ^= 1; break;
+    case 17: w->fogCurve = (uint8_t)((w->fogCurve + 1) & 3); break;
+    case 18: w->pcfRad   = (uint8_t)((w->pcfRad + 1) & 3); break;
     }
     world_wset_dirty();
 }
@@ -135,6 +137,10 @@ static const char *wset_val(int i, const WSet *w, char *b) {
               return DL[w->dayCycle & 3]; }
     case 16: { static const char *PM[] = {"FLY","WALK"};
               return PM[w->playerMode & 1]; }
+    case 17: { static const char *FC[] = {"LIN","1.5","2.0","3.0"};
+              return FC[w->fogCurve & 3]; }
+    case 18: { static const char *PC[] = {"0.5","1","2","3"};
+              return PC[w->pcfRad & 3]; }
     }
     return "";
 }

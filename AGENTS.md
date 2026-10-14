@@ -111,7 +111,9 @@ links m/dl/pthread. Win32-only code (file dialog, DPI awareness) is `_WIN32`
   `world_rev()` changed. v4 files end with an optional 32B `WSet`
   settings trailer (phys mode / chunkShape+Size / lod / advRender /
   gravMul / skyAssets + skyObj[4] carved from pad — 0=none, 1+=model
-  index) — `world_wset()` is the live record, WORLD tab
+  index; fogCurve + pcfRad ride UBO `fogParams.zw` — fog exponent and
+  shadow PCF texel radius, EXPERIMENTAL rows 17-18) — `world_wset()`
+  is the live record, WORLD tab
   edits it and dangerous rows (`!`) get an APPLY/CANCEL wipe-warning
   dialog. `tests/world_v4.c` (ctest) covers round-trip + v3 migration.
   `world_pick_block`/`ray_unit_box` are the shared slab-pick used by

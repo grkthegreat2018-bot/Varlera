@@ -991,6 +991,7 @@ int rk_init(GLFWwindow *win) {
     { v3 l = rk_light_dir(); memcpy(G.ubo.lightDir, l.e, sizeof l); }
     G.ubo.fogColor[0]=0.56f; G.ubo.fogColor[1]=0.66f; G.ubo.fogColor[2]=0.82f; G.ubo.fogColor[3]=1;
     G.ubo.fogParams[0]=60.0f; G.ubo.fogParams[1]=170.0f;
+    G.ubo.fogParams[2]=1.0f;  G.ubo.fogParams[3]=0.5f;   /* curve, PCF px */
     G.ubo.groundCol[0]=0.58f; G.ubo.groundCol[1]=0.60f;
     G.ubo.groundCol[2]=0.64f; G.ubo.groundCol[3]=0;   /* w = ground style */
     G.bloomAmt = 0.55f;
@@ -1021,8 +1022,9 @@ void rk_set_day(float k) {
     G.ubo.groundCol[3] = (float)G.envStyle;
 }
 
-void rk_set_fog(float near_, float far_) {
+void rk_set_fog(float near_, float far_, float curve, float pcf) {
     G.ubo.fogParams[0] = near_; G.ubo.fogParams[1] = far_;
+    G.ubo.fogParams[2] = curve; G.ubo.fogParams[3] = pcf;
 }
 void rk_set_bloom(float amt) { G.bloomAmt = amt; }
 

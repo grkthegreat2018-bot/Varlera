@@ -154,7 +154,7 @@ void rk_ui_flush(void);
 /* environment look: sky tints clear+fog, ground tints the grid base color.
  * gstyle: 0 grid, 1 checker, 2 dots, 3 plain (grid.frag pattern select) */
 void rk_set_env(const float sky[3], const float ground[3], int gstyle);
-void rk_set_fog(float near_, float far_);   /* world-set override (60/170 def) */
+void rk_set_fog(float near_, float far_, float curve, float pcf);
 void rk_set_bloom(float amt);               /* bloom mix strength (def 0.55) */
 void rk_set_light(v3 d);                    /* dynamic sun/moon direction */
 void rk_set_day(float k);                   /* 0..1 daylight (env color mul) */

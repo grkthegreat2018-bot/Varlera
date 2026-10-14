@@ -35,9 +35,10 @@ float shadowFactor(vec3 wp) {
     if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0) return 1.0;
     float ref = ndc.z - 0.0025;                    /* depth bias */
     if (ref <= 0.0 || ref >= 1.0) return 1.0;
-    /* 4-tap PCF on top of hardware-compare linear filter */
+    /* 4-tap PCF on top of hardware-compare linear filter;
+       radius in texels comes from the world settings */
     vec2 ts = vec2(textureSize(shadowMap, 0));
-    vec2 px = 1.0 / ts;
+    vec2 px = u.fogParams.w / ts;
     float s = 0.0;
     s += texture(shadowMap, vec3(uv + px * vec2(-0.5, -0.5), ref));
     s += texture(shadowMap, vec3(uv + px * vec2( 0.5, -0.5), ref));
@@ -124,6 +125,7 @@ void main() {
     if ((vFlags & 8u) == 0u) {                     /* fog unless NOFOG */
         float d = distance(u.camPos.xyz, vWorld);
         float f = clamp((d - u.fogParams.x) / (u.fogParams.y - u.fogParams.x), 0.0, 1.0);
+        f = pow(f, u.fogParams.z);                  /* world-set fog curve */
         col = mix(col, u.fogColor.rgb, f);
     }
     outColor = vec4(col, vColor.a);

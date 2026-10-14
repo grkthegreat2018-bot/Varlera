@@ -129,13 +129,17 @@ typedef struct {
     uint8_t  dayCycle;       /* 0 off, 1 slow (10min), 2 med (2min), 3 fast (30s) */
     uint8_t  dayPhase;       /* persisted phase: 0..255 maps to 0..2pi */
     uint8_t  playerMode;     /* play-mode camera: 0 free fly, 1 first-person walk */
-    uint8_t  pad[10];
+    uint8_t  fogCurve;       /* EXPERIMENTAL: fog falloff curve idx 0-3 -> 1/1.5/2/3 */
+    uint8_t  pcfRad;         /* EXPERIMENTAL: shadow PCF radius idx 0-3 -> px */
+    uint8_t  pad[8];
 } WSet;
 #define WS_PHYS_SETTLE 0
 #define WS_PHYS_RIGID  1
 WSet *world_wset(void);          /* live record; edit in place */
 void world_wset_dirty(void);     /* call after edits -> autosave notices */
 void world_fog_params(float *near_, float *far_);   /* advRender-gated */
+float world_fog_curve(void);   /* advRender-gated fog exponent (def 1.0) */
+float world_pcf_rad(void);     /* advRender-gated shadow PCF radius px (def .5) */
 float world_bloom_amt(void);                        /* advRender-gated */
 /* day/night: advance the cycle; sun_dir returns the current light
  * direction (moon-reflected when the sun sets) and k the daylight 0..1 */

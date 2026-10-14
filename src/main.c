@@ -475,7 +475,7 @@ int main(void) {
         rk_set_camera(A.viewProj, eye.e, focus.e);
         {   /* EXPERIMENTAL render rows (WSet, advRender-gated) */
             float fn, ff; world_fog_params(&fn, &ff);
-            rk_set_fog(fn, ff);
+            rk_set_fog(fn, ff, world_fog_curve(), world_pcf_rad());
             rk_set_bloom(world_bloom_amt());
         }
         {   /* day/night: orbit light + dim env toward night tint */

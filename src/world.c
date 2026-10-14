@@ -129,6 +129,14 @@ void world_fog_params(float *near_, float *far_) {
     *near_ = s_wset.advRender ? N[s_wset.fogNear & 3] : 60.0f;
     *far_  = s_wset.advRender ? F[s_wset.fogFar & 3]  : 170.0f;
 }
+float world_fog_curve(void) {
+    static const float C[] = {1.0f, 1.5f, 2.0f, 3.0f};
+    return s_wset.advRender ? C[s_wset.fogCurve & 3] : 1.0f;
+}
+float world_pcf_rad(void) {
+    static const float P[] = {0.5f, 1.0f, 2.0f, 3.0f};
+    return s_wset.advRender ? P[s_wset.pcfRad & 3] : 0.5f;
+}
 float world_bloom_amt(void) {
     static const float AMT[] = {0.55f, 0.0f, 0.30f, 1.0f};
     return s_wset.advRender ? AMT[s_wset.bloom & 3] : 0.55f;
