@@ -434,6 +434,37 @@ int main(void) {
             if (glowEvery && bi >= 0 && i % glowEvery == 0)
                 g_blocks[bi].texm = TEXM_MAT(TEXM_GLOW);
         }
+        /* scene variants: glass sort / fused-model / shadow-city */
+        const char *envScene = getenv("VARLERA_SCENE");
+        if (envScene && !strcmp(envScene, "glass")) {
+            for (int i = 0; i < g_nb; i++) {
+                g_blocks[i].flags |= BF_GLASS;
+                g_blocks[i].alpha = 0.45f;
+            }
+        } else if (envScene && !strcmp(envScene, "models") && g_nmodels) {
+            for (int i = 0; i < g_nb; i++) {
+                Model *m = &g_models[i % g_nmodels];
+                g_blocks[i].shape = (uint8_t)m->mesh;
+                g_blocks[i].size = v3_scale(m->size,
+                                0.75f + (i & 3) * 0.25f);
+            }
+        } else if (envScene && !strcmp(envScene, "city")) {
+            /* stacked towers: deep occluders = worst-case shadow volume */
+            g_nb = 0;
+            rng = 0x9E3779B9u;
+            for (int i = 0; i < n / 8 && g_nb < MAX_BLOCKS - 8; i++) {
+                rng = rng * 1664525u + 1013904223u;
+                float bx = (float)((rng >> 8) & 0x3FF) / 16.0f - 32.0f;
+                rng = rng * 1664525u + 1013904223u;
+                float bz = (float)((rng >> 8) & 0x3FF) / 16.0f - 32.0f;
+                int floors = 3 + (int)((rng >> 16) & 7);
+                for (int f = 0; f < floors && g_nb < MAX_BLOCKS; f++) {
+                    float col[3] = {0.4f, 0.42f, 0.5f};
+                    world_add(v3_make(bx, 0.5f + f, bz), v3_make(1.4f,1,1.4f),
+                              0, 0, col);
+                }
+            }
+        }
         fprintf(stderr, "gen: %d blocks\n", g_nb);
     }
     const char *envReload = getenv("VARLERA_RELOAD");   /* test hook: F8 path */

@@ -199,7 +199,9 @@ links m/dl/pthread. Win32-only code (file dialog, DPI awareness) is `_WIN32`
 - Screenshot: F12 or `VARLERA_SHOT=out.bmp` (auto at frame 45) —
   swapchain TRANSFER_SRC copy -> staging -> 24bpp BMP next frame.
 - Other test hooks (all in `main.c` init/frame block): `VARLERA_GEN=N`
-  block scatter, `VARLERA_GENGLOW=N` every-Nth block GLOW, `VARLERA_TAB=N`
+  block scatter (+ `VARLERA_SCENE=glass|models|city` variants: translucent
+  sort stress, fused-model instances, stacked-tower shadow volume),
+  `VARLERA_GENGLOW=N` every-Nth block GLOW, `VARLERA_TAB=N`
   open panel tab, `VARLERA_PARTS=N` particle burst at frame 20,
   `VARLERA_EXIT=N` quit at frame N (clean-shutdown validation checks),
   `VARLERA_SAVE`/`VARLERA_BWX`/`VARLERA_BWXIN`/`VARLERA_OBJ` world IO at
