@@ -8,14 +8,26 @@
 #include "world.h"
 #include "model.h"
 #include "tex.h"
+#include "toast.h"
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
+#include <time.h>
 
 #define BX_MAGIC 0x42585742u   /* 'BWXB' */
-#define BX_VER   1
+#define BX_VER   2
 
-enum { BX_WORLD = 1, BX_MODELS, BX_TEX };
+enum { BX_WORLD = 1, BX_MODELS, BX_TEX, BX_PROV };
+
+static BxProv s_prov;                    /* last imported bundle's info */
+static int  s_haveProv;
+const BxProv *bundle_prov(void) { return s_haveProv ? &s_prov : NULL; }
+
+static const char *os_user(void) {
+    const char *u = getenv("USERNAME");
+    if (!u || !*u) u = getenv("USER");
+    return (u && *u) ? u : "unknown";
+}
 
 static void tmp_path(char *out, int n, int tag) {
     snprintf(out, n, "%s/.bwx_tmp_%d", worlds_dir(), tag);
@@ -31,8 +43,22 @@ int bundle_save(const char *path, const char *name) {
         FILE *f = fopen(path, "wb");
         if (!f) ok = 0;
         else {
-            uint32_t hdr[3] = {BX_MAGIC, BX_VER, 3};
+            uint32_t hdr[3] = {BX_MAGIC, BX_VER, 4};
             ok = fwrite(hdr, 12, 1, f) == 1;
+            /* provenance first: v1 readers skip unknown part ids */
+            if (ok) {
+                BxProv pv; memset(&pv, 0, sizeof pv);
+                snprintf(pv.world, sizeof pv.world, "%s",
+                         name && name[0] ? name : "world");
+                snprintf(pv.creator, sizeof pv.creator, "%s", os_user());
+                pv.created = pv.modified = (uint32_t)time(NULL);
+                snprintf(pv.note, sizeof pv.note, "varlera bundle");
+                uint8_t ph[8] = {0};
+                uint32_t len = sizeof pv;
+                ph[0] = BX_PROV; memcpy(ph + 4, &len, 4);
+                ok = fwrite(ph, 8, 1, f) == 1 &&
+                     fwrite(&pv, len, 1, f) == 1;
+            }
             for (int p = 0; p < 3 && ok; p++) {
                 FILE *s = fopen(tmp[p], "rb");
                 if (!s) { ok = 0; break; }
@@ -58,9 +84,11 @@ int bundle_load(const char *path, char *nameOut) {
     FILE *f = fopen(path, "rb");
     if (!f) return 0;
     uint32_t hdr[3];
-    if (fread(hdr, 12, 1, f) != 1 || hdr[0] != BX_MAGIC || hdr[1] != BX_VER) {
+    if (fread(hdr, 12, 1, f) != 1 || hdr[0] != BX_MAGIC ||
+        hdr[1] < 1 || hdr[1] > BX_VER) {
         fclose(f); return 0;
     }
+    s_haveProv = 0;
     char tmp[3][512]; int have[3] = {0};
     worlds_ensure();
     for (uint32_t p = 0; p < hdr[2]; p++) {
@@ -69,6 +97,25 @@ int bundle_load(const char *path, char *nameOut) {
         uint32_t len; memcpy(&len, ph + 4, 4);
         int t = ph[0];
         FILE *o = NULL;
+        if (t == BX_PROV) {
+            char pbuf[512];
+            uint32_t keep = len < sizeof pbuf ? len : sizeof pbuf;
+            uint32_t skip = len - keep, off = 0;
+            while (len) {
+                size_t want = len < 8192 ? len : 8192;
+                uint8_t buf[8192];
+                size_t r = fread(buf, 1, want, f);
+                if (!r) break;
+                len -= (uint32_t)r;
+                uint32_t take = keep - off < (uint32_t)r ? keep - off
+                                                       : (uint32_t)r;
+                memcpy(pbuf + off, buf, take); off += take;
+            }
+            (void)skip;
+            if (off >= sizeof(BxProv)) { memcpy(&s_prov, pbuf, sizeof s_prov);
+                                         s_haveProv = 1; }
+            continue;
+        }
         if (t >= 1 && t <= 3) {
             tmp_path(tmp[t - 1], 512, t);
             o = fopen(tmp[t - 1], "wb");
@@ -90,5 +137,13 @@ int bundle_load(const char *path, char *nameOut) {
     if (ok && have[1]) { g_nmodels = 0; models_load(tmp[1]); models_rebake_all(); }
     if (ok && have[2]) tex_load(tmp[2]);
     for (int t = 0; t < 3; t++) if (have[t]) remove(tmp[t]);
+    if (ok && s_haveProv) {
+        char msg[128];
+        snprintf(msg, sizeof msg, "imported '%s' by %s",
+                 s_prov.world, s_prov.creator);
+        toast_say(msg);
+        fprintf(stderr, "bwx provenance: '%s' by %s\n",
+                s_prov.world, s_prov.creator);
+    }
     return ok;
 }

@@ -161,12 +161,17 @@ u8  saveDir[384]          (v2+)
 
 v1 readers stop at `guideSeen` + pad (prefix-compatible).
 
-## bundle .bwx — `BWXB`, ver = 1
+## bundle .bwx — `BWXB`, ver = 2
 
 ```
-u32 magic 'BWXB', u32 ver(1), u32 nparts(3)
-per part p in 1..3:   u8 id(p), u8 pad[3], u32 len, u8 bytes[len]
+u32 magic 'BWXB', u32 ver(1|2), u32 nparts
+per part:   u8 id, u8 pad[3], u32 len, u8 bytes[len]
 ```
 
 Parts: 1 = world.bw, 2 = models.bw, 3 = textures.bw — each an exact
 embedded copy of the format above (all migration rules apply).
+4 = provenance (`BxProv`, v2+, written first): `char world[32]`,
+`char creator[32]` (OS username), `u32 created`, `u32 modified`,
+`char note[64]` — 160 bytes total. Unknown part ids are skipped by
+`len`, so v1 readers tolerate v2 files (they just ignore provenance);
+v1 files simply have no part 4.

@@ -161,6 +161,11 @@ links m/dl/pthread. Win32-only code (file dialog, DPI awareness) is `_WIN32`
   groups; built-ins use the meshgen soup through the instance transform,
   fused models emit child soups in model space normalized like bake_mesh,
   sculpted models emit indexed `mv`/`mf`.
+- `src/bundle.c` — `.bwx` portable bundle (world + models + atlas parts,
+  temp-file concat). v2 adds `BX_PROV` provenance part (written first,
+  `BxProv` = world/creator/timestamps/note) — unknown part ids skip by
+  length, so v1 readers ignore it; `bundle_prov()` + an "imported 'X'
+  by Y" toast on load.
 - `src/panel_world.c` — WORLD tab extracted from panel.c: name field,
   10-button grid (SAVE/LOAD/UNDO/REDO/CLEAR/SAVEAS/DIR/EXPORT/IMPORT/MESH —
   MESH = .obj export via export.c), env
