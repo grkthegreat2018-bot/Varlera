@@ -11,7 +11,7 @@ void art_release(void);
 void art_motion(void);          /* drag-paint while LMB held */
 void art_rmb(int down, float x, float y);  /* RMB canvas pan */
 void art_scroll(double dy);
-int  art_key(int key);          /* returns 1 if consumed */
+int  art_key(int key, int mods);  /* returns 1 if consumed */
 void art_draw(void);
 
 #endif

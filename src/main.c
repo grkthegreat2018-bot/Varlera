@@ -216,7 +216,7 @@ static void on_scroll(GLFWwindow *w, double xoff, double yoff) {
 static void on_key(GLFWwindow *w, int key, int sc, int action, int mods) {
     (void)w; (void)sc;
     if (action == GLFW_RELEASE) return;
-    if (A.modal == 1) { art_key(key); return; }
+    if (A.modal == 1) { art_key(key, mods); return; }
     if (A.modal == 2) { sculpt_key(key); return; }
     /* text input swallows keys first */
     if (A.textMode) {

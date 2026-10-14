@@ -226,8 +226,10 @@ any non-DELETE click cancels. Eyedropper (RMB world click) picks
 color+texture.
 
 Modals (main.c routes all input by A.modal): 1 = pixel-art tool (art.c,
-TEX tab EDIT/NEW/SHEET at the top; tools PEN/ERASE/FILL/LINE/RECT/PICK +
+TEX tab EDIT/NEW/SHEET at the top; tools PEN/ERASE/FILL/LINE/RECT/PICK/SEL +
 MIRROR/UNDO/CLEAR/ONION/PLAY, wheel zoom, RMB pan, per-stroke snapshot
+(SEL = marquee select: drag inside lifts+moves w/ ghost preview, Del clears,
+Ctrl+C/X/V clipboard + follow-mouse paste ghost, Esc deselects),
 undo, DONE commits + saves, CANCEL/ESC discards; multi-tile sheets edit
 one tile per canvas with a frame strip + onion skin for flipbook anim —
 TEXM_ANIM mode plays tiles row-major at tex_fps per texture), 2 = sculpt mode (sculpt.c, SCULPT

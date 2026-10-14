@@ -37,6 +37,15 @@ static int   s_frame;             /* current frame tile (0..tw*th-1) */
 static int   s_onion = 1;         /* ghost the previous frame under canvas */
 static int   s_fplay;             /* live preview: advance at tex fps */
 
+/* select tool: marquee rect in cells, lifted/floating pixels in s_clip */
+static int   s_sel[4] = {-1,-1,-1,-1};   /* x0,y0,x1,y1 inclusive */
+static int   s_selDrag;           /* marquee in progress */
+static int   s_moveDrag;          /* LMB drag = move lifted pixels */
+static int   s_mvAx, s_mvAy;      /* move anchor cell */
+static int   s_mvX, s_mvY;        /* current move offset */
+static int   s_float;             /* paste mode: ghost follows mouse */
+static uint8_t *s_clip; static int s_clipW, s_clipH;
+
 static int art_frames(void) { return s_tw * s_th; }
 static void frame_off(int *ox, int *oy) {
     int cpt = TEX_TILE / ART_PPX;             /* art cells per tile */
@@ -148,6 +157,48 @@ static void flood(int cx, int cy) {
     }
 }
 
+/* ---- select tool ops (cell-space, frame-aware via aget/aset) ---- */
+
+static int sel_have(void) { return s_sel[2] >= s_sel[0] && s_sel[3] >= s_sel[1]; }
+static int sel_w(void) { return s_sel[2] - s_sel[0] + 1; }
+static int sel_h(void) { return s_sel[3] - s_sel[1] + 1; }
+static int sel_contains(int cx, int cy) {
+    return sel_have() && cx >= s_sel[0] && cx <= s_sel[2] &&
+           cy >= s_sel[1] && cy <= s_sel[3];
+}
+
+static void clip_ensure(int w, int h) {
+    if ((size_t)w * h * 4 > (size_t)s_clipW * s_clipH * 4) {
+        free(s_clip); s_clip = NULL;
+    }
+    if (!s_clip) s_clip = malloc((size_t)w * h * 4);
+    s_clipW = w; s_clipH = h;
+}
+
+static void sel_copy(void) {                    /* selection -> s_clip */
+    if (!sel_have()) return;
+    int w = sel_w(), h = sel_h();
+    clip_ensure(w, h);
+    for (int y = 0; y < h; y++)
+        for (int x = 0; x < w; x++)
+            aget(s_sel[0] + x, s_sel[1] + y, s_clip + ((size_t)y * w + x) * 4);
+}
+
+static void sel_erase(void) {                   /* clear selection cells */
+    static const uint8_t Z[4] = {0,0,0,0};
+    for (int y = s_sel[1]; y <= s_sel[3]; y++)
+        for (int x = s_sel[0]; x <= s_sel[2]; x++) aset(x, y, Z);
+}
+
+static void clip_stamp(int bx, int by) {        /* s_clip -> canvas at base */
+    for (int y = 0; y < s_clipH; y++)
+        for (int x = 0; x < s_clipW; x++) {
+            int cx = bx + x, cy = by + y;
+            if (cx < 0 || cy < 0 || cx >= s_cells || cy >= s_cells) continue;
+            aset(cx, cy, s_clip + ((size_t)y * s_clipW + x) * 4);
+        }
+}
+
 static void clear_all(void) {
     int w, h; uint8_t *p = tex_pix(&w, &h);
     for (int y = 0; y < h; y++)
@@ -164,6 +215,8 @@ void art_open(int texId) {
     s_zoom = 1.0f; s_panx = s_pany = 0;
     s_mirror = 0; s_shapeDrag = 0; s_panDrag = 0; s_haveSnap = 0;
     s_frame = 0; s_fplay = 0;
+    s_sel[0] = s_sel[1] = s_sel[2] = s_sel[3] = -1;
+    s_selDrag = s_moveDrag = s_float = 0;
 }
 
 void art_close(int save) {
@@ -184,10 +237,10 @@ static void layout(float *cw, float *ch) {
 }
 
 /* right column: tool buttons */
-enum { T_PEN, T_ERA, T_FILL, T_LINE, T_RECT, T_PICK, T_MIRR, T_UNDO, T_CLR,
-       T_ONION, T_PLAY, NT };
-static const char *TN[NT] = {"PEN","ERASE","FILL","LINE","RECT","PICK","MIRROR","UNDO","CLEAR","ONION","PLAY"};
-static const char *TK[NT] = {"B","E","G","L","R","I","M","Z","C","O","P"};
+enum { T_PEN, T_ERA, T_FILL, T_LINE, T_RECT, T_PICK, T_SEL, T_MIRR, T_UNDO,
+       T_CLR, T_ONION, T_PLAY, NT };
+static const char *TN[NT] = {"PEN","ERASE","FILL","LINE","RECT","PICK","SEL","MIRROR","UNDO","CLEAR","ONION","PLAY"};
+static const char *TK[NT] = {"B","E","G","L","R","I","S","M","Z","C","O","P"};
 
 static float tools_x(void) {
     float cw, ch; layout(&cw, &ch);
@@ -224,6 +277,7 @@ int art_press(float x, float y) {
             case T_PICK: A.artTool = 3; break;
             case T_LINE: A.artTool = 4; break;
             case T_RECT: A.artTool = 5; break;
+            case T_SEL:  A.artTool = 6; break;
             case T_MIRR: s_mirror ^= 1; break;
             case T_UNDO: snap_restore(); break;
             case T_CLR:  snap_take(); clear_all(); break;
@@ -262,12 +316,25 @@ int art_press(float x, float y) {
 
     int cx, cy;
     if (canvas_cell(x, y, &cx, &cy) && !s_fplay) {
+        if (s_float) {                        /* paste mode: stamp at click */
+            snap_take(); clip_stamp(cx, cy); s_float = 0;
+            return 1;
+        }
         if (A.artTool == 2)      { snap_take(); flood(cx, cy); }
         else if (A.artTool == 3) {
             uint8_t c[4]; aget(cx, cy, c);
             A.paintCol[0] = c[0] / 255.0f; A.paintCol[1] = c[1] / 255.0f;
             A.paintCol[2] = c[2] / 255.0f;
             A.artTool = 0;
+        } else if (A.artTool == 6) {
+            if (sel_contains(cx, cy)) {       /* lift + move */
+                snap_take(); sel_copy(); sel_erase();
+                s_moveDrag = 1; s_mvAx = cx; s_mvAy = cy;
+                s_mvX = s_mvY = 0;
+            } else {                          /* new marquee */
+                s_selDrag = 1; s_d0x = cx; s_d0y = cy;
+                s_sel[0] = s_sel[2] = cx; s_sel[1] = s_sel[3] = cy;
+            }
         } else if (A.artTool >= 4) {
             snap_take(); s_shapeDrag = 1; s_d0x = cx; s_d0y = cy;
             stamp(cx, cy);
@@ -277,6 +344,14 @@ int art_press(float x, float y) {
 }
 
 void art_release(void) {
+    if (s_selDrag) s_selDrag = 0;
+    if (s_moveDrag) {
+        /* commit lifted pixels at the final offset */
+        clip_stamp(s_sel[0] + s_mvX, s_sel[1] + s_mvY);
+        s_sel[0] += s_mvX; s_sel[2] += s_mvX;
+        s_sel[1] += s_mvY; s_sel[3] += s_mvY;
+        s_moveDrag = 0;
+    }
     if (s_shapeDrag) {
         /* finalize line/rect at release pos */
         int cx, cy;
@@ -303,6 +378,21 @@ void art_motion(void) {
         return;
     }
     if (s_fplay) return;                    /* no edits while previewing */
+    if (s_selDrag) {
+        int cx, cy;
+        if (canvas_cell((float)A.mx, (float)A.my, &cx, &cy)) {
+            s_sel[0] = s_d0x < cx ? s_d0x : cx; s_sel[2] = s_d0x < cx ? cx : s_d0x;
+            s_sel[1] = s_d0y < cy ? s_d0y : cy; s_sel[3] = s_d0y < cy ? cy : s_d0y;
+        }
+        return;
+    }
+    if (s_moveDrag) {
+        int cx, cy;
+        if (canvas_cell((float)A.mx, (float)A.my, &cx, &cy)) {
+            s_mvX = cx - s_mvAx; s_mvY = cy - s_mvAy;
+        }
+        return;
+    }
     if (s_shapeDrag) {
         /* live preview: restore snapshot, redraw shape */
         int cx, cy;
@@ -322,18 +412,33 @@ void art_scroll(double dy) {
     s_zoom = clampf(s_zoom * (dy > 0 ? 1.15f : 0.87f), 0.5f, 8.0f);
 }
 
-int art_key(int key) {
+int art_key(int key, int mods) {
     if (key == GLFW_KEY_ENTER)  { art_close(1); return 1; }
-    if (key == GLFW_KEY_ESCAPE) { art_close(0); return 1; }
+    if (key == GLFW_KEY_ESCAPE) {
+        if (s_float) { s_float = 0; return 1; }
+        if (sel_have()) { s_sel[0] = -1; s_sel[2] = -1; return 1; }
+        art_close(0); return 1;
+    }
+    int ctrl = (mods & GLFW_MOD_CONTROL) != 0;
+    if (ctrl && key == GLFW_KEY_C && sel_have()) { sel_copy(); return 1; }
+    if (ctrl && key == GLFW_KEY_X && sel_have()) {
+        snap_take(); sel_copy(); sel_erase();
+        s_sel[0] = -1; s_sel[2] = -1; return 1;
+    }
+    if (ctrl && key == GLFW_KEY_V && s_clip) { s_float = 1; return 1; }
+    if (key == GLFW_KEY_DELETE && sel_have()) {
+        snap_take(); sel_erase(); s_sel[0] = -1; s_sel[2] = -1; return 1;
+    }
     if (key == GLFW_KEY_B) A.artTool = 0;
     if (key == GLFW_KEY_E) A.artTool = 1;
     if (key == GLFW_KEY_G) A.artTool = 2;
     if (key == GLFW_KEY_I) A.artTool = 3;
     if (key == GLFW_KEY_L) A.artTool = 4;
     if (key == GLFW_KEY_R) A.artTool = 5;
+    if (key == GLFW_KEY_S) A.artTool = 6;
     if (key == GLFW_KEY_M) s_mirror ^= 1;
     if (key == GLFW_KEY_Z || key == GLFW_KEY_U) snap_restore();
-    if (key == GLFW_KEY_C) { snap_take(); clear_all(); }
+    if (key == GLFW_KEY_C && !ctrl) { snap_take(); clear_all(); }
     if (key == GLFW_KEY_O) s_onion ^= 1;
     if (key == GLFW_KEY_P) s_fplay ^= 1;
     if (key == GLFW_KEY_COMMA)
@@ -407,6 +512,48 @@ void art_draw(void) {
         float mx = s_cx + s_panx + s_cells * 0.5f * cs;
         rk_ui_rect(mx - 1, s_cy + s_pany, 2, s_cells * cs, 0.9f, 0.6f, 0.2f, 0.7f);
     }
+
+    /* select: marquee outline + lifted/paste ghost */
+    if (sel_have() || s_moveDrag) {
+        int sox = s_moveDrag ? s_mvX : 0, soy = s_moveDrag ? s_mvY : 0;
+        float rx = s_cx + s_panx + (s_sel[0] + sox) * cs;
+        float ry = s_cy + s_pany + (s_sel[1] + soy) * cs;
+        float rw = (s_sel[2] - s_sel[0] + 1) * cs;
+        float rh = (s_sel[3] - s_sel[1] + 1) * cs;
+        rk_ui_rect(rx - 1, ry - 1, rw + 2, 1, 1,1,1, 0.9f);
+        rk_ui_rect(rx - 1, ry + rh, rw + 2, 1, 1,1,1, 0.9f);
+        rk_ui_rect(rx - 1, ry - 1, 1, rh + 2, 1,1,1, 0.9f);
+        rk_ui_rect(rx + rw, ry - 1, 1, rh + 2, 1,1,1, 0.9f);
+        if (s_moveDrag && s_clip) {          /* lifted pixels preview */
+            for (int y = 0; y < s_clipH; y++)
+                for (int x = 0; x < s_clipW; x++) {
+                    const uint8_t *p = s_clip + ((size_t)y * s_clipW + x) * 4;
+                    if (p[3] < 10) continue;
+                    int cx = s_sel[0] + s_mvX + x, cy = s_sel[1] + s_mvY + y;
+                    if (cx < 0 || cy < 0 || cx >= s_cells || cy >= s_cells)
+                        continue;
+                    rk_ui_rect(s_cx + s_panx + cx * cs, s_cy + s_pany + cy * cs,
+                               cs, cs, p[0]/255.0f, p[1]/255.0f, p[2]/255.0f,
+                               p[3] / 255.0f);
+                }
+        }
+    }
+    if (s_float && s_clip) {                 /* ctrl+V ghost follows mouse */
+        int bx, by;
+        if (canvas_cell((float)A.mx, (float)A.my, &bx, &by)) {
+            for (int y = 0; y < s_clipH; y++)
+                for (int x = 0; x < s_clipW; x++) {
+                    const uint8_t *p = s_clip + ((size_t)y * s_clipW + x) * 4;
+                    if (p[3] < 10) continue;
+                    int cx = bx + x, cy = by + y;
+                    if (cx < 0 || cy < 0 || cx >= s_cells || cy >= s_cells)
+                        continue;
+                    rk_ui_rect(s_cx + s_panx + cx * cs, s_cy + s_pany + cy * cs,
+                               cs, cs, p[0]/255.0f, p[1]/255.0f, p[2]/255.0f,
+                               p[3] / 255.0f * 0.8f);
+                }
+        }
+    }
     /* canvas frame */
     rk_ui_rect(s_cx - 1, s_cy - 1, cw + 2, 1, 0.5f, 0.6f, 0.8f, 0.8f);
     rk_ui_rect(s_cx - 1, s_cy + ch, cw + 2, 1, 0.5f, 0.6f, 0.8f, 0.8f);
@@ -459,6 +606,7 @@ void art_draw(void) {
         int act = (i == T_PEN && A.artTool == 0) || (i == T_ERA && A.artTool == 1) ||
                   (i == T_FILL && A.artTool == 2) || (i == T_PICK && A.artTool == 3) ||
                   (i == T_LINE && A.artTool == 4) || (i == T_RECT && A.artTool == 5) ||
+                  (i == T_SEL && A.artTool == 6) ||
                   (i == T_MIRR && s_mirror) ||
                   (i == T_ONION && s_onion && art_frames() > 1) ||
                   (i == T_PLAY && s_fplay);
