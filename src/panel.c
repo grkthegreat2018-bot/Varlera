@@ -1054,10 +1054,11 @@ void panel_draw(void) {
 /* ---- block script menu: floats above the selection ---- */
 enum { SM_GRAV, SM_COLL, SM_LOCK, SM_NAME, SM_TRIG, SM_ACT, SM_TGT, SM_PARAM,
        SM_MSG, SM_TRACT, SM_BOUNCE, SM_WEIGHT, SM_SPAWN, SM_GOAL,
-       SM_UNFUSE, SM_FUSE, SM_EDIT };
+       SM_UNFUSE, SM_FUSE, SM_EDIT, SM_SHADE };
 static const char *SM_LABEL[] = {"GRAVITY","COLLIDE","LOCKED","NAME","TRIG","ACT",
                                  "TGT","PARAM","MSG","TRAC","BOUNCE","WEIGHT",
-                                 "SPAWN","GOAL","UNFUSE","FUSE ALL","RESCULPT"};
+                                 "SPAWN","GOAL","UNFUSE","FUSE ALL","RESCULPT",
+                                 "SHADE"};
 static const char *TRIG_NAME[N_TRIGS] = {"ALWAYS","SPACE","W","A","S","D","E","Q","CLICK"};
 static const char *ACT_NAME[N_ACTS] = {"NONE","SPIN","GLOW","BOOST","COLOR","TEX",
                                        "DELETE","SAY","TITLE"};
@@ -1078,7 +1079,7 @@ static const char *mesh_display_name(int mesh) {
     return "SHAPE";
 }
 
-static int script_layout(float *bx, float *by, int acts[16]) {
+static int script_layout(float *bx, float *by, int acts[20]) {
     if (A.app != APP_EDIT || !A.nsel || A.drag != M_IDLE) return 0;
     int nr = 0;
     if (A.nsel == 1) {
@@ -1093,7 +1094,10 @@ static int script_layout(float *bx, float *by, int acts[16]) {
         int sh = g_blocks[si0].shape;
         if (sh >= RK_MESH_BASE_MODEL) {
             int mid = sh - RK_MESH_BASE_MODEL;
-            if (mid < g_nmodels && g_models[mid].vox) acts[nr++] = SM_EDIT;
+            if (mid < g_nmodels && g_models[mid].vox) {
+                acts[nr++] = SM_EDIT;
+                acts[nr++] = SM_SHADE;
+            }
             acts[nr++] = SM_UNFUSE;
         }
     } else {
@@ -1118,7 +1122,7 @@ static int script_state(int act, const Block *b) {
 }
 
 static void draw_script_menu(void) {
-    int acts[16]; float bx, by;
+    int acts[20]; float bx, by;
     int nr = script_layout(&bx, &by, acts);
     if (!nr) return;
     float hdr = A.nsel == 1 ? 66.0f : 26.0f;
@@ -1148,6 +1152,7 @@ static void draw_script_menu(void) {
         float ry = by + hdr + r * 22.0f;
         int hov = in_rect((float)A.mx,(float)A.my, bx+4, ry, SM_W-8, 19);
         int btn = acts[r] == SM_FUSE || acts[r] == SM_UNFUSE ||
+                  acts[r] == SM_SHADE ||
                   acts[r] == SM_TRIG || acts[r] == SM_ACT || acts[r] == SM_EDIT ||
                   acts[r] == SM_NAME || acts[r] == SM_TGT || acts[r] == SM_PARAM ||
                   acts[r] == SM_MSG ||
@@ -1165,6 +1170,13 @@ static void draw_script_menu(void) {
         else if (b && acts[r] == SM_TRACT) { snprintf(lab, sizeof lab, "TRAC: %d", b->traction); txt = lab; }
         else if (b && acts[r] == SM_BOUNCE) { snprintf(lab, sizeof lab, "BOUNCE: %d", b->bounce); txt = lab; }
         else if (b && acts[r] == SM_WEIGHT) { snprintf(lab, sizeof lab, "WEIGHT: %d", b->weight); txt = lab; }
+        else if (b && acts[r] == SM_SHADE) {
+            int mid = b->shape - RK_MESH_BASE_MODEL;
+            snprintf(lab, sizeof lab, "SHADE: %s",
+                     mid >= 0 && mid < g_nmodels && g_models[mid].smooth
+                     ? "SMOOTH" : "FLAT");
+            txt = lab;
+        }
         else if (b && acts[r] == SM_MSG) {
             const char *m = g_msgs[b->actParam & (MSG_MAX - 1)];
             if (A.textMode == 5)
@@ -1222,7 +1234,7 @@ void panel_rename_commit(void) {
 }
 
 int panel_script_click(double x, double y) {
-    int acts[16]; float bx, by;
+    int acts[20]; float bx, by;
     int nr = script_layout(&bx, &by, acts);
     if (!nr) return 0;
     float hdr = A.nsel == 1 ? 66.0f : 26.0f;
@@ -1267,6 +1279,15 @@ int panel_script_click(double x, double y) {
             int mid = g_blocks[i].shape - RK_MESH_BASE_MODEL;
             if (mid >= 0 && mid < g_nmodels && g_models[mid].vox)
                 sculpt_open_model(mid);
+            break;
+        }
+        case SM_SHADE: {
+            int mid = g_blocks[i].shape - RK_MESH_BASE_MODEL;
+            if (mid >= 0 && mid < g_nmodels && g_models[mid].vox) {
+                g_models[mid].smooth ^= 1;
+                models_rebake_all();
+                models_save(0);
+            }
             break;
         }
         }

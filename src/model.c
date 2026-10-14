@@ -184,8 +184,11 @@ static int bake_mesh(const Block *rel, int n, v3 size, int top) {
    so touching faces box-project continuously and read as one piece */
 static int bake_topo(const float (*vx)[3], const uint8_t (*vc)[3],
                      const int8_t *vt,
-                     const uint16_t (*fc)[3], int nf, v3 size) {
+                     const uint16_t (*fc)[3], int nv, int nf, v3 size,
+                     int smooth) {
     static Vert buf[MODEL_MAX_FACES * 3];
+    static float sn[MODEL_MAX_VERTS][3];      /* smooth: per-vert normals */
+    if (smooth) memset(sn, 0, (size_t)nv * sizeof sn[0]);
     int n = 0;
     for (int f = 0; f < nf && n + 3 <= MODEL_MAX_FACES * 3; f++) {
         v3 p[3];
@@ -194,6 +197,9 @@ static int bake_topo(const float (*vx)[3], const uint8_t (*vc)[3],
             p[k] = v3_make(vx[vi][0], vx[vi][1], vx[vi][2]);
         }
         v3 nrm = v3_norm(v3_cross(v3_sub(p[1],p[0]), v3_sub(p[2],p[0])));
+        if (smooth)
+            for (int k = 0; k < 3; k++)
+                for (int a = 0; a < 3; a++) sn[fc[f][k]][a] += nrm.e[a];
         /* a face keeps one material: majority/first non-(-1) wins, so a
            face whose corners carry the same layer shades seamlessly */
         float ft = -1.0f;
@@ -204,6 +210,12 @@ static int bake_topo(const float (*vx)[3], const uint8_t (*vc)[3],
             for (int a = 0; a < 3; a++) {
                 float s = size.e[a]; if (s < 0.125f) s = 0.125f;
                 v->pos[a] = p[k].e[a] / s;
+            }
+            if (smooth) {
+                int vi = fc[f][k];
+                v3 snr = v3_make(sn[vi][0], sn[vi][1], sn[vi][2]);
+                float l = v3_len(snr);
+                nrm = l > 1e-6f ? v3_scale(snr, 1.0f / l) : nrm;
             }
             memcpy(v->nrm, nrm.e, 12);
             int vi = fc[f][k];
@@ -219,7 +231,7 @@ static int bake_topo(const float (*vx)[3], const uint8_t (*vc)[3],
 static int model_rebake(const Model *m) {
     if (m->vox)
         return bake_topo(m->mv, m->mvcol, m->mvtex, m->mf,
-                         m->nface, m->size);
+                         m->nvert, m->nface, m->size, m->smooth);
     return bake_mesh(m->ch, m->nch, m->size, 0);
 }
 
@@ -305,7 +317,8 @@ int model_sculpt_topo(const float (*vx)[3], const uint8_t (*vc)[3],
     else    memset(m->mvtex, -1, (size_t)nv);
     if (vl) memcpy(m->mvlock, vl, (size_t)nv);
     memcpy(m->mf, fc, (size_t)nf * sizeof m->mf[0]);
-    m->mesh = bake_topo(m->mv, m->mvcol, m->mvtex, m->mf, nf, m->size);
+    m->mesh = bake_topo(m->mv, m->mvcol, m->mvtex, m->mf, nv, nf,
+                        m->size, m->smooth);
     if (m->mesh < 0) return -1;
     return g_nmodels++;
 }
@@ -358,7 +371,7 @@ int models_save(const char *path) {
         int nrec = m->vox ? -2 : m->nch;      /* -2 = sculpted topo mesh */
         fwrite(&nrec, 4, 1, f);
         fwrite(m->size.e, 4, 3, f);
-        int32_t flags = m->adv ? 1 : 0;        /* bit0 = premade asset */
+        int32_t flags = (m->adv ? 1 : 0) | (m->smooth ? 2 : 0);
         fwrite(&flags, 4, 1, f);
         if (m->vox) {
             fwrite(&m->nvert, 4, 1, f);
@@ -459,6 +472,7 @@ int models_load(const char *path) {
             int32_t fl = 0;
             if (fread(&fl, 4, 1, f) != 1) break;
             m->adv = (fl & 1) != 0;
+            m->smooth = (fl & 2) != 0;
         }
         if (m->nch == -2 && ver >= 6) {          /* sculpted topo mesh */
             m->vox = 1; m->nch = 0;

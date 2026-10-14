@@ -65,7 +65,10 @@ links m/dl/pthread. Win32-only code (file dialog, DPI awareness) is `_WIN32`
   color — fused/premade path only, sculpted topo needs accel first), `models.bw`
   persistence + `rk_model_mesh_add` upload. v7 stores per-vert material id
   (`mvtex`, int8 -1 = inherit) + layer lock (`mvlock`) + `adv` flag; v6 and
-  older migrate. `models_bake_builtins()` seeds pack 1
+  older migrate. `Model.smooth` (flags bit1, no version bump) rebakes a
+  sculpted model with averaged per-vertex normals — script-menu SHADE row
+  (vox models only) toggles it via `models_rebake_all`.
+  `models_bake_builtins()` seeds pack 1
   (CRATE/TABLE/CHAIR/PERSON/TREE/FLOWER/ARCH/LAMP/FENCE/PILLAR) at v7 and
   `models_bake_pack2()` seeds 12 game-dev props (DOOR/BUTTON/LEVER/SIGN/
   CAR/BARREL/LADDER/COIN/SPIKES/PLATFORM/CANNON/GEAR) at v8 — each pack

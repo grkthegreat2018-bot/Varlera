@@ -18,6 +18,7 @@ typedef struct {
     int mesh;                       /* RK_MESH_BASE_MODEL + i, or -1 */
     int vox;                        /* 1 = sculpted topo mesh (editable) */
     int adv;                        /* 1 = premade asset (PROPS tab) */
+    int smooth;                     /* 1 = averaged-vertex-normal shading */
     /* sculpted topology (verts centered on bbox center, block units) */
     int      nvert, nface;
     float    mv[MODEL_MAX_VERTS][3];
