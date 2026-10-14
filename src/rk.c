@@ -680,7 +680,9 @@ void rk_end_frame(void) {
     G.inFrame = 0;
 }
 
-v3 rk_light_dir(void) { return v3_norm(v3_make(0.72f, 0.55f, 0.30f)); }
+v3 rk_light_dir(void) { return G.lightDir; }
+
+void rk_set_light(v3 d) { G.lightDir = d; }
 
 void rk_set_camera(const float vp[16], const float eye[3], const float focus[3]) {
     memcpy(G.ubo.viewProj, vp, sizeof(m4));

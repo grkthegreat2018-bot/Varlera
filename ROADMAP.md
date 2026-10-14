@@ -96,7 +96,7 @@ submit ~0.55ms. Re-measure after each perf item.
 | Feature | Effort | Notes |
 |---|---|---|
 | Audio | M | `miniaudio.h` single-header fits the no-dep style. Sounds tied to script actions + particle emitters. |
-| Day/night + env animation | M | Sun/light dir lerped on a world-time var; scripting v2 can drive it (ALWAYS + SET_TIME). |
+| ~~Day/night + env animation~~ ✅ | M | `world.c` `world_day_tick/sun_dir/day_k` + `rk_set_light`/`rk_set_day`: WSet `dayCycle` OFF/SLOW(10m)/MED(2m)/FAST(30s) + persisted `dayPhase` trailer field; sun orbits on phase, below-horizon reflects to a moon dir for shadows, env colors lerp to a dim blue night tint. WORLD tab `DAY CYCLE` row; `VARLERA_DAY=speed,phase` hook verified (night/noon shots). Scripting SET_TIME can drive `world_day_set`. |
 | Player/avatar controller | M | Needs collision overhaul first. Walk/jump/interact in play mode. |
 | Game objects (health, respawn, goals) | M | On top of scripting v2. |
 | Deterministic replay | M | Fixed-dt sim + recorded input stream — free regression tests once scripting exists; also the basis of any future netcode. |

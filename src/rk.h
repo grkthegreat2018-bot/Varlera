@@ -146,6 +146,8 @@ void rk_ui_flush(void);
 void rk_set_env(const float sky[3], const float ground[3], int gstyle);
 void rk_set_fog(float near_, float far_);   /* world-set override (60/170 def) */
 void rk_set_bloom(float amt);               /* bloom mix strength (def 0.55) */
+void rk_set_light(v3 d);                    /* dynamic sun/moon direction */
+void rk_set_day(float k);                   /* 0..1 daylight (env color mul) */
 
 void rk_extent(int *w, int *h);
 void rk_screenshot(const char *path);       /* .bmp captured after present */

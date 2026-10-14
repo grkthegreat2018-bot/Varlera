@@ -152,6 +152,10 @@ typedef struct {
 
     UBO ubo;
     v3 focus;
+    v3 lightDir;                            /* dynamic sun/moon direction */
+    float envSky[3], envGround[3];          /* preset bases (day-mul target) */
+    int envStyle;
+    float dayK;                             /* 0..1 daylight factor */
     m4 shView;                              /* light-space view (culling) */
     uint32_t fi, imgIdx;
     VkCommandBuffer cmd;

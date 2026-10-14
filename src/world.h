@@ -124,7 +124,9 @@ typedef struct {
     uint8_t  bloom;          /* bloom strength idx: 0 auto,1 off,2 low,3 high */
     uint8_t  skyObj[4];      /* skybox model slots: 0 none, else model idx+1
                                 (SUN/MOON/OBJ A/OBJ B; gated by skyAssets) */
-    uint8_t  pad[13];
+    uint8_t  dayCycle;       /* 0 off, 1 slow (10min), 2 med (2min), 3 fast (30s) */
+    uint8_t  dayPhase;       /* persisted phase: 0..255 maps to 0..2pi */
+    uint8_t  pad[11];
 } WSet;
 #define WS_PHYS_SETTLE 0
 #define WS_PHYS_RIGID  1
@@ -132,6 +134,13 @@ WSet *world_wset(void);          /* live record; edit in place */
 void world_wset_dirty(void);     /* call after edits -> autosave notices */
 void world_fog_params(float *near_, float *far_);   /* advRender-gated */
 float world_bloom_amt(void);                        /* advRender-gated */
+/* day/night: advance the cycle; sun_dir returns the current light
+ * direction (moon-reflected when the sun sets) and k the daylight 0..1 */
+void world_day_tick(float dt);
+void world_day_set(float t);           /* set phase (SET TIME / tests) */
+void world_day_reload(void);           /* call on world load to re-seed */
+v3   world_sun_dir(void);
+float world_day_k(void);
 
 /* play-mode sim lives in physics.c -> physics.h */
 

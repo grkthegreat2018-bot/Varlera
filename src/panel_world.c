@@ -56,24 +56,26 @@ void panel_env_load(void) {
 /* pending world-setting change that needs the wipe-warning confirm */
 static int s_wConfirm = -1;
 /* rows 8-11 = skybox object pickers (visible iff SKY OBJS on);
-   rows 12-14 = EXPERIMENTAL render section (visible iff ADV RENDER on) */
-#define WS_ROWS 15
+   rows 12-14 = EXPERIMENTAL render section (visible iff ADV RENDER on);
+   row 15 = day/night cycle speed */
+#define WS_ROWS 16
 static int ws_row_vis(int i) {
     const WSet *w = world_wset();
-    if (i >= 12) return w->advRender;
-    if (i >= 8)  return w->skyAssets;
+    if (i >= 12 && i <= 14) return w->advRender;
+    if (i >= 8 && i <= 11)  return w->skyAssets;
     return 1;
 }
 static const char *WLBL[] = {"PHYS","CHUNK","CHUNK SZ","LOD","ADV RENDER",
                              "GRAVITY","DRAG","SKY OBJS","SUN","MOON",
-                             "OBJ A","OBJ B","FOG START","FOG END","BLOOM"};
+                             "OBJ A","OBJ B","FOG START","FOG END","BLOOM",
+                             "DAY CYCLE"};
 static const char *WWARN[] = {
     "PHYSICS MODE CHANGES PLAY BEHAVIOR",
     "CHUNK LAYOUT MAY RESHAPE OR WIPE THIS WORLD",
     "CHUNK SIZE MAY RESHAPE OR WIPE THIS WORLD",
     "LOD ALTERS DRAW DISTANCE QUALITY",
     "EXPERIMENTAL RENDER FLAGS CAN CAUSE BUGS",
-    "", "", "", "", "", "", "", "", "", "",
+    "", "", "", "", "", "", "", "", "", "", "",
 };
 static const uint8_t GRAV_STEPS[] = {0, 2, 4, 8, 12, 16};   /* 0x..2x */
 /* index names only — step tables/apply live with the record (world.c) */
@@ -103,6 +105,7 @@ static void wset_cycle(int i) {
     case 12: w->fogNear = (uint8_t)((w->fogNear + 1) & 3); break;
     case 13: w->fogFar  = (uint8_t)((w->fogFar + 1) & 3); break;
     case 14: w->bloom   = (uint8_t)((w->bloom + 1) & 3); break;
+    case 15: w->dayCycle = (uint8_t)((w->dayCycle + 1) & 3); break;
     }
     world_wset_dirty();
 }
@@ -127,6 +130,8 @@ static const char *wset_val(int i, const WSet *w, char *b) {
     case 12: return FOGN_N[w->fogNear & 3];
     case 13: return FOGF_N[w->fogFar & 3];
     case 14: return BLOOM_N[w->bloom & 3];
+    case 15: { static const char *DL[] = {"OFF","SLOW","MED","FAST"};
+              return DL[w->dayCycle & 3]; }
     }
     return "";
 }

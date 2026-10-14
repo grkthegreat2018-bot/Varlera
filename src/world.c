@@ -135,6 +135,48 @@ float world_bloom_amt(void) {
 }
 void  world_wset_dirty(void) { g_rev++; }
 
+/* ---- day/night cycle ----
+ * phase in seconds-fraction [0,1); speeds: idx -> full cycle seconds. */
+static float s_dayT = 0.30f;   /* runtime phase, seeded below by dayPhase */
+static int   s_dayInit = 0;
+
+static const float DAY_LEN[] = {0.0f, 600.0f, 120.0f, 30.0f};
+
+void world_day_tick(float dt) {
+    if (!s_dayInit) { s_dayT = s_wset.dayPhase / 255.99f; s_dayInit = 1; }
+    int c = s_wset.dayCycle & 3;
+    if (!c || DAY_LEN[c] <= 0.0f) return;
+    s_dayT += dt / DAY_LEN[c];
+    s_dayT -= floorf(s_dayT);
+    s_wset.dayPhase = (uint8_t)(s_dayT * 255.99f);   /* persists in trailer */
+}
+
+void world_day_set(float t) {          /* external phase set (SET TIME) */
+    s_dayT = t - floorf(t); s_dayInit = 1;
+    s_wset.dayPhase = (uint8_t)(s_dayT * 255.99f);
+}
+
+void world_day_reload(void) { s_dayInit = 0; }   /* re-seed on world load */
+
+v3 world_sun_dir(void) {
+    if (!s_dayInit) { s_dayT = s_wset.dayPhase / 255.99f; s_dayInit = 1; }
+    if (!(s_wset.dayCycle & 3))
+        return v3_norm(v3_make(0.72f, 0.55f, 0.30f));   /* static default */
+    float a = 6.2831853f * (s_dayT - 0.25f);            /* noon at t=0.5? */
+    v3 d = v3_make(cosf(a) * 0.8f, sinf(a), 0.35f);
+    if (d.y < 0.05f)                     /* below horizon -> moon side */
+        d = v3_make(-d.x, 0.15f - d.y * 0.4f, -d.z);
+    return v3_norm(d);
+}
+
+float world_day_k(void) {
+    if (!(s_wset.dayCycle & 3)) return 1.0f;
+    float a = 6.2831853f * (s_dayT - 0.25f);
+    float u = sinf(a);                              /* raw sun height */
+    /* daylight 0..1: full dark below -0.1, full light above +0.35 */
+    return clampf((u + 0.1f) / 0.45f, 0.0f, 1.0f);
+}
+
 /* ---- save dir paths: <dir>/<san>.<ext>; san = [a-z0-9_-] ---- */
 static char s_dir[384] = "worlds";   /* user-chosen via WORLD tab DIR */
 
@@ -358,7 +400,7 @@ int world_load(const char *path, char *nameOut) {
         /* settings trailer is optional: absent on pre-trailer v4 files */
         WSet ws;
         if (ok && fread(&ws, sizeof ws, 1, f) == 1 && ws.magic == WS_MAGIC)
-            s_wset = ws;
+            { s_wset = ws; world_day_reload(); }   /* re-seed day phase */
         /* message-table trailer (optional) */
         uint32_t mh[2];
         if (ok && fread(mh, 8, 1, f) == 1 && mh[0] == MS_MAGIC) {

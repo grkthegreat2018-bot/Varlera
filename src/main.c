@@ -371,6 +371,7 @@ int main(void) {
     const char *envAnim  = getenv("VARLERA_ANIM");      /* test hook: flipbook block @10 */
     const char *envArt   = getenv("VARLERA_ART");       /* test hook: art_open(id) @20 */
     const char *envSky   = getenv("VARLERA_SKYOBJ");    /* test hook: sky objects @10 */
+    const char *envDay   = getenv("VARLERA_DAY");       /* test hook: day speed+phase @10 */
     const char *envPlace = getenv("VARLERA_PLACE");     /* test hook: place_commit path at frame 20 */
     const char *envTexPng = getenv("VARLERA_TEXPNG");   /* test hook: png export+reimport */
     if (envTab) A.panelTab = atoi(envTab);
@@ -428,6 +429,11 @@ int main(void) {
             rk_set_fog(fn, ff);
             rk_set_bloom(world_bloom_amt());
         }
+        {   /* day/night: orbit light + dim env toward night tint */
+            world_day_tick(dt);
+            rk_set_light(world_sun_dir());
+            rk_set_day(world_day_k());
+        }
 
         prof_zone_begin(PZ_QUEUE);
         if (A.modal != 2) {                    /* sculpt = own mini-world */
@@ -465,6 +471,13 @@ int main(void) {
             w->skyObj[0] = 1;              /* model 0 (CRATE) as the sun */
             w->skyObj[1] = 2;              /* model 1 as the moon */
             A.yaw = 4.32f; A.pitch = 0.25f;  /* look toward the sun slot */
+        }
+        if (envDay && frameNo == 10) {
+            /* "speed,phase" e.g. VARLERA_DAY=3,0 = fast cycle at midnight */
+            WSet *w = world_wset();
+            w->dayCycle = (uint8_t)(atoi(envDay) & 3);
+            const char *comma = strchr(envDay, ',');
+            if (comma) world_day_set(atoi(comma + 1) / 255.99f);
         }
         if (envShot && frameNo == 45) rk_screenshot(envShot);
         if (envShot && strchr(envShot, ',') && frameNo == 90) {

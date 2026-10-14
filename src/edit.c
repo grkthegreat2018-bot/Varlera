@@ -8,6 +8,7 @@
 #include "tex.h"
 #include "rk.h"
 #include "particles.h"
+#include "physics.h"
 #include "math3d.h"
 #include <string.h>
 #include <math.h>

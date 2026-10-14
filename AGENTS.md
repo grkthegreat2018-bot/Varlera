@@ -182,7 +182,11 @@ links m/dl/pthread. Win32-only code (file dialog, DPI awareness) is `_WIN32`
   400-unit dome (under the 500-unit far plane) when `WSet.skyAssets` is
   on — slot 0 tracks `light_dir` (sun replacement), slots 1-3 sit at
   fixed az/el; UNLIT+NOFOG flags. WORLD tab `SKY OBJS` row gates 4 model
-  pickers via packed row visibility.
+  pickers via packed row visibility. Day/night: `WSet.dayCycle` speed +
+  persisted `dayPhase`; `world_day_tick` advances phase, `world_sun_dir`
+  orbits the sun (below-horizon reflects to a moon dir), `rk_set_day(k)`
+  lerps env colors to a dim blue night tint (rk keeps env bases in G);
+  `world_day_set`/`world_day_reload` for SET-TIME/load re-seed.
 - `src/font.h` — 5x7 bitmap font rendered as UI rects (`ui_text`/`ui_text_clip`).
 - `src/math3d.h` — `v3` union (`{x,y,z}` / `.e[3]`), column-major `m4` float[16],
   `m4_perspective_rz`/`m4_ortho_rz` reversed-Z variants.

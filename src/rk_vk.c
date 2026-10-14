@@ -994,13 +994,31 @@ int rk_init(GLFWwindow *win) {
     G.ubo.groundCol[0]=0.58f; G.ubo.groundCol[1]=0.60f;
     G.ubo.groundCol[2]=0.64f; G.ubo.groundCol[3]=0;   /* w = ground style */
     G.bloomAmt = 0.55f;
+    G.lightDir = v3_norm(v3_make(0.72f, 0.55f, 0.30f));
+    G.dayK = 1.0f;
+    G.envSky[0] = 0.56f; G.envSky[1] = 0.66f; G.envSky[2] = 0.82f;
+    G.envGround[0] = 0.58f; G.envGround[1] = 0.60f; G.envGround[2] = 0.64f;
+    rk_set_day(1.0f);
     return 1;
 }
 
 void rk_set_env(const float sky[3], const float ground[3], int gstyle) {
-    if (sky) memcpy(G.ubo.fogColor, sky, 12);
-    if (ground) memcpy(G.ubo.groundCol, ground, 12);
-    G.ubo.groundCol[3] = (float)gstyle;
+    if (sky) memcpy(G.envSky, sky, 12);
+    if (ground) memcpy(G.envGround, ground, 12);
+    G.envStyle = gstyle;
+    rk_set_day(G.dayK);                 /* reapply current daylight factor */
+}
+
+/* day/night: scale env colors toward a dim blue night tint (k=1 daylight) */
+void rk_set_day(float k) {
+    static const float NIGHT[3] = {0.10f, 0.14f, 0.32f};
+    G.dayK = k;
+    for (int i = 0; i < 3; i++) {
+        float m = NIGHT[i] + (1.0f - NIGHT[i]) * k;
+        G.ubo.fogColor[i]  = G.envSky[i] * m;
+        G.ubo.groundCol[i] = G.envGround[i] * m;
+    }
+    G.ubo.groundCol[3] = (float)G.envStyle;
 }
 
 void rk_set_fog(float near_, float far_) {
