@@ -12,6 +12,7 @@
 #include "toast.h"
 #include "filepick.h"
 #include "bundle.h"
+#include "model.h"
 #include <stdio.h>
 #include <string.h>
 
@@ -54,17 +55,25 @@ void panel_env_load(void) {
 
 /* pending world-setting change that needs the wipe-warning confirm */
 static int s_wConfirm = -1;
-/* rows 7-9 are the EXPERIMENTAL render section — visible once ADV RENDER on */
-static int ws_rows(void) { return world_wset()->advRender ? 10 : 7; }
+/* rows 8-11 = skybox object pickers (visible iff SKY OBJS on);
+   rows 12-14 = EXPERIMENTAL render section (visible iff ADV RENDER on) */
+#define WS_ROWS 15
+static int ws_row_vis(int i) {
+    const WSet *w = world_wset();
+    if (i >= 12) return w->advRender;
+    if (i >= 8)  return w->skyAssets;
+    return 1;
+}
 static const char *WLBL[] = {"PHYS","CHUNK","CHUNK SZ","LOD","ADV RENDER",
-                             "GRAVITY","DRAG","FOG START","FOG END","BLOOM"};
+                             "GRAVITY","DRAG","SKY OBJS","SUN","MOON",
+                             "OBJ A","OBJ B","FOG START","FOG END","BLOOM"};
 static const char *WWARN[] = {
     "PHYSICS MODE CHANGES PLAY BEHAVIOR",
     "CHUNK LAYOUT MAY RESHAPE OR WIPE THIS WORLD",
     "CHUNK SIZE MAY RESHAPE OR WIPE THIS WORLD",
     "LOD ALTERS DRAW DISTANCE QUALITY",
     "EXPERIMENTAL RENDER FLAGS CAN CAUSE BUGS",
-    "", "", "", "", "",
+    "", "", "", "", "", "", "", "", "", "",
 };
 static const uint8_t GRAV_STEPS[] = {0, 2, 4, 8, 12, 16};   /* 0x..2x */
 /* index names only — step tables/apply live with the record (world.c) */
@@ -86,9 +95,14 @@ static void wset_cycle(int i) {
               w->gravMul = GRAV_STEPS[(s + 1) % 6];              /* advance */
               break; }
     case 6: w->dragOff ^= 1; break;
-    case 7: w->fogNear = (uint8_t)((w->fogNear + 1) & 3); break;
-    case 8: w->fogFar  = (uint8_t)((w->fogFar + 1) & 3); break;
-    case 9: w->bloom   = (uint8_t)((w->bloom + 1) & 3); break;
+    case 7: w->skyAssets ^= 1; break;
+    case 8: case 9: case 10: case 11: {     /* sky object model pickers */
+        int k = i - 8;
+        w->skyObj[k] = (uint8_t)((w->skyObj[k] + 1) % (g_nmodels + 1));
+        break; }
+    case 12: w->fogNear = (uint8_t)((w->fogNear + 1) & 3); break;
+    case 13: w->fogFar  = (uint8_t)((w->fogFar + 1) & 3); break;
+    case 14: w->bloom   = (uint8_t)((w->bloom + 1) & 3); break;
     }
     world_wset_dirty();
 }
@@ -105,9 +119,14 @@ static const char *wset_val(int i, const WSet *w, char *b) {
     case 5: snprintf(b, 8, "%.2fx", (w->gravMul ? w->gravMul : 8) / 8.0f);
             return b;
     case 6: return ON[(w->dragOff ^ 1) & 1];   /* ON = dragging allowed */
-    case 7: return FOGN_N[w->fogNear & 3];
-    case 8: return FOGF_N[w->fogFar & 3];
-    case 9: return BLOOM_N[w->bloom & 3];
+    case 7: return ON[w->skyAssets & 1];
+    case 8: case 9: case 10: case 11: {
+        int v = w->skyObj[i - 8];
+        if (v <= 0) return "NONE";
+        snprintf(b, 8, "%.7s", g_models[v - 1].name); return b; }
+    case 12: return FOGN_N[w->fogNear & 3];
+    case 13: return FOGF_N[w->fogFar & 3];
+    case 14: return BLOOM_N[w->bloom & 3];
     }
     return "";
 }
@@ -160,8 +179,10 @@ int panel_world_tab_press(float fx, float fy, float px) {
         }
     }
     /* world settings — rows 1/2/4 are dangerous: confirm first */
-    for (int i = 0; i < ws_rows(); i++) {
-        if (in_rect(fx, fy, px + 8, 346.0f + i * 28.0f, PW - 16, 24)) {
+    for (int i = 0, r = 0; i < WS_ROWS; i++) {
+        if (!ws_row_vis(i)) continue;
+        float wy = 346.0f + (float)r++ * 28.0f;
+        if (in_rect(fx, fy, px + 8, wy, PW - 16, 24)) {
             if (i == 1 || i == 2 || i == 4) s_wConfirm = i;
             else wset_cycle(i);
             return 1;
@@ -233,8 +254,9 @@ void panel_world_draw(float px) {
     ui_text(px + 12, 330, "WORLD SETTINGS", 1, 0.7f,0.72f,0.8f, 1);
     {
         const WSet *w = world_wset();
-        for (int i = 0; i < ws_rows(); i++) {
-            float wy = 346.0f + i * 28.0f;
+        for (int i = 0, r = 0; i < WS_ROWS; i++) {
+            if (!ws_row_vis(i)) continue;
+            float wy = 346.0f + (float)r++ * 28.0f;
             int hov = in_rect((float)A.mx,(float)A.my, px+8, wy, PW-16, 24);
             int danger = (i == 1 || i == 2 || i == 4);
             rk_ui_rect(px+8, wy, PW-16, 24,

@@ -105,7 +105,8 @@ links m/dl/pthread. Win32-only code (file dialog, DPI awareness) is `_WIN32`
   thumbnail; autosave every 90s to `worlds/<name>.auto.bw` when
   `world_rev()` changed. v4 files end with an optional 32B `WSet`
   settings trailer (phys mode / chunkShape+Size / lod / advRender /
-  gravMul / skyAssets) — `world_wset()` is the live record, WORLD tab
+  gravMul / skyAssets + skyObj[4] carved from pad — 0=none, 1+=model
+  index) — `world_wset()` is the live record, WORLD tab
   edits it and dangerous rows (`!`) get an APPLY/CANCEL wipe-warning
   dialog. `tests/world_v4.c` (ctest) covers round-trip + v3 migration.
   `world_pick_block`/`ray_unit_box` are the shared slab-pick used by
@@ -175,6 +176,11 @@ links m/dl/pthread. Win32-only code (file dialog, DPI awareness) is `_WIN32`
   only) via `rk_can_shadow_cast` (light-space ortho rect extruded).
 - Sky: K_SKY/pSky fullscreen-triangle gradient + sun disc
   (sky.vert unprojects through inverse VP; env colors drive it).
+  `sky_objects()` in main.c emits up to 4 `rk_world` model instances on a
+  400-unit dome (under the 500-unit far plane) when `WSet.skyAssets` is
+  on — slot 0 tracks `light_dir` (sun replacement), slots 1-3 sit at
+  fixed az/el; UNLIT+NOFOG flags. WORLD tab `SKY OBJS` row gates 4 model
+  pickers via packed row visibility.
 - `src/font.h` — 5x7 bitmap font rendered as UI rects (`ui_text`/`ui_text_clip`).
 - `src/math3d.h` — `v3` union (`{x,y,z}` / `.e[3]`), column-major `m4` float[16],
   `m4_perspective_rz`/`m4_ortho_rz` reversed-Z variants.

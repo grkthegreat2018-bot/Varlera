@@ -30,6 +30,36 @@
 
 App A;
 
+/* skybox objects: up to 4 model meshes drawn on the camera-locked dome —
+ * slot 0 (SUN) rides the light dir, others sit at fixed az/el. Gated by
+ * WSet.skyAssets so default skies stay preset-only. */
+static void sky_objects(void) {
+    static const struct { float az, el, sz; } SLOTS[4] = {
+        {0.0f, 0.0f, 60.0f},          /* SUN: dir from rk_light_dir */
+        {180.0f, 32.0f, 40.0f},       /* MOON opposite the sun */
+        {95.0f, 22.0f, 55.0f},        /* OBJ A */
+        {265.0f, 26.0f, 55.0f},       /* OBJ B */
+    };
+    const WSet *w = world_wset();
+    if (!w->skyAssets) return;
+    for (int k = 0; k < 4; k++) {
+        if (!w->skyObj[k] || w->skyObj[k] - 1 >= g_nmodels) continue;
+        v3 dir = k == 0 ? rk_light_dir()
+                        : v3_norm(v3_make(
+                            cosf(SLOTS[k].el * 0.01745f) * cosf(SLOTS[k].az * 0.01745f),
+                            sinf(SLOTS[k].el * 0.01745f),
+                            cosf(SLOTS[k].el * 0.01745f) * sinf(SLOTS[k].az * 0.01745f)));
+        v3 p = v3_add(A.camPos, v3_scale(dir, 400.0f));  /* inside 500 far */
+        RkInst in;
+        memcpy(in.pos, p.e, 12);
+        float s = SLOTS[k].sz;
+        memcpy(in.scale, v3_make(s, s, s).e, 12);
+        in.color = 0xFFFFFFFFu;
+        in.flags = RKIF_NOFOG | RKIF_VCOL | (k == 0 ? RKIF_UNLIT : 0u);
+        rk_world(g_models[w->skyObj[k] - 1].mesh, &in, 1);
+    }
+}
+
 void app_toggle_mode(void) {
     if (A.app == APP_EDIT) {
         A.app = APP_PLAY;
@@ -339,6 +369,7 @@ int main(void) {
     const char *envPlay  = getenv("VARLERA_PLAY");      /* test hook: play @30, edit @90 */
     const char *envAnim  = getenv("VARLERA_ANIM");      /* test hook: flipbook block @10 */
     const char *envArt   = getenv("VARLERA_ART");       /* test hook: art_open(id) @20 */
+    const char *envSky   = getenv("VARLERA_SKYOBJ");    /* test hook: sky objects @10 */
     const char *envPlace = getenv("VARLERA_PLACE");     /* test hook: place_commit path at frame 20 */
     const char *envTexPng = getenv("VARLERA_TEXPNG");   /* test hook: png export+reimport */
     if (envTab) A.panelTab = atoi(envTab);
@@ -401,6 +432,7 @@ int main(void) {
         if (A.modal != 2) {                    /* sculpt = own mini-world */
             rk_draw_sky();
             rk_draw_grid();
+            sky_objects();
             edit_draw_world();
             particles_draw();
         }
@@ -426,6 +458,13 @@ int main(void) {
             particles_burst(P_SPARK,  v3_make(0, 3.5f, 2), NULL, n);
         }
         if (envArt && frameNo == 20) art_open(atoi(envArt));
+        if (envSky && frameNo == 10) {
+            WSet *w = world_wset();
+            w->skyAssets = 1;
+            w->skyObj[0] = 1;              /* model 0 (CRATE) as the sun */
+            w->skyObj[1] = 2;              /* model 1 as the moon */
+            A.yaw = 4.32f; A.pitch = 0.25f;  /* look toward the sun slot */
+        }
         if (envShot && frameNo == 45) rk_screenshot(envShot);
         if (envShot && strchr(envShot, ',') && frameNo == 90) {
             rk_screenshot(strchr(envShot, ',') + 1);    /* ",second.bmp" */

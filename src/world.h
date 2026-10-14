@@ -122,7 +122,9 @@ typedef struct {
     uint8_t  fogNear;        /* EXPERIMENTAL (advRender): fog start idx, 0=auto */
     uint8_t  fogFar;         /* fog end idx, 0=auto */
     uint8_t  bloom;          /* bloom strength idx: 0 auto,1 off,2 low,3 high */
-    uint8_t  pad[17];
+    uint8_t  skyObj[4];      /* skybox model slots: 0 none, else model idx+1
+                                (SUN/MOON/OBJ A/OBJ B; gated by skyAssets) */
+    uint8_t  pad[13];
 } WSet;
 #define WS_PHYS_SETTLE 0
 #define WS_PHYS_RIGID  1
