@@ -143,7 +143,9 @@ links m/dl/pthread. Win32-only code (file dialog, DPI awareness) is `_WIN32`
   around frame phases; `prof_count(PC_*)` for draws/insts/verts/blocks/
   particles (`PC_PARTS`). GPU times come from `rk_gpu_times` (per-in-flight
   timestamp query pools: shadow / main / post / total). `prof_frame()`
-  accumulates a 120-frame ring; `prof_draw()` renders the overlay.
+  accumulates a 120-frame ring; `prof_draw()` renders the overlay — F3
+  cycles off->page1->page2->off; page 2 = per-kind queue insts
+  (`rk_queue_insts`), pool usage (`rk_pool_usage`), WSet + cam summary.
   Add zones, not printf spam.
 - `src/particles.c` / `.h` — fixed-pool (1024) CPU particle system:
   `particles_burst(kind, pos, vel, n)` with FIRE/SMOKE/DEBRIS/SPARK presets,

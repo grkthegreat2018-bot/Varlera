@@ -25,7 +25,9 @@ submit ~0.55ms. Re-measure after each perf item.
 | ⏳ More default block shapes `353686d` | S | `meshgen.c`, `panel.c` | Pass 1 landed: Slab/Plate/Beam/Pipe/Arch/Ring. `6fd575f`: cageball reworked to a real birdcage. `e9157a3`: fixed RING/model-0 mesh-id collision (BASE_MODEL 16→32 + v6 save remap). BW parity pass remains. |
 | ⏳ User settings + controls `5be4a7d` | S→M | `main.c`, `camera.c`, `settings.c` | Core file + FOV/invert-Y landed; rebindable keys, UI scale, autosave interval pending. |
 | ⏳ QOL pass | S | `panel.c`, `edit.c`, `main.c` | Block search + toasts landed; hotkey hints bar, drag multi-select pending. |
-| ⏳ Debugging v1 `d0d6685` | S | `prof.c`, `main.c`, `log.c` | `varlera.log` stderr tee + crash minidump landed; overlay page 2 + validation hotkey pending. |
+| ⏳ Debugging v1 `d0d6685` | S | `prof.c`, `main.c`, `log.c` | `varlera.log` stderr tee + crash minidump landed; overlay page 2 ✅ (F3 cycles off->p1->p2: per-kind queue insts,
+inst/mesh/model-vert pool usage, WSet + cam summary). Validation hotkey
+not feasible (instance-level). |
 | ✅ Guide toasts `a3ce468` | S | `panel.c`, `settings.c`, `main.c`, `toast.c` | 12-tip idle cycler + first-time contextual tips; `G` toggle; seen-set in settings.bw. |
 | ✅ Material flags `0c3eff5` | S→M | `world.c`, `tex.c`, shader | texm bits 3-4 = MATTE/GLOSS/METAL/GLOW → world.frag Blinn spec/metal/glow; MAT cycler in TEX tab. |
 | ✅ Shader hot-reload `6aef718` | S | `rk_vk.c`, `CMakeLists.txt` | F8: glslc re-run + all pipelines rebuilt in place (device-idle); `VARLERA_RELOAD` test hook. |

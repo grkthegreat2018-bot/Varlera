@@ -375,6 +375,7 @@ int main(void) {
     const char *envSky   = getenv("VARLERA_SKYOBJ");    /* test hook: sky objects @10 */
     const char *envDay   = getenv("VARLERA_DAY");       /* test hook: day speed+phase @10 */
     const char *envPlyr  = getenv("VARLERA_PLAYER");    /* test hook: walk mode */
+    const char *envProf  = getenv("VARLERA_PROF");      /* test hook: overlay page */
     const char *envPlace = getenv("VARLERA_PLACE");     /* test hook: place_commit path at frame 20 */
     const char *envTexPng = getenv("VARLERA_TEXPNG");   /* test hook: png export+reimport */
     if (envTab) A.panelTab = atoi(envTab);
@@ -477,6 +478,8 @@ int main(void) {
             A.yaw = 4.32f; A.pitch = 0.25f;  /* look toward the sun slot */
         }
         if (envPlyr && frameNo == 5) world_wset()->playerMode = 1;
+        if (envProf && frameNo == 5) { int n = atoi(envProf);
+            while (n-- > 0) prof_toggle(); }
         if (envDay && frameNo == 10) {
             /* "speed,phase" e.g. VARLERA_DAY=3,0 = fast cycle at midnight */
             WSet *w = world_wset();

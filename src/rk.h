@@ -148,6 +148,9 @@ void rk_set_fog(float near_, float far_);   /* world-set override (60/170 def) *
 void rk_set_bloom(float amt);               /* bloom mix strength (def 0.55) */
 void rk_set_light(v3 d);                    /* dynamic sun/moon direction */
 void rk_set_day(float k);                   /* 0..1 daylight (env color mul) */
+int  rk_queue_insts(int kind);              /* per-kind insts last frame */
+void rk_pool_usage(int *inst, int *instCap, int *dynVerts, int *dynCap,
+                   int *mverts, int *mvCap);
 
 void rk_extent(int *w, int *h);
 void rk_screenshot(const char *path);       /* .bmp captured after present */

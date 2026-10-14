@@ -2,6 +2,7 @@
  * rolling 120-frame stats, periodic stderr report, F3 overlay. */
 #include "prof.h"
 #include "app.h"
+#include "world.h"
 #include "rk.h"
 #include "font.h"
 #include <stdio.h>
@@ -32,7 +33,7 @@ void prof_reset(void) {
 void prof_zone_begin(int z) { t0[z] = glfwGetTime(); }
 void prof_zone_end(int z)   { acc[z] += glfwGetTime() - t0[z]; }
 void prof_count(int c, int v) { cnt[c] = v; }
-void prof_toggle(void) { s_show = !s_show; }
+void prof_toggle(void) { s_show = (s_show + 1) % 3; }   /* off->p1->p2->off */
 int  prof_shown(void)  { return s_show; }
 
 /* avg / p95 / max over the filled ring */
@@ -82,8 +83,56 @@ void prof_frame(void) {
 
 /* ---------------- overlay ---------------- */
 
+static const char *KN[] = {"grid","world","ovl","ghost","mesh","mlin",
+                           "lines","ui","icon","cast","sky"};
+
+static void prof_draw2(void) {
+    char b[200];
+    float x = 8.0f, y = 8.0f, lh = 11.0f, w = 268.0f;
+    int lines = 9;
+    rk_ui_rect(x - 4, y - 4, w, lh * lines + 8.0f, 0, 0, 0, 0.55f);
+
+    ui_text(x + 8, y, "PROF P2 (F3) - queue / pools / world", 1,
+            0.55f, 0.9f, 1.0f, 1); y += lh;
+    for (int line = 0; line < 2; line++) {
+        b[0] = 0;
+        int k0 = line ? 6 : 0, k1 = line ? 11 : 6;
+        for (int k = k0; k < k1; k++) {
+            int n = rk_queue_insts(k);
+            if (n > 0)
+                snprintf(b + strlen(b), sizeof b - strlen(b), "%s %d  ", KN[k], n);
+        }
+        if (b[0]) { ui_text(x + 8, y, b, 1, 1, 1, 1, 1); }
+        y += lh;
+    }
+
+    int ni, nc, dv, dc, mv, mc;
+    rk_pool_usage(&ni, &nc, &dv, &dc, &mv, &mc);
+    snprintf(b, sizeof b, "inst %d/%d   meshv %d/%d", ni, nc, dv, dc);
+    ui_text(x + 8, y, b, 1, 0.8f, 0.85f, 1.0f, 1); y += lh;
+    snprintf(b, sizeof b, "model verts %d/%d (%.0f%%)",
+             mv, mc, 100.0 * mv / (mc ? mc : 1));
+    ui_text(x + 8, y, b, 1, 0.8f, 0.85f, 1.0f, 1); y += lh;
+
+    const WSet *ws = world_wset();
+    snprintf(b, sizeof b, "phys %d chunk %d/%d lod %d grav %d",
+             ws->phys, ws->chunkShape, ws->chunkSize, ws->lod, ws->gravMul);
+    ui_text(x + 8, y, b, 1, 0.8f, 0.85f, 1.0f, 1); y += lh;
+    snprintf(b, sizeof b, "skyObj %d day %d@%d player %d drag %d",
+             ws->skyAssets, ws->dayCycle, ws->dayPhase, ws->playerMode,
+             ws->dragOff);
+    ui_text(x + 8, y, b, 1, 0.8f, 0.85f, 1.0f, 1); y += lh;
+    snprintf(b, sizeof b, "blocks %d/%d  sel %d  rev %llu",
+             g_nb, MAX_BLOCKS, A.nsel, (unsigned long long)world_rev());
+    ui_text(x + 8, y, b, 1, 0.8f, 0.85f, 1.0f, 1); y += lh;
+    snprintf(b, sizeof b, "cam %.1f %.1f %.1f yaw %.2f pitch %.2f",
+             A.camPos.x, A.camPos.y, A.camPos.z, A.yaw, A.pitch);
+    ui_text(x + 8, y, b, 1, 0.8f, 0.85f, 1.0f, 1); y += lh;
+}
+
 void prof_draw(void) {
     if (!s_show || fc < 2) return;
+    if (s_show == 2) { prof_draw2(); return; }
     double fa, fp, fm; stat(fr, fc, &fa, &fp, &fm);
     char b[160];
     float x = 8.0f, y = 8.0f, lh = 11.0f, w = 252.0f;

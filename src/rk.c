@@ -680,6 +680,23 @@ void rk_end_frame(void) {
     G.inFrame = 0;
 }
 
+/* prof page 2: per-kind instance totals for the last submitted frame */
+int rk_queue_insts(int kind) {
+    int n = 0;
+    for (int i = 0; i < G.qn; i++)
+        if (G.q[i].kind == kind) n += (int)G.q[i].count;
+    return n;
+}
+void rk_pool_usage(int *inst, int *instCap, int *dynVerts, int *dynCap,
+                   int *mverts, int *mvCap) {
+    if (inst) *inst = G.instN;
+    if (instCap) *instCap = MAX_INST;
+    if (dynVerts) *dynVerts = G.meshVn;
+    if (dynCap) *dynCap = MAX_DYN_VERTS;
+    if (mverts) *mverts = G.mvn + (256 * 1024 - G.mvt);   /* head + tail */
+    if (mvCap) *mvCap = 256 * 1024;
+}
+
 v3 rk_light_dir(void) { return G.lightDir; }
 
 void rk_set_light(v3 d) { G.lightDir = d; }
