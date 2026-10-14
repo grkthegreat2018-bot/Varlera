@@ -158,6 +158,7 @@ typedef struct {
     int envStyle;
     float dayK;                             /* 0..1 daylight factor */
     m4 shView;                              /* light-space view (culling) */
+    int shSize;                             /* shadow map px (runtime-resizable) */
     uint32_t fi, imgIdx;
     VkCommandBuffer cmd;
     int inFrame;

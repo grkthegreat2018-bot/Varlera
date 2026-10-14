@@ -59,7 +59,7 @@ static int s_wConfirm = -1;
 /* rows 8-11 = skybox object pickers (visible iff SKY OBJS on);
    rows 12-14 + 17-18 = EXPERIMENTAL render section (visible iff ADV RENDER);
    row 15 = day/night cycle speed; row 16 = play-mode player */
-#define WS_ROWS 19
+#define WS_ROWS 20
 static int ws_row_vis(int i) {
     const WSet *w = world_wset();
     if (i >= 12 && i <= 14 || i >= 17) return w->advRender;
@@ -69,14 +69,15 @@ static int ws_row_vis(int i) {
 static const char *WLBL[] = {"PHYS","CHUNK","CHUNK SZ","LOD","ADV RENDER",
                              "GRAVITY","DRAG","SKY OBJS","SUN","MOON",
                              "OBJ A","OBJ B","FOG START","FOG END","BLOOM",
-                             "DAY CYCLE","PLAYER","FOG CURVE","PCF RADIUS"};
+                             "DAY CYCLE","PLAYER","FOG CURVE","PCF RADIUS",
+                             "SHADOW RES"};
 static const char *WWARN[] = {
     "PHYSICS MODE CHANGES PLAY BEHAVIOR",
     "CHUNK LAYOUT MAY RESHAPE OR WIPE THIS WORLD",
     "CHUNK SIZE MAY RESHAPE OR WIPE THIS WORLD",
     "LOD ALTERS DRAW DISTANCE QUALITY",
     "EXPERIMENTAL RENDER FLAGS CAN CAUSE BUGS",
-    "", "", "", "", "", "", "", "", "", "", "", "", "",
+    "", "", "", "", "", "", "", "", "", "", "", "", "", "",
 };
 static const uint8_t GRAV_STEPS[] = {0, 2, 4, 8, 12, 16};   /* 0x..2x */
 /* index names only — step tables/apply live with the record (world.c) */
@@ -110,6 +111,7 @@ static void wset_cycle(int i) {
     case 16: w->playerMode ^= 1; break;
     case 17: w->fogCurve = (uint8_t)((w->fogCurve + 1) & 3); break;
     case 18: w->pcfRad   = (uint8_t)((w->pcfRad + 1) & 3); break;
+    case 19: w->shRes    = (uint8_t)((w->shRes + 1) % 3); break;
     }
     world_wset_dirty();
 }
@@ -142,6 +144,8 @@ static const char *wset_val(int i, const WSet *w, char *b) {
               return FC[w->fogCurve & 3]; }
     case 18: { static const char *PC[] = {"0.5","1","2","3"};
               return PC[w->pcfRad & 3]; }
+    case 19: { static const char *SR[] = {"1K","2K","4K"};
+              return SR[w->shRes % 3]; }
     }
     return "";
 }

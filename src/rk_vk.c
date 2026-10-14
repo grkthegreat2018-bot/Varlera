@@ -837,7 +837,8 @@ int rk_init(GLFWwindow *win) {
     swapchain_create();
 
     /* shadow map + compare sampler */
-    make_image(SHADOW_SIZE, SHADOW_SIZE, VK_FORMAT_D32_SFLOAT,
+    G.shSize = SHADOW_SIZE;                 /* default; WSet can resize */
+    make_image(G.shSize, G.shSize, VK_FORMAT_D32_SFLOAT,
                VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
                VK_IMAGE_ASPECT_DEPTH_BIT, VK_SAMPLE_COUNT_1_BIT, 1,
                &G.shadowImg, &G.shadowMem, &G.shadowView);
@@ -1001,6 +1002,29 @@ int rk_init(GLFWwindow *win) {
     G.envGround[0] = 0.58f; G.envGround[1] = 0.60f; G.envGround[2] = 0.64f;
     rk_set_day(1.0f);
     return 1;
+}
+
+/* runtime shadow-map resize: recreate the depth image + rewrite the set1
+ * sampler binding. Called from the main loop only when the size changed. */
+void rk_shadow_resize(int size) {
+    if (!G.dev || size <= 0 || size == G.shSize) return;
+    vkDeviceWaitIdle(G.dev);
+    vkDestroyImageView(G.dev, G.shadowView, NULL);
+    vkDestroyImage(G.dev, G.shadowImg, NULL);
+    vkFreeMemory(G.dev, G.shadowMem, NULL);
+    make_image((uint32_t)size, (uint32_t)size, VK_FORMAT_D32_SFLOAT,
+               VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT |
+               VK_IMAGE_USAGE_SAMPLED_BIT,
+               VK_IMAGE_ASPECT_DEPTH_BIT, VK_SAMPLE_COUNT_1_BIT, 1,
+               &G.shadowImg, &G.shadowMem, &G.shadowView);
+    G.shSize = size;
+    VkDescriptorImageInfo dii = {G.shadowSamp, G.shadowView,
+                                 VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
+    VkWriteDescriptorSet w = {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
+    w.dstSet = G.set1; w.dstBinding = 0; w.descriptorCount = 1;
+    w.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    w.pImageInfo = &dii;
+    vkUpdateDescriptorSets(G.dev, 1, &w, 0, NULL);
 }
 
 void rk_set_env(const float sky[3], const float ground[3], int gstyle) {

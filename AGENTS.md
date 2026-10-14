@@ -26,7 +26,9 @@ links m/dl/pthread. Win32-only code (file dialog, DPI awareness) is `_WIN32`
 
 - `src/rk.c` / `rk.h` — renderer, frame + draw path. Vulkan 1.3 dynamic
   rendering, reversed-Z main depth (clear 0, GREATER), 4x MSAA + resolve,
-  2048px directional shadow map (forward-Z ortho `m4_ortho`, hardware-compare
+  directional shadow map (runtime `G.shSize` 1K/2K/4K via WSet `shRes` +
+  `rk_shadow_resize` — device-idle image/view/mem recreate + set1 rewrite;
+  forward-Z ortho `m4_ortho`, hardware-compare
   sampler + 4-tap PCF), instanced drawing (`RkInst` = pos/scale/RGBA8/flags;
   bits: 0 unlit, 1-2 rot90, 3 nofog, 4 iconVP, 5-10 texid, 11-12 texmode,
   13 texoverride, 14 vcol, 15 spin, 17-18 material MATTE/GLOSS/METAL/GLOW —
@@ -116,7 +118,8 @@ links m/dl/pthread. Win32-only code (file dialog, DPI awareness) is `_WIN32`
   settings trailer (phys mode / chunkShape+Size / lod / advRender /
   gravMul / skyAssets + skyObj[4] carved from pad — 0=none, 1+=model
   index; fogCurve + pcfRad ride UBO `fogParams.zw` — fog exponent and
-  shadow PCF texel radius, EXPERIMENTAL rows 17-18) — `world_wset()`
+  shadow PCF texel radius; shRes = shadow-map res 1K/2K/4K,
+  EXPERIMENTAL rows 17-19) — `world_wset()`
   is the live record, WORLD tab
   edits it and dangerous rows (`!`) get an APPLY/CANCEL wipe-warning
   dialog. `tests/world_v4.c` (ctest) covers round-trip + v3 migration;

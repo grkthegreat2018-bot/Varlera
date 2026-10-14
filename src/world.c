@@ -144,6 +144,10 @@ float world_bloom_amt(void) {
     static const float AMT[] = {0.55f, 0.0f, 0.30f, 1.0f};
     return s_wset.advRender ? AMT[s_wset.bloom & 3] : 0.55f;
 }
+int world_shadow_res(void) {
+    static const int R[] = {1024, 2048, 4096};
+    return s_wset.advRender ? R[s_wset.shRes % 3] : 2048;
+}
 void  world_wset_dirty(void) { g_rev++; }
 
 /* ---- day/night cycle ----

@@ -306,13 +306,14 @@ void rk_end_frame(void) {
         dep.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR; dep.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
         dep.clearValue.depthStencil.depth = 1.0f;
         VkRenderingInfo ri = {VK_STRUCTURE_TYPE_RENDERING_INFO};
-        ri.renderArea = (VkRect2D){{0,0},{SHADOW_SIZE, SHADOW_SIZE}};
+        float ss = (float)G.shSize;
+        ri.renderArea = (VkRect2D){{0,0},{(uint32_t)ss, (uint32_t)ss}};
         ri.layerCount = 1;
         ri.pDepthAttachment = &dep;
         vkCmdBeginRendering(G.cmd, &ri);
-        VkViewport vp = {0, 0, SHADOW_SIZE, SHADOW_SIZE, 0.0f, 1.0f};
+        VkViewport vp = {0, 0, ss, ss, 0.0f, 1.0f};
         vkCmdSetViewport(G.cmd, 0, 1, &vp);
-        VkRect2D sc = {{0,0},{SHADOW_SIZE, SHADOW_SIZE}};
+        VkRect2D sc = {{0,0},{(uint32_t)ss, (uint32_t)ss}};
         vkCmdSetScissor(G.cmd, 0, 1, &sc);
         vkCmdBindPipeline(G.cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, G.pShadow);
         bind_sets_and_mesh();
