@@ -27,6 +27,7 @@
 #include "physics.h"
 #include "particles.h"
 #include "world.h"
+#include "export.h"
 #include "math3d.h"
 
 App A;
@@ -305,6 +306,32 @@ static void on_resize(GLFWwindow *w, int width, int height) {
     A.fbw = width; A.fbh = height;
 }
 
+/* OS drag-and-drop: .bw world, .bwx bundle, .obj -> sculpt, .png texture */
+static void on_drop(GLFWwindow *w, int n, const char **paths) {
+    (void)w;
+    for (int i = 0; i < n; i++) {
+        const char *ext = strrchr(paths[i], '.');
+        if (!ext) continue;
+        char e[8] = {0};
+        snprintf(e, sizeof e, "%s", ext + 1);
+        for (char *c = e; *c; c++) if (*c >= 'A' && *c <= 'Z') *c += 32;
+        if (!strcmp(e, "bw")) {
+            world_push_undo();
+            if (world_load(paths[i], A.worldName)) {
+                sel_clear(); toast_say("WORLD LOADED");
+            }
+        } else if (!strcmp(e, "bwx")) {
+            if (bundle_load(paths[i], A.worldName)) {
+                sel_clear(); toast_say("BUNDLE IMPORTED");
+            }
+        } else if (!strcmp(e, "obj")) {
+            sculpt_open_obj(paths[i]);
+        } else if (!strcmp(e, "png")) {
+            if (tex_import_png(paths[i]) >= 0) toast_say("TEXTURE IMPORTED");
+        }
+    }
+}
+
 /* ---------------- main ---------------- */
 
 int main(void) {
@@ -345,6 +372,7 @@ int main(void) {
     glfwSetScrollCallback(A.win, on_scroll);
     glfwSetKeyCallback(A.win, on_key);
     glfwSetFramebufferSizeCallback(A.win, on_resize);
+    glfwSetDropCallback(A.win, on_drop);
 
     if (!rk_init(A.win)) { fputs("rk_init failed\n", stderr); return 1; }
 
@@ -362,6 +390,7 @@ int main(void) {
     /* boot into the main menu unless a test/CI hook is driving the run */
     {   static const char *TE[] = {
             "VARLERA_ANIM","VARLERA_ART","VARLERA_BWX","VARLERA_BWXIN",
+            "VARLERA_OBJ",
             "VARLERA_DAY","VARLERA_EXIT","VARLERA_GEN","VARLERA_GENGLOW",
             "VARLERA_PARTS","VARLERA_PLACE","VARLERA_PLAY","VARLERA_PLAYER",
             "VARLERA_PROF","VARLERA_RELOAD","VARLERA_SAVE","VARLERA_SHOT",
@@ -410,6 +439,7 @@ int main(void) {
     const char *envSave  = getenv("VARLERA_SAVE");      /* test hook: v4 save */
     const char *envBwx   = getenv("VARLERA_BWX");       /* test hook: export */
     const char *envBwxIn = getenv("VARLERA_BWXIN");     /* test hook: import */
+    const char *envObj   = getenv("VARLERA_OBJ");       /* test hook: obj out */
     const char *envTab   = getenv("VARLERA_TAB");       /* test hook: open tab */
     const char *envParts = getenv("VARLERA_PARTS");     /* test hook: burst test */
     const char *envExit  = getenv("VARLERA_EXIT");      /* test hook: quit at frame N */
@@ -576,6 +606,11 @@ int main(void) {
         }
         if (envBwx && frameNo == 50 && bundle_save(envBwx, A.worldName))
             fprintf(stderr, "bundle -> %s\n", envBwx);
+        if (envObj && frameNo == 50) {
+            int ok = world_export_obj(envObj);
+            fprintf(stderr, "obj export -> %s (%s)\n", envObj,
+                    ok ? "ok" : "FAILED");
+        }
         if (envTexPng && frameNo == 50) {   /* PNG round-trip: export+import */
             char ep[512], ip[512];
             snprintf(ep, sizeof ep, "%s_out.png", envTexPng);

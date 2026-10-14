@@ -12,6 +12,7 @@
 #include "toast.h"
 #include "filepick.h"
 #include "bundle.h"
+#include "export.h"
 #include "model.h"
 #include <stdio.h>
 #include <string.h>
@@ -148,7 +149,7 @@ static const char *wset_val(int i, const WSet *w, char *b) {
 /* ---- press handling (called only when A.panelTab == 3) ---- */
 int panel_world_tab_press(float fx, float fy, float px) {
     if (in_rect(fx, fy, px + 8, 58, PW - 16, 20)) { A.textMode = 4; return 1; }
-    for (int i = 0; i < 9; i++) {
+    for (int i = 0; i < 10; i++) {
         float bx = px + 8 + (i%3)*68.0f, byy = 80.0f + (i/3)*30.0f;
         if (in_rect(fx, fy, bx, byy, 62, 24)) {
             switch (i) {
@@ -177,13 +178,18 @@ int panel_world_tab_press(float fx, float fy, float px) {
                                          "Varlera Bundle\0*.bwx\0All Files\0*.*\0") &&
                           bundle_load(p, A.worldName))
                           sel_clear(); } break;
+            case 9: { char p[512];
+                      if (pick_save_path(p, sizeof p, "Export world mesh",
+                                         "Wavefront OBJ\0*.obj\0All Files\0*.*\0", "obj") &&
+                          world_export_obj(p))
+                          toast_say("EXPORTED .OBJ"); } break;
             }
             return 1;
         }
     }
     /* environment pickers: SKY / GROUND / FLOOR cycle */
     for (int i = 0; i < 3; i++) {
-        float ey = 226.0f + i * 34.0f;
+        float ey = 256.0f + i * 34.0f;
         if (in_rect(fx, fy, px + 8, ey, PW - 16, 26)) {
             if (i == 0)      s_sky = (s_sky + 1) % ENV_NSKY;
             else if (i == 1) s_ground = (s_ground + 1) % ENV_NGROUND;
@@ -195,7 +201,7 @@ int panel_world_tab_press(float fx, float fy, float px) {
     /* world settings — rows 1/2/4 are dangerous: confirm first */
     for (int i = 0, r = 0; i < WS_ROWS; i++) {
         if (!ws_row_vis(i)) continue;
-        float wy = 346.0f + (float)r++ * 28.0f;
+        float wy = 376.0f + (float)r++ * 28.0f;
         if (in_rect(fx, fy, px + 8, wy, PW - 16, 24)) {
             if (i == 1 || i == 2 || i == 4) s_wConfirm = i;
             else wset_cycle(i);
@@ -227,8 +233,8 @@ void panel_world_draw(float px) {
     ui_text(px + 14, 64, nb, 1,
             foc ? 1.0f : 0.75f, foc ? 1.0f : 0.78f, foc ? 1.0f : 0.85f, 1);
     const char *names[] = {"SAVE","LOAD","UNDO","REDO","CLEAR","SAVEAS",
-                           "DIR","EXPORT","IMPORT"};
-    for (int i = 0; i < 9; i++) {
+                           "DIR","EXPORT","IMPORT","MESH"};
+    for (int i = 0; i < 10; i++) {
         float bx = px + 8 + (i%3)*68;
         float by = 80.0f + (i/3)*30.0f;
         rk_ui_rect(bx, by, 62, 24, 0.22f,0.30f,0.45f, 1);
@@ -236,22 +242,22 @@ void panel_world_draw(float px) {
     }
     char buf[48];
     snprintf(buf, sizeof buf, "BLOCKS %d / %d", g_nb, MAX_BLOCKS);
-    ui_text(px+12, 172, buf, 1, 0.75f,0.78f,0.85f, 1);
+    ui_text(px+12, 202, buf, 1, 0.75f,0.78f,0.85f, 1);
     /* save dir tail (fits ~24 chars) */
     {
         const char *d = worlds_dir(); int dl = (int)strlen(d);
         const char *tail = dl > 22 ? d + dl - 22 : d;
         snprintf(buf, sizeof buf, "DIR ...%s", tail);
-        ui_text(px+12, 190, buf, 1, 0.55f,0.6f,0.68f, 1);
+        ui_text(px+12, 220, buf, 1, 0.55f,0.6f,0.68f, 1);
     }
 
     /* environment: sky + ground presets + floor pattern */
-    ui_text(px + 12, 212, "ENVIRONMENT", 1, 0.7f,0.72f,0.8f, 1);
+    ui_text(px + 12, 242, "ENVIRONMENT", 1, 0.7f,0.72f,0.8f, 1);
     const char *envN[3] = {ENV_SKY_N[s_sky], ENV_GROUND_N[s_ground],
                            ENV_GSTYLE_N[s_gstyle]};
     const char *envL[3] = {"SKY:", "GROUND:", "FLOOR:"};
     for (int i = 0; i < 3; i++) {
-        float ey = 226.0f + i * 34.0f;
+        float ey = 256.0f + i * 34.0f;
         int hov = in_rect((float)A.mx,(float)A.my, px + 8, ey, PW - 16, 26);
         rk_ui_rect(px + 8, ey, PW - 16, 26,
                    0.22f + hov*0.08f, 0.28f + hov*0.08f, 0.38f + hov*0.08f, 1);
@@ -265,12 +271,12 @@ void panel_world_draw(float px) {
     }
 
     /* world settings — ! marks rows that warn before changing */
-    ui_text(px + 12, 330, "WORLD SETTINGS", 1, 0.7f,0.72f,0.8f, 1);
+    ui_text(px + 12, 360, "WORLD SETTINGS", 1, 0.7f,0.72f,0.8f, 1);
     {
         const WSet *w = world_wset();
         for (int i = 0, r = 0; i < WS_ROWS; i++) {
             if (!ws_row_vis(i)) continue;
-            float wy = 346.0f + (float)r++ * 28.0f;
+            float wy = 376.0f + (float)r++ * 28.0f;
             int hov = in_rect((float)A.mx,(float)A.my, px+8, wy, PW-16, 24);
             int danger = (i == 1 || i == 2 || i == 4);
             rk_ui_rect(px+8, wy, PW-16, 24,

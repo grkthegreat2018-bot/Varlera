@@ -143,8 +143,14 @@ links m/dl/pthread. Win32-only code (file dialog, DPI awareness) is `_WIN32`
 - `src/filepick.c` — OS pickers shared by panel_world/sculpt: `pick_save_path`/
   `pick_open_path`/`pick_dir` (Win32 common dialogs + SHBrowseForFolder;
   zenity fallback on Linux).
+- `src/export.c` — `world_export_obj(path)`: world -> Wavefront OBJ with
+  `v x y z r g b` vertex colors (Blender-style), `vn` normals, `o blk<id>`
+  groups; built-ins use the meshgen soup through the instance transform,
+  fused models emit child soups in model space normalized like bake_mesh,
+  sculpted models emit indexed `mv`/`mf`.
 - `src/panel_world.c` — WORLD tab extracted from panel.c: name field,
-  9-button grid (SAVE/LOAD/UNDO/REDO/CLEAR/SAVEAS/DIR/EXPORT/IMPORT), env
+  10-button grid (SAVE/LOAD/UNDO/REDO/CLEAR/SAVEAS/DIR/EXPORT/IMPORT/MESH —
+  MESH = .obj export via export.c), env
   presets (env.bw: SKY/GROUND colors + FLOOR pattern GRID/CHECK/DOTS/PLAIN),
   WSet settings rows + wipe-warning confirm dialog.
   panel.c delegates via `panel_world_tab_press/_draw/_confirm_click/
@@ -189,7 +195,8 @@ links m/dl/pthread. Win32-only code (file dialog, DPI awareness) is `_WIN32`
   block scatter, `VARLERA_GENGLOW=N` every-Nth block GLOW, `VARLERA_TAB=N`
   open panel tab, `VARLERA_PARTS=N` particle burst at frame 20,
   `VARLERA_EXIT=N` quit at frame N (clean-shutdown validation checks),
-  `VARLERA_SAVE`/`VARLERA_BWX`/`VARLERA_BWXIN` world IO at frame 50,
+  `VARLERA_SAVE`/`VARLERA_BWX`/`VARLERA_BWXIN`/`VARLERA_OBJ` world IO at
+  frame 50,
   `VARLERA_MENU=1` enter the main menu at frame 10.
 - `src/menu.c` — main menu (`APP_MENU`, enum value 2 in `AppMode`): boots
   by default unless any VARLERA_* test env is set; scans `worlds_dir` for
@@ -236,6 +243,8 @@ double-click = select same color | shift multi | marquee | axis handles resize |
 R/T rotate +-90 | arrows nudge 0.5 view-relative | PgUp/PgDn nudge Y |
 ctrl+C/X/V clipboard | ctrl+D dup | ctrl+A all | ctrl+Z/Y | ctrl+S or F5 save |
 ctrl+B fuse sel -> custom model | ctrl+U unfuse | F9 load | Del delete |
+Drop files on the window: .bw loads a world (undo-pushed), .bwx imports a
+bundle, .obj opens the sculpt modal pre-loaded, .png imports a texture |
 TAB or PLAY toggles play mode (gravity + script triggers + restore) |
 Esc cancel/edit | F3 prof overlay (stderr `prof |` report every 4s:
 fps/frame avg,p95,max + wait/sim/queue/submit CPU zones + GPU

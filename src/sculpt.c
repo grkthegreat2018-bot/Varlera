@@ -1011,6 +1011,15 @@ void sculpt_open(void) {
     toast_tip(TIP_SCULPT);
 }
 
+/* empty canvas + OBJ file -> drag-drop path (failures keep the modal
+ * open on the empty canvas; import_obj toasts the reason) */
+void sculpt_open_obj(const char *path) {
+    s_editMid = -1;
+    sculpt_enter();
+    s_nv = s_nf = 0;
+    import_obj(path);
+}
+
 /* re-open an existing sculpted model for editing */
 void sculpt_open_model(int mid) {
     if (mid < 0 || mid >= g_nmodels || !g_models[mid].vox) return;

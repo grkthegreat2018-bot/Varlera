@@ -13,6 +13,7 @@
 
 void sculpt_open(void);           /* new cube mesh */
 void sculpt_open_model(int mid);  /* re-edit an existing sculpted model */
+void sculpt_open_obj(const char *path); /* drag-drop/import: empty canvas + OBJ */
 void sculpt_draw(void);            /* call instead of panel_draw while modal */
 int  sculpt_press(int mx, int my); /* LMB; 1 = consumed */
 void sculpt_rmb_click(int mx, int my); /* RMB click: split nearest edge */

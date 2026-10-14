@@ -61,6 +61,7 @@ add_executable(varlera WIN32
   src/prof.c
   src/toast.c
   src/bundle.c
+src/export.c
   src/log.c
   src/settings.c
   src/lzss.c
