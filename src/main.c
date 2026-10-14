@@ -171,6 +171,7 @@ static void on_mouse(GLFWwindow *w, int button, int action, int mods) {
             }
         } else {
             if (A.pickDrag == 3) panel_apply_paint();
+            else if (A.pickDrag == 4) panel_drop_tex((float)A.mx, (float)A.my);
             A.pickDrag = 0;
             if (A.app == APP_EDIT) edit_lmb_release(mods);
             else { world_drag_release(); A.drag = M_IDLE; }

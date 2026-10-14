@@ -21,6 +21,25 @@ uint8_t g_atlas[RK_TEX_ATLAS * RK_TEX_ATLAS * 4];
 static uint8_t s_used[TEX_MAX];
 static uint8_t s_tiles[TILES][TILES];   /* tile allocation map */
 static float   s_fps[TEX_MAX];          /* flipbook rate (TEXM_ANIM sheets) */
+static int     s_order[TEX_MAX];        /* grid display position -> tex id */
+
+static void order_identity(void) {
+    for (int i = 0; i < TEX_MAX; i++) s_order[i] = i;
+}
+
+int tex_at(int vis) { return (vis >= 0 && vis < g_ntex) ? s_order[vis] : -1; }
+
+void tex_move(int from, int to) {
+    if (from < 1) from = 1;              /* NONE stays pinned at position 0 */
+    if (to < 1) to = 1;
+    if (from == to || from >= g_ntex || to >= g_ntex) return;
+    int id = s_order[from];
+    if (from < to)
+        memmove(&s_order[from], &s_order[from + 1], (size_t)(to - from) * sizeof(int));
+    else
+        memmove(&s_order[to + 1], &s_order[to], (size_t)(from - to) * sizeof(int));
+    s_order[to] = id;
+}
 
 static void put(int x, int y, uint8_t r, uint8_t g, uint8_t b, uint8_t a) {
     if (x < 0 || y < 0 || x >= ATW || y >= ATW) return;
@@ -186,7 +205,10 @@ int tex_new(const char *name, int tw, int th) {
     t->tx = (uint8_t)x; t->ty = (uint8_t)y;
     t->tw = (uint8_t)tw; t->th = (uint8_t)th;
     s_used[slot] = 1;
-    if (slot >= g_ntex) g_ntex = slot + 1;
+    if (slot >= g_ntex) {
+        for (int i = g_ntex; i <= slot; i++) s_order[i] = i;
+        g_ntex = slot + 1;
+    }
     tex_sync_rect(slot);
     return slot;
 }
@@ -198,6 +220,9 @@ void tex_delete(int id) {
         for (int i = 0; i < t->tw; i++) s_tiles[t->ty + j][t->tx + i] = 0;
     s_used[id] = 0;
     while (g_ntex > 1 && !s_used[g_ntex - 1]) g_ntex--;
+    int w = 0;                              /* compact order to new range */
+    for (int i = 0; i < TEX_MAX && w < g_ntex; i++)
+        if (s_order[i] < g_ntex) s_order[w++] = s_order[i];
 }
 
 uint8_t *tex_px(int id, int *w, int *h) {
@@ -235,6 +260,9 @@ int tex_save(const char *path) {
     /* flipbook fps trailer: v1 readers stop after records, so this is a
        compatible tail. Old loads leave s_fps zeroed (static sheets). */
     fwrite(s_fps, sizeof(float), TEX_MAX, f);
+    /* display-order trailer: v1 readers stop after fps, so this stays a
+       compatible tail. Missing/invalid -> identity order. */
+    fwrite(s_order, sizeof(int), TEX_MAX, f);
     fclose(f);
     return 1;
 }
@@ -278,6 +306,20 @@ int tex_load(const char *path) {
     fread(s_fps, sizeof(float), TEX_MAX, f);   /* short read -> rest stays 0 */
     for (int i = 1; i < TEX_MAX; i++)
         if (s_used[i]) rk_tex_fps(i, s_fps[i]);
+    /* optional display-order trailer: must be a permutation of 0..g_ntex-1 */
+    order_identity();
+    {
+        int ord[TEX_MAX];
+        if (fread(ord, sizeof(int), TEX_MAX, f) == TEX_MAX) {
+            uint8_t seen[TEX_MAX] = {0};
+            int ok = 1;
+            for (int i = 0; i < g_ntex && ok; i++) {
+                if (ord[i] < 0 || ord[i] >= g_ntex || seen[ord[i]]) ok = 0;
+                else seen[ord[i]] = 1;
+            }
+            if (ok) memcpy(s_order, ord, sizeof ord);
+        }
+    }
     font_reserve();
     fclose(f);
     return 1;
@@ -325,6 +367,7 @@ void tex_init(void) {
     memset(g_atlas, 0, sizeof g_atlas);
     memset(s_used, 0, sizeof s_used);
     memset(s_tiles, 0, sizeof s_tiles);
+    order_identity();
     font_reserve();                     /* mark+bake before tile handout */
     g_ntex = 1;
     snprintf(g_tex[0].name, 16, "NONE");

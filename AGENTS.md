@@ -77,7 +77,9 @@ links m/dl/pthread. Win32-only code (file dialog, DPI awareness) is `_WIN32`
   -> `Block.alpha`/`BF_GLASS`), TEX (ART TOOL buttons EDIT/NEW/SHEET on top ->
   `art_open`, MODE/TYPE cycling `A.paintTexM` + MAT row = material
   MATTE/GLOSS/METAL/GLOW in texm bits3-4, scrollable grid of real atlas
-  previews via `rk_ui_texrect`), WORLD (SAVE/LOAD/UNDO/REDO/CLEAR + block count
+  previews via `rk_ui_texrect`, drag-to-reorder via `tex_at`/`tex_move`
+  (display-order permutation in tex.c, textures.bw trailer, NONE pinned),
+  footer strip shows selected tex name/dims/ANIM), WORLD (SAVE/LOAD/UNDO/REDO/CLEAR + block count
   + ENVIRONMENT + WORLD SETTINGS — see panel_world.c), MODELS (fused block
   groups), PROPS (`adv` premade assets).
   Asset geometry, paint color and texture are fully decoupled. Script menu

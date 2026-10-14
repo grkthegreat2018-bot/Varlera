@@ -34,7 +34,7 @@ submit ~0.55ms. Re-measure after each perf item.
 
 | Feature | Effort | Touches | Notes |
 |---|---|---|---|
-| Overhauled texture menu | M | `panel.c` TEX tab | UX rework of existing palette editor: drag slots, import/export PNG strip, per-texture preview. Stepping stone to the art tool. |
+| ~~Overhauled texture menu~~ ✅ | M | `panel.c` TEX tab | Drag-to-reorder slots via `tex_at`/`tex_move` display-order permutation (persisted as a textures.bw trailer, NONE pinned at 0), PNG import/export strip (stb), per-texture footer preview (thumb + dims + ANIM flag), drag ghost follows cursor. |
 | Aseprite-like art tool | M | `panel.c`/`tex.c` (or new `art.c`) | Layers + opacity, selection/move/fill/line tools, color pick+swatches, undo stack, zoom pan. Self-contained; worth extracting from `panel.c` once it grows past ~1k lines. |
 | ✅ Better world data handling `7db72fe` | M | `world.c` save/load | Format v4: 56B header (name/created/modified/nextid), `worlds/` dir + name field, `.bmp` thumbnails on save, 90s autosave (`world_rev` dirty check), v1-v3 readers kept. |
 | ✅ Better world file size `7db72fe`+lzss | M | `world.c`, `lzss.c` | Quantized records + v7 LZSS blob: ~15.6B/blk on mixed scenes (~4x vs v3). |

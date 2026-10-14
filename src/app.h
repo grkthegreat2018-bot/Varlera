@@ -76,7 +76,8 @@ typedef struct {
     float customs[8][3];
     int nCustoms;
     int hoverAsset;
-    int pickDrag;               /* 0 none, 1 = SV square drag, 2 = hue bar drag */
+    int pickDrag;               /* 0 none, 1 = SV square drag, 2 = hue bar,
+                                   3 = alpha slider, 4 = TEX slot reorder */
 
     double lastT, speedMsgT;
     uint16_t trigHeld;          /* play mode: bit per TRIG_* currently active */

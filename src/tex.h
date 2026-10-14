@@ -33,6 +33,8 @@ int      tex_export_png(int id, const char *path);   /* one texture -> png */
 int      tex_import_png(const char *path);           /* png -> new tex id/-1 */
 float    tex_fps(int id);                            /* flipbook rate */
 void     tex_set_fps(int id, float fps);             /* 0 = static */
+int      tex_at(int vis);                            /* grid pos -> tex id */
+void     tex_move(int from, int to);                 /* reorder display slots */
 
 static inline int tex_span(const Tex *t) { return t->tw; }   /* square sheets */
 

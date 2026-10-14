@@ -37,6 +37,7 @@ int  panel_rmb(double x, double y);          /* RMB: delete custom model; 1 if c
 int  panel_del_pending(void);                 /* delete-confirm dialog open */
 void panel_del_cancel(void);                  /* ESC dismiss */
 void panel_apply_paint(void);                 /* commit dragged alpha to sel */
+void panel_drop_tex(float x, float y);        /* commit TEX slot reorder drag */
 
 /* WORLD tab lives in panel_world.c — panel delegates these four hooks. */
 int  panel_world_tab_press(float fx, float fy, float px); /* ->1 (swallows) */

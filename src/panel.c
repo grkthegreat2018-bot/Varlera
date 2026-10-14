@@ -314,9 +314,11 @@ static float alpha_y(void) { return CUS_Y + ((A.nCustoms + 3) / 4) * 34.0f + 22.
 #define TG_CH    70.0f    /* cell stride y */
 #define TG_IW    64.0f    /* preview image w/h */
 #define TEXCOLS  3
+#define TG_FOOT  34.0f                  /* footer info strip height */
 static float texScroll;                 /* scroll offset in tex grid rows */
+static int   s_texDragVis = -1;         /* vis grid pos being reordered */
 static int tex_vis_rows(void) {
-    int r = (int)(((float)A.fbh - TG_TOP - 8.0f) / TG_CH);
+    int r = (int)(((float)A.fbh - TG_TOP - TG_FOOT - 8.0f) / TG_CH);
     return r < 1 ? 1 : r;
 }
 /* atlas uv rect for texture id (8 tiles per row: 128px tiles in 1024 atlas) */
@@ -503,12 +505,14 @@ int panel_press(double x, double y) {
         int first = (int)texScroll * TEXCOLS;
         int vrows = tex_vis_rows();
         for (int r = 0; r < vrows; r++) for (int c = 0; c < TEXCOLS; c++) {
-            int i = first + r * TEXCOLS + c;
-            if (i >= g_ntex) break;
+            int vis = first + r * TEXCOLS + c;
+            int i = tex_at(vis);
+            if (i < 0) break;
             float tx0 = px + 10 + c * TG_CW, ty0 = TG_TOP + r * TG_CH;
             if (in_rect(fx, fy, tx0, ty0, TG_IW, TG_CH - 2)) {
                 A.paintTex = i;
                 apply_tex_sel();
+                if (i > 0) { s_texDragVis = vis; A.pickDrag = 4; }
                 return 1;
             }
         }
@@ -547,6 +551,24 @@ void panel_drag_update(void) {
 
 /* called on LMB release: commit the dragged paint alpha to the selection */
 void panel_apply_paint(void) { apply_tex_sel(); }
+
+/* LMB release after a TEX-grid drag (pickDrag==4): drop = reorder slots */
+void panel_drop_tex(float fx, float fy) {
+    int vis = s_texDragVis;
+    s_texDragVis = -1;
+    if (vis < 0) return;
+    float px = panel_x();
+    if (fy < TG_TOP || fx < px + 10) return;
+    int c = (int)((fx - (px + 10)) / TG_CW);
+    int r = (int)((fy - TG_TOP) / TG_CH);
+    if (c < 0 || c >= TEXCOLS || r < 0) return;
+    int dst = (int)texScroll * TEXCOLS + r * TEXCOLS + c;
+    if (dst >= g_ntex) dst = g_ntex - 1;
+    if (dst != vis) {
+        tex_move(vis, dst);
+        tex_save("textures.bw");
+    }
+}
 
 void panel_scroll(double dy) {
     if (!A.panelOpen) return;
@@ -814,8 +836,8 @@ static void draw_tex(float px) {
     int first = (int)texScroll * TEXCOLS;
     int vrows = tex_vis_rows();
     for (int r = 0; r < vrows; r++) for (int c = 0; c < TEXCOLS; c++) {
-        int i = first + r * TEXCOLS + c;
-        if (i >= g_ntex) break;
+        int i = tex_at(first + r * TEXCOLS + c);
+        if (i < 0) break;
         float tx0 = px + 10 + c * TG_CW, ty0 = TG_TOP + r * TG_CH;
         int sel = (A.paintTex == i);
         int hov = in_rect((float)A.mx,(float)A.my, tx0, ty0, TG_IW, TG_CH - 2);
@@ -852,6 +874,40 @@ static void draw_tex(float px) {
         float sh = fmaxf(24.0f, vh * vrows / rows);
         float sy = TG_TOP + (vh - sh) * (texScroll / (float)(rows - vrows));
         rk_ui_rect(px + PW - 6, sy, 4, sh, 0.5f,0.55f,0.65f, 0.8f);
+    }
+
+    /* drag ghost follows the cursor while reordering */
+    if (s_texDragVis >= 0) {
+        int di = tex_at(s_texDragVis);
+        if (di > 0) {
+            float uv[4]; tex_uv(di, uv);
+            float dx = (float)A.mx - 24, dy = (float)A.my - 24;
+            rk_ui_rect(dx - 2, dy - 2, 52, 52, 0.10f,0.11f,0.14f, 0.85f);
+            rk_ui_texrect(dx, dy, 48, 48, uv[0], uv[1], uv[2], uv[3]);
+        }
+    }
+
+    /* footer: selected texture details */
+    {
+        float fy0 = (float)A.fbh - TG_FOOT - 4.0f;
+        rk_ui_rect(px, fy0, PW, TG_FOOT + 4.0f, 0.10f,0.11f,0.14f, 1.0f);
+        int i = A.paintTex;
+        if (i > 0 && i < g_ntex) {
+            const Tex *t = &g_tex[i];
+            float uv[4]; tex_uv(i, uv);
+            rk_ui_texrect(px + 8, fy0 + 5, 24, 24, uv[0], uv[1], uv[2], uv[3]);
+            char inf[40];
+            float f = tex_fps(i);
+            snprintf(inf, sizeof inf, "%s %dx%d%s", t->name, t->tw, t->th,
+                     f > 0 ? " ANIM" : "");
+            ui_text(px + 38, fy0 + 6, inf, 1, 0.9f,0.9f,0.95f, 1);
+            ui_text(px + 38, fy0 + 18, f > 0 ? "drag=reorder  fps below"
+                                             : "drag=reorder",
+                    1, 0.55f,0.58f,0.65f, 1);
+        } else {
+            ui_text(px + 10, fy0 + 12, "no texture - drag cells to reorder",
+                    1, 0.55f,0.58f,0.65f, 1);
+        }
     }
     rk_ui_flush();
 }
