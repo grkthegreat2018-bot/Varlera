@@ -115,7 +115,9 @@ links m/dl/pthread. Win32-only code (file dialog, DPI awareness) is `_WIN32`
   shadow PCF texel radius, EXPERIMENTAL rows 17-18) — `world_wset()`
   is the live record, WORLD tab
   edits it and dangerous rows (`!`) get an APPLY/CANCEL wipe-warning
-  dialog. `tests/world_v4.c` (ctest) covers round-trip + v3 migration.
+  dialog. `tests/world_v4.c` (ctest) covers round-trip + v3 migration;
+  `tests/unit.c` (ctest `unit`) covers lzss round-trip/corrupt input +
+  all meshgen shapes (vert bounds, normals, 4096 sculpt cap).
   `world_pick_block`/`ray_unit_box` are the shared slab-pick used by
   edit.c and physics.c.
 - `src/physics.c` — play mode: `world_physics(dt, trigHeld)` gravity settle

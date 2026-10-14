@@ -98,6 +98,18 @@ endif()
 add_test(NAME world_v4 COMMAND world_v4_test
          WORKING_DIRECTORY ${CMAKE_BINARY_DIR})
 
+add_executable(unit_test tests/unit.c src/lzss.c src/meshgen.c)
+target_include_directories(unit_test PRIVATE src)
+target_link_libraries(unit_test PRIVATE glfw)   # include dirs only
+if(MSVC)
+  target_compile_options(unit_test PRIVATE /W4 /wd4201)
+endif()
+if(UNIX AND NOT APPLE)
+  target_link_libraries(unit_test PRIVATE m)
+endif()
+add_test(NAME unit COMMAND unit_test
+         WORKING_DIRECTORY ${CMAKE_BINARY_DIR})
+
 if(MSVC)
   target_compile_options(varlera PRIVATE /W4 /wd4201)
   # GUI subsystem but keep main() (stderr still works when redirected)
