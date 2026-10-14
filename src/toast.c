@@ -4,12 +4,15 @@
 #include "toast.h"
 #include "app.h"
 #include "font.h"
+#include "panel.h"
 #include "rk.h"
 #include <stdio.h>
 #include <string.h>
 
 #define TOAST_HOLD 4.5f
 #define TOAST_FADE 0.35f
+#define TCARD_HOLD 3.2f
+#define TCARD_FADE 0.6f
 #define CYCLE_EVERY 10.0f
 
 static const char *TIPS[] = {
@@ -59,10 +62,25 @@ void toast_say(const char *msg) {
     s_t = 0.0f;
 }
 
+/* ACT_TITLE channel: separate from toasts so a SAY can run under a card */
+static char  s_tmsg[160];
+static float s_tcard = -1.0f;
+
+void toast_title(const char *msg) {
+    snprintf(s_tmsg, sizeof s_tmsg, "%s", msg);
+    s_tcard = 0.0f;
+}
+
+void toast_skip_fade(void) { if (s_tcard >= 0.0f) s_tcard = TCARD_FADE; }
+
 void toast_frame(float dt) {
     if (s_t >= 0.0f) {
         s_t += dt;
         if (s_t > TOAST_HOLD + TOAST_FADE) s_t = -1.0f;
+    }
+    if (s_tcard >= 0.0f) {
+        s_tcard += dt;
+        if (s_tcard > TCARD_HOLD + TCARD_FADE * 2.0f) s_tcard = -1.0f;
     }
     if (A.guideOn && s_t < 0.0f) {          /* idle cycler */
         s_cycleT += dt;
@@ -74,7 +92,32 @@ void toast_frame(float dt) {
     } else s_cycleT = 0.0f;
 }
 
+/* title card: gold-framed scrim band across the upper screen —
+ * separate entry so it draws even when no toast is showing */
+static void title_draw(void) {
+    if (s_tcard < 0.0f || !s_tmsg[0]) return;
+    float ta = 1.0f;
+    if (s_tcard < TCARD_FADE) ta = s_tcard / TCARD_FADE;
+    else if (s_tcard > TCARD_HOLD + TCARD_FADE)
+        ta = (TCARD_HOLD + TCARD_FADE * 2.0f - s_tcard) / TCARD_FADE;
+    int sc = 4;
+    float tw = (float)ui_text_w(s_tmsg, sc);
+    if (tw > (float)A.fbw - 96.0f) {          /* long text shrinks */
+        sc = tw > ((float)A.fbw - 96.0f) * 1.5f ? 2 : 3;
+        tw = (float)ui_text_w(s_tmsg, sc);
+    }
+    float ty = (float)A.fbh * 0.30f;
+    /* stop the scrim at the panel edge so it doesn't slab over the UI */
+    float w = (!A.modal && A.app != APP_MENU) ? panel_x() : (float)A.fbw;
+    rk_ui_rect(0, ty - 14, w, 58.0f, 0, 0, 0, 0.42f * ta);
+    rk_ui_rect(0, ty - 14, w, 2.0f, 0.95f, 0.75f, 0.30f, 0.7f * ta);
+    rk_ui_rect(0, ty + 42, w, 2.0f, 0.95f, 0.75f, 0.30f, 0.7f * ta);
+    ui_text((float)A.fbw * 0.5f - tw * 0.5f, ty, s_tmsg, sc,
+            1.0f, 0.88f, 0.55f, ta);
+}
+
 void toast_draw(void) {
+    title_draw();
     if (s_t < 0.0f || !s_msg[0]) return;
     float a = 1.0f;
     if (s_t < TOAST_FADE) a = s_t / TOAST_FADE;

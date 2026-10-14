@@ -345,7 +345,10 @@ void world_physics(float dt, uint16_t trigHeld) {
         if (s->act < ACT_COLOR || !((edge >> s->trig) & 1)) continue;
         if (s->act >= ACT_SAY) {                 /* text acts: global */
             const char *m = g_msgs[s->actParam & (MSG_MAX - 1)];
-            if (*m) toast_say(m);              /* TITLE styling later */
+            if (*m) {
+                if (s->act == ACT_TITLE) toast_title(m);
+                else                     toast_say(m);
+            }
             continue;
         }
         for (int t = 0; t < g_nb; t++) {

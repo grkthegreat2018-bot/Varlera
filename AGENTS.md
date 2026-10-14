@@ -264,7 +264,10 @@ BOOST are held acts; COLOR/TEX/DELETE are discrete — they fire on the
 trigger edge (`s_prevHeld` diff in world_physics) and apply to the TGT
 set (`tgt_match`). SAY/TITLE are edge-triggered global text acts:
 `g_msgs[16][32]` world message table (MSG row edits the actParam slot,
-textMode 5), shown via `toast_say`; stored as a `BWMS` file trailer.
+textMode 5): SAY shows via `toast_say`, TITLE via `toast_title` — a
+full-width gold-ruled scrim band + big centered text (fades in/out,
+panel-clipped, own channel so a SAY can run under it); stored as a
+`BWMS` file trailer.
 NAME edits `Block.name` (textMode 3, `renBuf`, commit via
 `panel_rename_commit` keyed on stable `Block.id`); TGT NAME targets blocks
 sharing that name. ACT_COLOR paints `g_palette[actParam&15]` — the shared

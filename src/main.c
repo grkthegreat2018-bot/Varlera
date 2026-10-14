@@ -394,6 +394,7 @@ int main(void) {
             "VARLERA_DAY","VARLERA_EXIT","VARLERA_GEN","VARLERA_GENGLOW",
             "VARLERA_PARTS","VARLERA_PLACE","VARLERA_PLAY","VARLERA_PLAYER",
             "VARLERA_PROF","VARLERA_RELOAD","VARLERA_SAVE","VARLERA_SHOT",
+            "VARLERA_TITLE",
             "VARLERA_SKYOBJ","VARLERA_TAB","VARLERA_TEXPNG", 0 };
         int t = 0;
         for (int i = 0; TE[i]; i++) if (getenv(TE[i])) { t = 1; break; }
@@ -450,6 +451,7 @@ int main(void) {
     const char *envDay   = getenv("VARLERA_DAY");       /* test hook: day speed+phase @10 */
     const char *envPlyr  = getenv("VARLERA_PLAYER");    /* test hook: walk mode */
     const char *envProf  = getenv("VARLERA_PROF");      /* test hook: overlay page */
+    const char *envTitle = getenv("VARLERA_TITLE");     /* test hook: title card */
     const char *envPlace = getenv("VARLERA_PLACE");     /* test hook: place_commit path at frame 20 */
     const char *envTexPng = getenv("VARLERA_TEXPNG");   /* test hook: png export+reimport */
     if (envTab) A.panelTab = atoi(envTab);
@@ -556,6 +558,11 @@ int main(void) {
         if (envPlyr && frameNo == 5) world_wset()->playerMode = 1;
         if (envProf && frameNo == 5) { int n = atoi(envProf);
             while (n-- > 0) prof_toggle(); }
+        if (envTitle && frameNo == 20) {
+            toast_title(envTitle[0] == '!' ? envTitle + 1 : envTitle);
+            /* "!text" jumps straight to full alpha (screenshot tests) */
+            if (envTitle[0] == '!') toast_skip_fade();
+        }
         if (envDay && frameNo == 10) {
             /* "speed,phase" e.g. VARLERA_DAY=3,0 = fast cycle at midnight */
             WSet *w = world_wset();
