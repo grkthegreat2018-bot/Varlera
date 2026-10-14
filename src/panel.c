@@ -1044,10 +1044,11 @@ void panel_draw(void) {
 
 /* ---- block script menu: floats above the selection ---- */
 enum { SM_GRAV, SM_COLL, SM_LOCK, SM_NAME, SM_TRIG, SM_ACT, SM_TGT, SM_PARAM,
-       SM_MSG, SM_TRACT, SM_BOUNCE, SM_WEIGHT, SM_UNFUSE, SM_FUSE, SM_EDIT };
+       SM_MSG, SM_TRACT, SM_BOUNCE, SM_WEIGHT, SM_SPAWN, SM_GOAL,
+       SM_UNFUSE, SM_FUSE, SM_EDIT };
 static const char *SM_LABEL[] = {"GRAVITY","COLLIDE","LOCKED","NAME","TRIG","ACT",
                                  "TGT","PARAM","MSG","TRAC","BOUNCE","WEIGHT",
-                                 "UNFUSE","FUSE ALL","RESCULPT"};
+                                 "SPAWN","GOAL","UNFUSE","FUSE ALL","RESCULPT"};
 static const char *TRIG_NAME[N_TRIGS] = {"ALWAYS","SPACE","W","A","S","D","E","Q","CLICK"};
 static const char *ACT_NAME[N_ACTS] = {"NONE","SPIN","GLOW","BOOST","COLOR","TEX",
                                        "DELETE","SAY","TITLE"};
@@ -1078,6 +1079,7 @@ static int script_layout(float *bx, float *by, int acts[16]) {
         acts[nr++] = SM_PARAM;
         if (g_blocks[sel_first()].act >= ACT_SAY) acts[nr++] = SM_MSG;
         acts[nr++] = SM_TRACT; acts[nr++] = SM_BOUNCE; acts[nr++] = SM_WEIGHT;
+        acts[nr++] = SM_SPAWN; acts[nr++] = SM_GOAL;
         int si0 = sel_first();
         int sh = g_blocks[si0].shape;
         if (sh >= RK_MESH_BASE_MODEL) {
@@ -1100,6 +1102,8 @@ static int script_state(int act, const Block *b) {
     case SM_GRAV: return !(b->flags & BF_NOPHYS);
     case SM_COLL: return !(b->flags & BF_NOCOLLIDE);
     case SM_LOCK: return  (b->flags & BF_LOCKED);
+    case SM_SPAWN: return (b->flags & BF_SPAWN);
+    case SM_GOAL: return  (b->flags & BF_GOAL);
     }
     return 0;
 }
@@ -1240,6 +1244,8 @@ int panel_script_click(double x, double y) {
         case SM_TRACT:  g_blocks[i].traction = (g_blocks[i].traction + 1) & 15; break;
         case SM_BOUNCE: g_blocks[i].bounce  = (g_blocks[i].bounce + 1) & 15; break;
         case SM_WEIGHT: g_blocks[i].weight  = (g_blocks[i].weight + 1) & 15; break;
+        case SM_SPAWN:  g_blocks[i].flags ^= BF_SPAWN; break;
+        case SM_GOAL:   g_blocks[i].flags ^= BF_GOAL;  break;
         case SM_LOCK:
             for (int j = 0; j < g_nb; j++) if (A.sel[j]) {
                 g_blocks[j].flags ^= BF_LOCKED;

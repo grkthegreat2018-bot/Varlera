@@ -13,6 +13,7 @@
 #include <math.h>
 #include <string.h>
 #include <stdlib.h>
+#include <stdio.h>
 
 static float boost_step(int i, float dt);
 static int tgt_match(const Block *src, const Block *b);
@@ -452,7 +453,8 @@ static float boost_step(int i, float dt) {
  * First-person kinematic box (feet-anchored) vs block AABBs: integrate
  * per-axis, push back out on overlap. y=0 is the world floor. */
 static v3   s_plPos, s_plVel, s_plSpawn, s_plSavedCam;
-static int  s_plGround, s_plActive;
+static int  s_plGround, s_plActive, s_goalsTotal;
+static uint8_t s_goalHit[MAX_BLOCKS];
 #define PL_R   0.32f
 #define PL_H   1.75f
 #define PL_EYE 1.62f
@@ -464,6 +466,17 @@ void world_player_enter(void) {
     s_plSavedCam = A.camPos;
     s_plSpawn = v3_make(A.camPos.x, A.camPos.y - PL_EYE, A.camPos.z);
     if (s_plSpawn.y < 0.5f) s_plSpawn.y = 0.5f;
+    /* designated spawn blocks override the camera drop point */
+    for (int i = 0; s_plActive && i < g_nb; i++)
+        if (g_blocks[i].flags & BF_SPAWN) {
+            s_plSpawn = g_blocks[i].pos;
+            s_plSpawn.y += block_eff_size(&g_blocks[i]).y * 0.5f + 0.05f;
+            break;
+        }
+    memset(s_goalHit, 0, sizeof s_goalHit);
+    s_goalsTotal = 0;
+    for (int i = 0; i < g_nb; i++)
+        if (g_blocks[i].flags & BF_GOAL) s_goalsTotal++;
     s_plPos = s_plSpawn; s_plVel = v3_make(0, 0, 0); s_plGround = 0;
 }
 
@@ -518,6 +531,31 @@ void world_player_tick(float dt) {
     pl_move_axis(dt, 0); pl_move_axis(dt, 2); pl_move_axis(dt, 1);
     if (s_plPos.y < 0.0f) { s_plPos.y = 0.0f; s_plVel.y = 0.0f; s_plGround = 1; }
     if (s_plPos.y < -40.0f) { s_plPos = s_plSpawn; s_plVel = v3_make(0,0,0); }
+    /* goal blocks: first touch fires a burst + toast (per play session) */
+    if (s_goalsTotal) {
+        v3 c = v3_make(s_plPos.x, s_plPos.y + PL_H * 0.5f, s_plPos.z);
+        const float ph[3] = {PL_R, PL_H * 0.5f, PL_R};
+        int hit = 0;
+        for (int i = 0; i < g_nb; i++) {
+            const Block *b = &g_blocks[i];
+            if (!(b->flags & BF_GOAL) || s_goalHit[i]) continue;
+            v3 bh = v3_scale(block_eff_size(b), 0.5f);
+            v3 d = v3_sub(c, b->pos);
+            if (ph[0] + bh.x - fabsf(d.x) <= 0.0f) continue;
+            if (ph[1] + bh.y - fabsf(d.y) <= 0.0f) continue;
+            if (ph[2] + bh.z - fabsf(d.z) <= 0.0f) continue;
+            s_goalHit[i] = 1; hit++;
+            particles_burst(P_SPARK, b->pos, NULL, 14);
+        }
+        if (hit) {
+            int done = 0;
+            for (int i = 0; i < g_nb; i++) done += s_goalHit[i] != 0;
+            char msg[24];
+            snprintf(msg, sizeof msg, done >= s_goalsTotal
+                     ? "ALL GOALS!" : "GOAL %d/%d", done, s_goalsTotal);
+            toast_say(msg);
+        }
+    }
     A.camPos = v3_make(s_plPos.x, s_plPos.y + PL_EYE, s_plPos.z);
     A.camVel = v3_make(0, 0, 0);
 }
